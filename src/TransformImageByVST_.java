@@ -8,6 +8,9 @@ import ij.process.ImageProcessor;
 
 import java.awt.*;
 
+import static java.lang.Math.sqrt;
+
+
 public class TransformImageByVST_ implements PlugIn {
 
     @Override
@@ -55,6 +58,22 @@ public class TransformImageByVST_ implements PlugIn {
             int rh = rect.height;
 
             // Single pass stddev https://www.strchr.com/standard_deviation_in_one_pass
+
+            double[] values = new double[rw*rh];
+            IJ.log("rx:"+rx+" ry:"+ry+" rw:"+rw+" rh:"+rh+" w:"+ip.getWidth()+" h:"+ip.getHeight());
+
+            for (int j=ry;j<ry+rh;j++) {
+                for (int i=rx;i<rx+rw;i++) {
+                    values[j*rw+i]=ip.getPixel(i,j);
+                }
+            }
+            double[] offsetAndSigma = meanAndStdDev(values);
+            offset = offsetAndSigma[0];
+            sigma = offsetAndSigma[1];
+
+            IJ.log("Offset:"+offset+" Sigma:"+sigma);
+
+
         }
 
 
@@ -62,5 +81,23 @@ public class TransformImageByVST_ implements PlugIn {
 
 
 
+    }
+
+    private double[] meanAndStdDev(double a[]) {
+        int n = a.length;
+        if (n == 0) return new double[]{0,0};
+
+        double sum = 0;
+        double sq_sum = 0;
+
+        for (int i = 0; i < n; i++) {
+            sum += a[i];
+            sq_sum += a[i] * a[i];
+        }
+
+        double mean = sum / n;
+        double variance = sq_sum / n - mean * mean;
+
+        return new double[] {mean, sqrt(variance)};
     }
 }
