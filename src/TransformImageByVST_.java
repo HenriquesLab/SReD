@@ -62,9 +62,11 @@ public class TransformImageByVST_ implements PlugIn {
             double[] values = new double[rw*rh];
             IJ.log("rx:"+rx+" ry:"+ry+" rw:"+rw+" rh:"+rh+" w:"+ip.getWidth()+" h:"+ip.getHeight());
 
+            int counter=0;
             for (int j=ry;j<ry+rh;j++) {
                 for (int i=rx;i<rx+rw;i++) {
-                    values[j*rw+i]=ip.getPixel(i,j);
+                    values[counter]=ip.getPixel(i,j);
+                    counter++;
                 }
             }
             double[] offsetAndSigma = meanAndStdDev(values);
@@ -72,15 +74,12 @@ public class TransformImageByVST_ implements PlugIn {
             sigma = offsetAndSigma[1];
 
             IJ.log("Offset:"+offset+" Sigma:"+sigma);
-
-
         }
 
-
-
-
-
-
+        // Get dark current error, eDC (sigma^2-gain*offset)
+        double edc = Math.pow(sigma,2)-gain*offset;
+        IJ.log("Dark current error (eDC):"+edc);
+        
     }
 
     private double[] meanAndStdDev(double a[]) {
