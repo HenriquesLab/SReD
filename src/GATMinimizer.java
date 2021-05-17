@@ -1,5 +1,11 @@
+import ij.IJ;
 import ij.measure.Minimizer;
 import ij.measure.UserFunction;
+import ij.process.FloatProcessor;
+
+import java.awt.*;
+import java.util.ArrayList;
+
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
 
@@ -65,7 +71,43 @@ public class GATMinimizer implements UserFunction {
         float[] pixelsGAT = pixels.clone();
         applyGeneralizedAnscombeTransform(pixelsGAT, gain, sigma, offset);
 
-        int stepX = Math.min(3, width/100);
+        // Get error for each 64x64 segment (my take)
+        FloatProcessor ifp2 = new FloatProcessor(width, height, pixels);
+        int width = ifp2.getWidth(); // image width
+        int height = ifp2.getHeight(); // image height
+        int stepX = 64; // bounding box width
+        int stepY = 64; // bounding box height
+        int nBlocks = (width/stepX)*(height/stepY); // Number of bounding boxes. "Int" already cuts-off the edges
+        double mean = 0;
+        double var = 0;
+        double error = 0;
+        ifp2.setRoi(0,0,stepX,stepY); // Create bounding box at (0,0)
+        Rectangle r = ifp2.getRoi();
+
+        for (int q=0; q<height-stepY; q++) { // for each stepY..
+            for (int p = 0; p < width - stepX; p++) { // ...and for each stepX
+                // ADD CONDITIONAL HERE FOR UNDERSIZED BOXES I.E. EDGES! Previous loops' constraints might be enough...
+                int pos, i;
+                for (int y = r.y; y < (r.y + r.height); y++) { // for each y coordinate in the box..
+                    pos = y * width;
+                    for (int x = r.x; x < (r.x + r.width); x++) { // ... and for each x coordinate in each y
+                        i = pos + x; // get position
+                        mean += pixels[i]; // add the value in that position to the "mean"
+                        var += pixels[i];
+                    }
+                    mean /= r.width*r.height; // get mean of box (didn't use r.getSize() because it returns a Dimension object)
+                    var -= r.width*r.height*mean;
+                    var = pow(var,2);
+                    var /= r.width*r.height;
+                    double delta = var - 1;
+                    error += (delta * delta) / nBlocks;
+                }
+                r.setLocation(stepX * p, stepY * q); // move box along X
+            }
+            r.setLocation(0, stepY * q); // move box along Y
+        }
+
+        /*int stepX = Math.min(3, width/100);
         int stepY = Math.min(3, height/100);
         int nBlocks = (width-stepX-1)*(height-stepY-1)/(stepX*stepY);
         double error = 0;
@@ -105,7 +147,7 @@ public class GATMinimizer implements UserFunction {
                     //error += pow(var/(gain*mean+sigma*sigma-gain*offset)-1, 2) / pixelsGAT.length;
 
             }
-        }
+        }*/
         return error;
 
     }
@@ -113,7 +155,7 @@ public class GATMinimizer implements UserFunction {
     public static void applyGeneralizedAnscombeTransform(float[] pixels, double gain, double sigma, double offset) {
 
         double refConstant = (3d/8d) * gain * gain + sigma * sigma - gain * offset;
-        //its called refConstant because it does contain the pixel values, Afonso was confused and needed a hug
+        //its called refConstant because it does not contain the pixel values, Afonso was confused and needed a hug
 
         // Apply GAT to pixel value
         // See http://mirlab.org/conference_papers/International_Conference/ICASSP%202012/pdfs/0001081.pdf for GAT description

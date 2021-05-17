@@ -1,9 +1,12 @@
+/**
+ * Created by Afonso Mendes and Ricardo Henriques on April 2021.
+ */
+
 import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
 import ij.gui.Roi;
-import ij.measure.Minimizer;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
@@ -65,7 +68,6 @@ public class TransformImageByVST_ implements PlugIn {
             // Single pass stddev https://www.strchr.com/standard_deviation_in_one_pass
 
             double[] values = new double[rw * rh];
-            IJ.log("rx:" + rx + " ry:" + ry + " rw:" + rw + " rh:" + rh + " w:" + ip.getWidth() + " h:" + ip.getHeight());
 
             int counter = 0;
             for (int j = ry; j < ry + rh; j++) {
@@ -79,23 +81,19 @@ public class TransformImageByVST_ implements PlugIn {
             offset = offsetAndSigma[0];
             sigma = offsetAndSigma[1];
 
-            IJ.log("Offset:" + offset + " Sigma:" + sigma);
+            IJ.log("Offset: " + offset + "    " + " Sigma: " + sigma);
 
         }
 
 
         // Apply GAT to image
+        IJ.log("Applying GAT to image");
         FloatProcessor ifp = imp.getProcessor().convertToFloatProcessor(); // Convert ImageProcessor to FloatProcessor because minimizer() takes floats
         float[] pixels = (float[]) ifp.getPixels(); // Get pixel array
         int width = ifp.getWidth(); // Get image width
         int height = ifp.getHeight(); // Get image height
         GATMinimizer minimizer = new GATMinimizer(pixels, width, height, gain, sigma, offset); // Run minimizer
-        IJ.log("DONE");
-
-        // Display transformed image
-        FloatProcessor ifp2 = new FloatProcessor(width, height, pixels);
-        ImagePlus ip2 = new ImagePlus("RESULT", ifp2);
-        ip2.show();
+        IJ.log("GAT applied");
 
     }
 
