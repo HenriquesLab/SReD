@@ -26,7 +26,7 @@ public class TransformImageByVST_ implements PlugIn {
         gd.addNumericField("Gain guess (default: 0)", 0);
         gd.addNumericField("Offset guess (default: 0)", 0);
         gd.addNumericField("Noise standard-deviation guess (default: 100)", 100);
-        gd.addCheckbox("Estimate offset and StdDev from ROI", true);
+        gd.addCheckbox("Estimate offset and StdDev from ROI", false);
         gd.showDialog();
 
         if (gd.wasCanceled()) return;
@@ -93,7 +93,9 @@ public class TransformImageByVST_ implements PlugIn {
         int width = ifp.getWidth(); // Get image width
         int height = ifp.getHeight(); // Get image height
         GATMinimizer minimizer = new GATMinimizer(pixels, width, height, gain, sigma, offset); // Run minimizer
+        minimizer.run();
         IJ.log("GAT applied");
+
 
     }
 

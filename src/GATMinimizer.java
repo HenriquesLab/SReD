@@ -71,85 +71,60 @@ public class GATMinimizer implements UserFunction {
         float[] pixelsGAT = pixels.clone();
         applyGeneralizedAnscombeTransform(pixelsGAT, gain, sigma, offset);
 
-        // Get error for each 64x64 segment (my take)
-        FloatProcessor ifp2 = new FloatProcessor(width, height, pixels);
-        int width = ifp2.getWidth(); // image width
-        int height = ifp2.getHeight(); // image height
-        int stepX = 64; // bounding box width
-        int stepY = 64; // bounding box height
-        int nBlocks = (width/stepX)*(height/stepY); // Number of bounding boxes. "Int" already cuts-off the edges
+        int blockWidth = 64; // bounding box width
+        int blockHeight = 64; // bounding box height
+
+        int nBlockX = width / blockWidth;
+        int nBlockY = height / blockHeight;
+        int nBlocks = nBlockX * nBlockY;
+
+        double error = 0;
+
+        for (int bY=0; bY<nBlockY; bY++) {
+            for (int bX=0; bX<nBlockX; bX++) {
+
+                int xStart = bX * blockWidth;
+                int xEnd = (bX+1) * blockWidth;
+                int yStart = bY * blockHeight;
+                int yEnd = (bY+1) * blockHeight;
+
+                double [] meanAndVar = getMeanAndVarBlock(pixelsGAT, xStart, yStart, xEnd, yEnd);
+                double delta = meanAndVar[1] - 1; // variance must be ~1
+
+                error += (delta * delta) / nBlocks;
+            }
+        }
+        IJ.log("gain:"+gain+" sigma:"+sigma+" offset:"+offset+" error: " + error);
+
+        return error;
+    }
+
+    public int get1DCoordinate(int x, int y) {
+        return y * width + x;
+    }
+
+    public double[] getMeanAndVarBlock(float[] pixels, int xStart, int yStart, int xEnd, int yEnd) {
         double mean = 0;
         double var = 0;
-        double error = 0;
-        ifp2.setRoi(0,0,stepX,stepY); // Create bounding box at (0,0)
-        Rectangle r = ifp2.getRoi();
 
-        for (int q=0; q<height-stepY; q++) { // for each stepY..
-            for (int p = 0; p < width - stepX; p++) { // ...and for each stepX
-                // ADD CONDITIONAL HERE FOR UNDERSIZED BOXES I.E. EDGES! Previous loops' constraints might be enough...
-                int pos, i;
-                for (int y = r.y; y < (r.y + r.height); y++) { // for each y coordinate in the box..
-                    pos = y * width;
-                    for (int x = r.x; x < (r.x + r.width); x++) { // ... and for each x coordinate in each y
-                        i = pos + x; // get position
-                        mean += pixels[i]; // add the value in that position to the "mean"
-                        var += pixels[i];
-                    }
-                    mean /= r.width*r.height; // get mean of box (didn't use r.getSize() because it returns a Dimension object)
-                    var -= r.width*r.height*mean;
-                    var = pow(var,2);
-                    var /= r.width*r.height;
-                    double delta = var - 1;
-                    error += (delta * delta) / nBlocks;
-                }
-                r.setLocation(stepX * p, stepY * q); // move box along X
+        double sq_sum = 0;
+
+        int bWidth = xEnd-xStart;
+        int bHeight = yEnd - yStart;
+        int bWH = bWidth*bHeight;
+
+        for (int j=yStart; j<yEnd; j++) {
+            for (int i=xStart; i<xEnd; i++) {
+                float v = pixels[get1DCoordinate(i,j)];
+                mean += v;
+                sq_sum += v * v;
             }
-            r.setLocation(0, stepY * q); // move box along Y
         }
 
-        /*int stepX = Math.min(3, width/100);
-        int stepY = Math.min(3, height/100);
-        int nBlocks = (width-stepX-1)*(height-stepY-1)/(stepX*stepY);
-        double error = 0;
+        mean = mean / bWH;
+        var = sq_sum / bWH - mean * mean;
 
-            for (int j = 1; j < height - stepY - 1; j+=stepY) {
-                for (int i = 1; i < width - stepX - 1; i+=stepX) {
-                    double mean = 0;
-                    mean += pixelsGAT[(j-1) * width + (i-1)];
-                    mean += pixelsGAT[(j-1) * width + (i  )];
-                    mean += pixelsGAT[(j-1) * width + (i+1)];
-                    mean += pixelsGAT[(j+1) * width + (i-1)];
-                    mean += pixelsGAT[(j+1) * width + (i  )];
-                    mean += pixelsGAT[(j+1) * width + (i+1)];
-                    mean += pixelsGAT[(j  ) * width + (i-1)];
-                    mean += pixelsGAT[(j  ) * width + (i  )];
-                    mean += pixelsGAT[(j  ) * width + (i+1)];
-                    mean /= 9;
-
-                    double var = 0;
-                    var += pow(pixelsGAT[(j-1) * width + (i-1)] - mean, 2);
-                    var += pow(pixelsGAT[(j-1) * width + (i  )] - mean, 2);
-                    var += pow(pixelsGAT[(j-1) * width + (i+1)] - mean, 2);
-                    var += pow(pixelsGAT[(j+1) * width + (i-1)] - mean, 2);
-                    var += pow(pixelsGAT[(j+1) * width + (i  )] - mean, 2);
-                    var += pow(pixelsGAT[(j+1) * width + (i+1)] - mean, 2);
-                    var += pow(pixelsGAT[(j  ) * width + (i-1)] - mean, 2);
-                    var += pow(pixelsGAT[(j  ) * width + (i  )] - mean, 2);
-                    var += pow(pixelsGAT[(j  ) * width + (i+1)] - mean, 2);
-                    var /= 9;
-
-                    // according to http://www.irisa.fr/vista/Papers/2009_TMI_Boulanger.pdf
-                    // var = gain * mean + sigma2 - gain * offset
-                    //double delta = var - ((gain * mean) + (sigma * sigma) - gain * offset);
-
-                    double delta = var - 1; // variance must be ~1
-                    error += (delta * delta) / nBlocks;
-                    //error += pow(var/(gain*mean+sigma*sigma-gain*offset)-1, 2) / pixelsGAT.length;
-
-            }
-        }*/
-        return error;
-
+        return new double[] {mean, var};
     }
 
     public static void applyGeneralizedAnscombeTransform(float[] pixels, double gain, double sigma, double offset) {
