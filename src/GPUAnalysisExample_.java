@@ -65,6 +65,9 @@ public class GPUAnalysisExample_ implements PlugIn {
         //System.out.println("using " + chosenDevice);
         IJ.log("Using " + chosenDevice.getName());
 
+        // Initialize queue
+        queue = chosenDevice.createCommandQueue();
+
         // fill the buffers
         clBufferPixelsIn = context.createIntBuffer(width * height, READ_ONLY);
         clBufferPixelsOut = context.createFloatBuffer(width * height, WRITE_ONLY); // potentially READ_WRITE
@@ -91,6 +94,7 @@ public class GPUAnalysisExample_ implements PlugIn {
         queue.putWriteBuffer(clBufferPixelsIn, false);
 
 
+        queue.finish();
 
 
     }
