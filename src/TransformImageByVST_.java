@@ -10,9 +10,7 @@ import ij.gui.Roi;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
-
 import java.awt.*;
-
 import static java.lang.Math.sqrt;
 
 
@@ -21,7 +19,7 @@ public class TransformImageByVST_ implements PlugIn {
     @Override
     public void run(String s) {
 
-        // Display dialog box for user input
+        // ---- Display dialog box for user input ----
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Calculate VST...");
         gd.addNumericField("Gain guess:", 0);
         gd.addNumericField("Offset guess:", 0);
@@ -31,29 +29,26 @@ public class TransformImageByVST_ implements PlugIn {
 
         if (gd.wasCanceled()) return;
 
+        // ---- Define gain, offset and sigma ----
         // Grab image
         ImagePlus imp = WindowManager.getCurrentImage();
         if (imp == null) {
-            IJ.log("1...");
-            IJ.error("No image open, you suck!");
+            IJ.error("No image found. Please open an image a try again.");
             return;
         }
 
-        // Grab variables
+        // Grab variables from dialog box
         double gain = gd.getNextNumber();
         double offset = gd.getNextNumber();
         double sigma = gd.getNextNumber();
         boolean useROI = gd.getNextBoolean();
-
-        IJ.showStatus("Loading up hyperdrive...");
-        IJ.log("Loading up hyperdrive...");
 
         // Calculate offset and sigma from user-defined ROI (if user chooses to)
         ImageProcessor ip = null;
         if (useROI) {
             Roi roi = imp.getRoi();
             if (roi == null) {
-                IJ.error("No ROI selected, you suck!");
+                IJ.error("No ROI selected. Please draw a rectangle and try again.");
                 return;
             }
 
@@ -65,8 +60,7 @@ public class TransformImageByVST_ implements PlugIn {
             int rw = rect.width;
             int rh = rect.height;
 
-            // Single pass stddev https://www.strchr.com/standard_deviation_in_one_pass
-
+            // Get standard deviation (single pass) https://www.strchr.com/standard_deviation_in_one_pass
             double[] values = new double[rw * rh];
 
             int counter = 0;
@@ -80,47 +74,63 @@ public class TransformImageByVST_ implements PlugIn {
             double[] offsetAndSigma = meanAndStdDev(values);
             offset = offsetAndSigma[0];
             sigma = offsetAndSigma[1];
-
-            IJ.log("Offset: " + offset + "    " + " Sigma: " + sigma);
-
         }
 
 
-        // Apply GAT to image
-        IJ.log("Applying GAT to image");
-        FloatProcessor ifp = imp.getProcessor().convertToFloatProcessor(); // Convert ImageProcessor to FloatProcessor because minimizer() takes floats
+        // ---- Apply GAT to image ----
+        // Grab image and get pixel values dimensions
+        FloatProcessor ifp = imp.getProcessor().convertToFloatProcessor(); // Convert to FloatProcessor because minimizer() requires floats
         float[] pixels = (float[]) ifp.getPixels(); // Get pixel array
         int width = ifp.getWidth(); // Get image width
         int height = ifp.getHeight(); // Get image height
+
+        // Run the optimizer to find gain, offset and sigma that minimize the noise variance
         GATMinimizer minimizer = new GATMinimizer(pixels, width, height, gain, sigma, offset); // Run minimizer
         minimizer.run();
-        IJ.log("GAT applied");
 
-
+        // Create final "variance stable" image based on optimized parameters
+        float[] pixelsGAT = new float[pixels.length];
+        pixelsGAT = getGAT(pixels, minimizer.gain, minimizer.sigma, minimizer.offset);
+        FloatProcessor fp1 = new FloatProcessor(width, height, pixelsGAT);
+        ImagePlus imp1 = new ImagePlus("Variance-stabilized image", fp1);
+        imp1.show();
     }
 
+    // ---- USER METHODS ----
+    private double[] meanAndStdDev ( double a[]){
+        int n = a.length;
+        if (n == 0) return new double[]{0, 0};
 
-        private double[] meanAndStdDev ( double a[]){
-            int n = a.length;
-            if (n == 0) return new double[]{0, 0};
+        double sum = 0;
+        double sq_sum = 0;
 
-            double sum = 0;
-            double sq_sum = 0;
-
-            for (int i = 0; i < n; i++) {
-                sum += a[i];
-                sq_sum += a[i] * a[i];
-            }
-
-            double mean = sum / n;
-            double variance = sq_sum / n - mean * mean;
-
-            return new double[]{mean, sqrt(variance)};
-
+        for (int i = 0; i < n; i++) {
+            sum += a[i];
+            sq_sum += a[i] * a[i];
         }
 
+        double mean = sum / n;
+        double variance = sq_sum / n - mean * mean;
+
+        return new double[]{mean, sqrt(variance)};
 
     }
+
+    // Get GAT (see http://mirlab.org/conference_papers/International_Conference/ICASSP%202012/pdfs/0001081.pdf for GAT description)
+    public static float[] getGAT(float[] pixels, double gain, double sigma, double offset) {
+
+        double refConstant = (3d/8d) * gain * gain + sigma * sigma - gain * offset;
+
+        for (int n=0; n<pixels.length; n++) {
+            double v = pixels[n];
+            if (v <= -refConstant / gain)
+                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all
+            else v = (2 / gain) * sqrt(gain * v + refConstant);
+            pixels[n] = (float) v;
+        }
+        return pixels;
+    }
+}
 
 
 
