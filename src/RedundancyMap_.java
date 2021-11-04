@@ -9,10 +9,8 @@ import ij.ImagePlus;
 import ij.WindowManager;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
-
-import java.util.Arrays;
-
 import static java.lang.Math.*;
+
 public class RedundancyMap_ implements PlugIn {
     @Override
     public void run(String s) {
@@ -53,7 +51,7 @@ public class RedundancyMap_ implements PlugIn {
         imp1.show();
 
         IJ.log("Done!");
-        System.out.println(Arrays.toString(refMean));
+
     }
 }
 
@@ -63,8 +61,7 @@ class ComparisonThread extends Thread {
     private float[] finalPixels;
     private int x, y, w, h, bW, bH;
     private float sigma;
-    private float[] refVar; //delete this afterwards
-    private float[] refMean; //DELETE
+
     public void setup(float[] refPixels, float[] finalPixels, int w, int h, int bW, int bH, int x, int y, float sigma, float[] refVar, float[] refMean) {
         this.refPixels = refPixels;
         this.finalPixels = finalPixels;
@@ -75,8 +72,6 @@ class ComparisonThread extends Thread {
         this.bW = bW;
         this.bH = bH;
         this.sigma = sigma;
-        this.refVar = refVar; // delete this afterwwards
-        this.refMean = refMean;
     }
 
     @Override
@@ -102,8 +97,6 @@ class ComparisonThread extends Thread {
 
         // Get statistics for the current reference patch
         float[] patchStats0 = getPatchStats(pixels0);
-        refVar[y*w+x] = patchStats0[3]; // delete this afterwards
-        refMean[y*w+x] = patchStats0[1]; // delete this afterwards
 
         // Get array of mean-subtracted pixels for the current reference patch
         float[] pixels0meansub = new float[bW*bH];
@@ -174,7 +167,7 @@ class ComparisonThread extends Thread {
     // ---- USER METHODS ----
 
     // Get patch statistics (single pass, see https://www.strchr.com/standard_deviation_in_one_pass)
-    private float[] getPatchStats(float a[]) { //TODO: notice that using floats here requires casting sqrt() to a float, decide if its worth using doubles all the way
+    private float[] getPatchStats(float a[]) {
         int n = a.length;
         if (n == 0) return new float[]{0, 0, 0, 0};
 
@@ -190,7 +183,6 @@ class ComparisonThread extends Thread {
         float variance = sq_sum / n - mean * mean;
 
         return new float[]{mean, (float) sqrt(variance), variance, sum};
-
     }
 
     // Get array mean
@@ -215,6 +207,6 @@ class ComparisonThread extends Thread {
 
         weightedMean /= a.length;
         return weightedMean;
-
     }
+
 }
