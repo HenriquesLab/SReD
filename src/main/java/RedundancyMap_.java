@@ -25,15 +25,15 @@ public class RedundancyMap_ implements PlugIn {
 
     // OpenCL formats
     static private CLContext context;
-    static private CLProgram programGetStats, programGetMeanPearson;
-    static private CLKernel kernelGetStats, kernelGetMeanPearson;
+    static private CLProgram programGetStats, programGetWeightMap, programGetMeanPearson;
+    static private CLKernel kernelGetStats, kernelGetWeightMap, kernelGetMeanPearson;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
     private CLBuffer<FloatBuffer> clRefPixels, clLocalSums, clLocalMeans, clLocalVariances, clLocalDeviations,
-            clLocalSqSums, clMeanPearsonMap;
+            clLocalSqSums, clWeightMap, clMeanPearsonMap;
 
     @Override
     public void run(String s) {
@@ -67,7 +67,6 @@ public class RedundancyMap_ implements PlugIn {
 
             for(CLDevice clDevice : allCLdeviceOnThisPlatform) {
                 IJ.log("--------");
-                System.out.println("Vendor ID: " + clDevice.getVendor());
                 IJ.log("Device name: " + clDevice.getName());
                 IJ.log("Device type: " + clDevice.getType());
                 IJ.log("Max clock: " + clDevice.getMaxClockFrequency() + " MHz");
@@ -121,10 +120,16 @@ public class RedundancyMap_ implements PlugIn {
         float localDeviations[] = new float[w * h];
         clLocalDeviations = context.createFloatBuffer(w * h, READ_WRITE);
 
+        float[] weightMap = new float[w * h];
+        clWeightMap = context.createFloatBuffer(w * h, READ_WRITE);
+
         float[] meanPearsonMap = new float[w * h];
         clMeanPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
 
-        // ---- Create getStatsProgram ----
+
+
+        // ---- Create programs ----
+        // Create getStatsProgram
         String programStringGetStats = getResourceAsString(RedundancyMap_.class, "kernelGetStats.cl");
         programStringGetStats = replaceFirst(programStringGetStats, "$REFPIXELS$", "" + refPixels);
         programStringGetStats = replaceFirst(programStringGetStats, "$WIDTH$", "" + w);
@@ -133,7 +138,7 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetStats = replaceFirst(programStringGetStats, "$BH$", "" + bH);
         programGetStats = context.createProgram(programStringGetStats).build();
 
-        // ---- Create getMeanPearson program ----
+        // Create getMeanPearson program
         String programStringGetMeanPearson = getResourceAsString(RedundancyMap_.class, "kernelGetMeanPearson.cl");
         programStringGetMeanPearson = replaceFirst(programStringGetMeanPearson, "$REFPIXELS$", "" + refPixels);
         programStringGetMeanPearson = replaceFirst(programStringGetMeanPearson, "$WIDTH$", "" + w);
@@ -144,6 +149,13 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetMeanPearson = replaceFirst(programStringGetMeanPearson, "$MEAN_PEARSON_MAP$", "" + meanPearsonMap);
         programGetMeanPearson = context.createProgram(programStringGetMeanPearson).build();
 
+        // Create getWeightMap program
+        String programStringGetWeightMap = getResourceAsString(RedundancyMap_.class, "kernelGetWeightMap.cl");
+        programStringGetWeightMap = replaceFirst(programStringGetWeightMap, "$WIDTH$", "" + w);
+        programStringGetWeightMap = replaceFirst(programStringGetWeightMap, "$HEIGHT$", "" + h);
+        //programStringGetWeightMap = replaceFirst(programStringGetWeightMap, "$WEIGHT_MAP$", "" + weightMap);
+        programGetWeightMap = context.createProgram(programStringGetWeightMap).build();
+
         // ---- Fill buffers ----
         fillBufferWithFloatArray(clRefPixels, refPixels);
         fillBufferWithFloatArray(clLocalSums, localSums);
@@ -152,10 +164,12 @@ public class RedundancyMap_ implements PlugIn {
         fillBufferWithFloatArray(clLocalVariances, localVariances);
         fillBufferWithFloatArray(clLocalDeviations, localDeviations);
         fillBufferWithFloatArray(clMeanPearsonMap, meanPearsonMap);
+        fillBufferWithFloatArray(clWeightMap, weightMap);
 
         // ---- Create kernels ----
         kernelGetStats = programGetStats.createCLKernel("kernelGetStats");
         kernelGetMeanPearson = programGetMeanPearson.createCLKernel("kernelGetMeanPearson");
+        kernelGetWeightMap = programGetWeightMap.createCLKernel("kernelGetWeightMap");
 
         // ---- Set kernel arguments ----
         int argn = 0;
@@ -172,11 +186,15 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetMeanPearson.setArg(argn++, clLocalDeviations);
         kernelGetMeanPearson.setArg(argn++, clMeanPearsonMap);
 
-        // ---- Calculate local statistics ----
-        IJ.log("Calculating local statistics...");
-        IJ.log("--------");
+        argn = 0;
+        kernelGetWeightMap.setArg(argn++, clLocalMeans);
+        kernelGetWeightMap.setArg(argn++, clWeightMap);
+
+        // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
 
+        // ---- Calculate local statistics ----
+        IJ.log("Calculating local statistics...");
         queue.putWriteBuffer(clRefPixels, false);
         queue.putWriteBuffer(clLocalSums, false);
         queue.putWriteBuffer(clLocalSqSums, false);
@@ -184,9 +202,7 @@ public class RedundancyMap_ implements PlugIn {
         queue.putWriteBuffer(clLocalVariances, false);
         queue.putWriteBuffer(clLocalDeviations, false);
         queue.put1DRangeKernel(kernelGetStats, 0, w*h, 0);
-        queue.finish();
 
-        //---- Read local statistics from the GPU ----
         IJ.log("Downloading local statistics from the GPU...");
         queue.putReadBuffer(clLocalSums, true);
         for (int a = 0; a<localSums.length; a++) {
@@ -212,9 +228,28 @@ public class RedundancyMap_ implements PlugIn {
         for (int e=0; e<localDeviations.length; e++) {
             localDeviations[e] = clLocalDeviations.getBuffer().get(e);
         }
+        queue.finish();
+        IJ.log("Done!");
+        IJ.log("--------");
 
+        // ---- Calculate weight map ----
+        IJ.log("Calculating weight map...");
+        queue.putWriteBuffer(clWeightMap, false);
+        queue.put1DRangeKernel(kernelGetWeightMap, 0, w*h, 0);
+
+        IJ.log("Downloading weight map from the GPU...");
+        queue.putReadBuffer(clWeightMap, true);
+        for (int f=0; f<weightMap.length; f++) {
+            weightMap[f] = clWeightMap.getBuffer().get(f);
+        }
+        queue.finish();
+        IJ.log("Done!");
+        IJ.log("--------");
+
+        /*
         // ---- Calculate the weighted mean Pearson map ----
         IJ.log("Calculating Pearson's map...");
+        queue.putWriteBuffer(clMeanPearsonMap, false);
         int nBBlocks = w/128 + ((w%128==0) ? 0 : 1);
         int nYBlocks = h/128 + ((h%128==0) ? 0 : 1);
         for (int nYB = 0; nYB < nYBlocks; nYB++) {
@@ -225,17 +260,14 @@ public class RedundancyMap_ implements PlugIn {
                 queue.put2DRangeKernel(kernelGetMeanPearson, nXB * 128, nYB * 128, xWorkSize, yWorkSize, 0, 0);
             }
         }
-        //queue.put1DRangeKernel(kernelGetMeanPearson, 0, w*h, 0);
-        //queue.finish();
 
-        // ---- Read the Pearson map from the GPU ----
         IJ.log("Preparing Pearson's map for display...");
         queue.putReadBuffer(clMeanPearsonMap, true);
 
-        for (int f = 0; f<meanPearsonMap.length; f++) {
-            meanPearsonMap[f] = clMeanPearsonMap.getBuffer().get(f);
+        for (int g = 0; g<meanPearsonMap.length; g++) {
+            meanPearsonMap[g] = clMeanPearsonMap.getBuffer().get(g);
         }
-
+*/
         // Cleanup all resources associated with this context
         context.release();
 
