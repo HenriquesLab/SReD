@@ -3,7 +3,6 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.WindowManager;
-import ij.gui.NonBlockingGenericDialog;
 import ij.plugin.PlugIn;
 
 import java.io.ByteArrayOutputStream;
@@ -72,7 +71,7 @@ public class GPUAnalysisExample_ implements PlugIn {
         clBufferPixelsIn = context.createIntBuffer(width * height, READ_ONLY);
         clBufferPixelsOut = context.createFloatBuffer(width * height, WRITE_ONLY); // potentially READ_WRITE
 
-        String programString = getResourceAsString(GPUAnalysisExample_.class, "test.cl");
+        String programString = getResourceAsString(GPUAnalysisExample_.class, "kernelGetMeanPearson.cl");
 
     }
 

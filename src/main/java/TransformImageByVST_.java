@@ -1,5 +1,6 @@
 /**
  * Created by Afonso Mendes and Ricardo Henriques on April 2021.
+ * TODO: Solve issue with VST final image being weird when parameters are estimated from ROI
  */
 
 import ij.IJ;
@@ -89,7 +90,7 @@ public class TransformImageByVST_ implements PlugIn {
         minimizer.run();
 
         // Create final "variance stable" image based on optimized parameters
-        float[] pixelsGAT = new float[pixels.length];
+        float[] pixelsGAT;
         pixelsGAT = getGAT(pixels, minimizer.gain, minimizer.sigma, minimizer.offset);
         FloatProcessor fp1 = new FloatProcessor(width, height, pixelsGAT);
         ImagePlus imp1 = new ImagePlus("Variance-stabilized image", fp1);
@@ -123,9 +124,12 @@ public class TransformImageByVST_ implements PlugIn {
 
         for (int n=0; n<pixels.length; n++) {
             double v = pixels[n];
-            if (v <= -refConstant / gain)
-                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all
-            else v = (2 / gain) * sqrt(gain * v + refConstant);
+            if (v <= -refConstant / gain) {
+                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40 out of 10!
+            }else {
+                v = (2 / gain) * sqrt(gain * v + refConstant);
+            }
+
             pixels[n] = (float) v;
         }
         return pixels;

@@ -7,7 +7,7 @@ import static java.lang.Math.sqrt;
 public class GATMinimizer implements UserFunction {
 
     public double sigma;
-    private final int width, height, size;
+    private final int width, height;
     public double gain;
     public double offset;
     //public boolean isCalculated = false;
@@ -18,7 +18,6 @@ public class GATMinimizer implements UserFunction {
         this.pixels = pixels;
         this.width = width;
         this.height = height;
-        this.size = width*height;
         this.gain = gain;
         this.sigma = sigma;
         this.offset = offset;
@@ -133,9 +132,11 @@ public class GATMinimizer implements UserFunction {
         // Apply GAT to pixel value (see http://mirlab.org/conference_papers/International_Conference/ICASSP%202012/pdfs/0001081.pdf for GAT description)
         for (int n=0; n<pixels.length; n++) {
             double v = pixels[n];
-            if (v <= -refConstant / gain)
-                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all
-            else v = (2 / gain) * sqrt(gain * v + refConstant);
+            if (v <= -refConstant / gain) {
+                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40 out of 10!
+            }else{
+                v = (2 / gain) * sqrt(gain * v + refConstant);
+            }
             pixels[n] = (float) v;
         }
     }
