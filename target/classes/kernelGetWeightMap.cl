@@ -1,5 +1,7 @@
 #define w $WIDTH$
 #define h $HEIGHT$
+#define sigma $SIGMA$
+#define filterParamSq $FILTER_PARAM_SQ$
 
 kernel void kernelGetWeightMap(
     global float* localMeans,
@@ -13,19 +15,17 @@ kernel void kernelGetWeightMap(
 
     int gx = get_global_id(0);
     int gy = get_global_id(1);
-    float weight = 0;
-
-    for(gy=1; gy<h-1; gy++){
-        for(gx=1; gx<w-1; gx++){
+    //float filterParamSq;
+    for( gy=1; gy<=1; gy++){
+        for( gx=1; gx<=1; gx++){
             for(int y=1; y<h-1; y++){
                 for(int x=1; x<w-1; x++){
-                    weight = localMeans[y*w+x] - localMeans[gy*w+gx];
-                    weight = fabs(weight);
-                    weight = weight*weight;
-                    weight = (-1) * weight;
-                    weight = exp(weight);
-                    //weight = weight/filteringParamSq;
-                    weightMap[gy*w+gx] = weight;
+                    weightMap[y*w+x] = localMeans[y*w+x] - localMeans[gy*w+gx];
+                    weightMap[y*w+x] = fabs(weightMap[y*w+x]);
+                    weightMap[y*w+x] = weightMap[y*w+x]*weightMap[y*w+x];
+                    weightMap[y*w+x] = weightMap[y*w+x]/filterParamSq;
+                    weightMap[y*w+x] = (-1) * weightMap[y*w+x];
+                    weightMap[y*w+x] = exp(weightMap[y*w+x]);
                 }
             }
         }

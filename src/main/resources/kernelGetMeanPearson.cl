@@ -10,32 +10,27 @@ kernel void kernelGetMeanPearson(
 	global float* refPixels,
 	global float* localMeans,
 	global float* localDeviations,
+	global float* weightMap,
 	global float* meanPearsonMap
 ){
-    int gx = get_global_id(0);
-    int gy = get_global_id(1);
+    int gx = 1;
+    int gy = 1;
     int bRW = bW/2; // half of the block width
     int bRH = bH/2; // half of the block height
 
     // Create arrays to store each Pearson's correlation coefficient and its corresponding weight
 	float currentPearsonList[w*h];
-	float currentWeightList[w*h];
 
     // Get reference patch pixels
-    for (gy=1; gy<h-1; gy++) {
-        for (gx=1; gx<w-1; gx++) {
             float refPatch[bW*bH];
             int refCounter = 0;
             for (int j=gy-bRH; j<gy+bRH; j++) {
                 for(int i=gx-bRW; i<gx+bRW; i++) {
                     refPatch[refCounter] = refPixels[j*w+i];
                     refCounter++;
-                }
-            }
 
             // Mean-subtract reference patch
             float refPatchMeanSub[bW*bH];
-
             for (int a=0; a<bW*bH; a++) {
                 refPatchMeanSub[a] = refPatch[a] - localMeans[gy*w+gx];
             }
@@ -46,7 +41,6 @@ kernel void kernelGetMeanPearson(
 
                 // Get patch pixels
                 float compPatch[bW*bH];
-
                 int compCounter = 0;
                 for (int j = y-bRH; j<y+bRH; j++){
                     for (int i = x-bRW; i<x+bRW; x++) {
@@ -62,57 +56,34 @@ kernel void kernelGetMeanPearson(
 
                 // Mean-subtract comparison patch (needed for the next step)
                 float compPatchMeanSub[bW*bH];
-
                 for (int b = 0; b < bW*bH; b++) {
                     compPatchMeanSub[b] = compPatch[b] - localMeans[y*w+x];
                 }
 
-                // Pre-compare, and proceed to calculate Pearson's if pre-comparison crosses the redundancy threshold
+                // Calculate Pearson's correlation coefficient and truncate
                 float pearson;
-                float weight;
-                float filteringParamSquared;
+                float numerator;
+                for (int c=0; c<bW*bH; c++) {
+                    numerator += refPatchMeanSub[c] * compPatchMeanSub[c];
+                }
 
-                if (preComparison <= threshold) {
+                pearson = numerator / localDeviations[gy*w+gx] * localDeviations[y*w+x];
+                pearson = fmax((float) 0, pearson);
 
-                    // Calculate Pearson's correlation coefficient and truncate
-                    float num = 0;
-
-                    for (int c=0; c<bW*bH; c++) {
-                        num += refPatchMeanSub[c] * compPatchMeanSub[c];
-                    }
-
-                    pearson = num / localDeviations[gy*w+gx] * localDeviations[y*w+x];
-                    pearson = fmax((float) 0, pearson);
-
-                    // Calculate weight
-                    // Non-local means Gaussian weight function;
-                    // https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
-                    // TODO:Check division by zero
-                    // Java expression: exp((-1)*pow(abs(patchStats1[0]-patchStats0[0]),2)/pow(0.4F*sigma,2))
-                    // Can also try exponential decay: 1-abs(patchStats0[0]-patchStats1[0]/abs(patchStats0[0]+abs(patchStats1[0])))
-                    filteringParamSquared = (float) pow((float) 0.4 * (float) sigma, (float) 2.0);
-                    weight = localMeans[y*w+x] - localMeans[gy*w+gx];
-                    weight = fabs(weight);
-                    weight = pow(weight, 2);
-                    weight = (-1) * weight;
-                    weight = exp(weight);
-
-                    }else{
-                        // Store an arbitrary Pearson's and weight (defaulted to zero, representing the lowest Pearson's possible)
-                        pearson = 0;
-                        weight = 0;
-                    }
-
-                    // Store values
-                    currentPearsonList[y*w+x] = pearson;
-                    currentWeightList[y*w+x] = weight;
-
+                // Store values
+                currentPearsonList[y*w+x] = pearson;
                 }
             }
 
             // Get the (weighted) mean Pearson's correlation coefficient for this reference pixel
             int finalSize = sizeof(meanPearsonMap) / sizeof(meanPearsonMap[0]);
-            meanPearsonMap[gy*w+gx] = getArrayWeightedMean(currentPearsonList, currentWeightList, finalSize);
+            float weights[w*h];
+            for (int q=0; q<h; q++){
+                for (int p=0; p<w; p++) {
+                    weights[q*w+p] = weightMap[q*w+p];
+                }
+            }
+            meanPearsonMap[gy*w+gx] = getArrayWeightedMean(currentPearsonList, weights, finalSize);
         }
     }
 }
