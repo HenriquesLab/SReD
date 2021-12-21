@@ -11,11 +11,7 @@ kernel void kernelGetWeightMap(
     global float* refPixels,
     global float* localMeans,
     global float* weightMap,
-    global float* pearsonMap,
-    local float* tempImage,
-    local float* tempMeansMap,
-    local float* tempWeightMap,
-    local float* tempPearsonMap
+    global float* pearsonMap
 ){
     // Calculate weight (based on the Gaussian weight function used in non-local means
     // (see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions)
@@ -28,15 +24,12 @@ kernel void kernelGetWeightMap(
     int bRW = bW/2;
     int bRH = bH/2;
 
-    // Make local copy of the reference image and the local means
-    for(int a=0; a<w*h; a++) {
-            tempImage[a] = refPixels[a];
-            tempMeansMap[a] = localMeans[a];
-    }
-
     // For each reference pixel
     for(y0=1; y0<=1; y0++){
         for(x0=1; x0<=1; x0++){
+
+            // Create this round's correlation map
+            float currentPearsonMap[w*h];
 
             // Get reference patch
             float refPatch[patchSize];
@@ -79,18 +72,19 @@ kernel void kernelGetWeightMap(
                     weightMap[y1*w+x1] = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
 
                     // Calculate Pearson correlation coefficient
-                    pearsonMap[y1*w+x1] = fmax((float) 0, meanSub_xy/(std_x*std_y));
+                    currentPearsonMap[y1*w+x1] = fmax((float) 0, meanSub_xy/(std_x*std_y));
                 }
-
             }
+
+            // Calculate the weighted means of Pearson correlations
+            float weighted_mean_pearson = 0;
+            for(int i=0; i<w*h; i++){
+                weighted_mean_pearson += weightMap[i] * currentPearsonMap[i];
+            }
+            pearsonMap[y0*w+x0] = weighted_mean_pearson / w*h;
         }
-
-
-
-
     }
 }
-
 
 float getWeight(float ref, float comp){
     float weight = 0;

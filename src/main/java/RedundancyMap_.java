@@ -155,10 +155,6 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetWeightMap.setArg(argn++, clLocalMeans);
         kernelGetWeightMap.setArg(argn++, clWeightMap);
         kernelGetWeightMap.setArg(argn++, clPearsonMap);
-        kernelGetWeightMap.setNullArg(argn++, 4);
-        kernelGetWeightMap.setNullArg(argn++, 4);
-        kernelGetWeightMap.setNullArg(argn++, 4);
-        kernelGetWeightMap.setNullArg(argn++, 4);
 
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
