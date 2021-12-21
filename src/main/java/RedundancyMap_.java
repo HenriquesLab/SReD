@@ -199,16 +199,7 @@ public class RedundancyMap_ implements PlugIn {
         float[] pearsonMap = new float[w * h];
         fillBufferWithFloatArray(clPearsonMap, pearsonMap);
 
-
-        //fillBufferWithFloatArray(clLocalVariances, localVariances);
-        //fillBufferWithFloatArray(clLocalDeviations, localDeviations);
-        //fillBufferWithFloatArray(clMeanPearsonMap, meanPearsonMap);
-
-
-
         // ---- Create kernels ----
-        //kernelGetStats = programGetStats.createCLKernel("kernelGetStats");
-        //kernelGetMeanPearson = programGetMeanPearson.createCLKernel("kernelGetMeanPearson");
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
         kernelGetLocalDeviations = programGetLocalDeviations.createCLKernel("kernelGetLocalDeviations");
         kernelGetWeightMap = programGetWeightMap.createCLKernel("kernelGetWeightMap");
@@ -225,42 +216,19 @@ public class RedundancyMap_ implements PlugIn {
         argn = 0;
         kernelGetWeightMap.setArg(argn++, clRefPixels);
         kernelGetWeightMap.setArg(argn++, clLocalMeans);
-        //kernelGetWeightMap.setArg(argn++, clLocalDeviations);
         kernelGetWeightMap.setArg(argn++, clWeightMap);
-        //kernelGetWeightMap.setArg(argn++, clPearsonMap);
+        kernelGetWeightMap.setArg(argn++, clPearsonMap);
         kernelGetWeightMap.setNullArg(argn++, 4);
         kernelGetWeightMap.setNullArg(argn++, 4);
         kernelGetWeightMap.setNullArg(argn++, 4);
-        //kernelGetWeightMap.setNullArg(argn++, 4);
-        //kernelGetWeightMap.setNullArg(argn++, 4);
+        kernelGetWeightMap.setNullArg(argn++, 4);
 
-    /*
-        int argn = 0;
-        kernelGetStats.setArg(argn++, clRefPixels);
-        kernelGetStats.setArg(argn++, clLocalSums);
-        kernelGetStats.setArg(argn++, clLocalSqSums);
-        kernelGetStats.setArg(argn++, clLocalMeans);
-        kernelGetStats.setArg(argn++, clLocalVariances);
-        kernelGetStats.setArg(argn++, clLocalDeviations);
-
-        argn = 0;
-        kernelGetMeanPearson.setArg(argn++, clRefPixels);
-        kernelGetMeanPearson.setArg(argn++, clLocalMeans);
-        kernelGetMeanPearson.setArg(argn++, clLocalDeviations);
-        kernelGetMeanPearson.setArg(argn++, clWeightMap);
-        kernelGetMeanPearson.setArg(argn++, clMeanPearsonMap);
-
-
-
-*/
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
 
         int elementCount = w * h;
         int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         int globalWorkSize = roundUp(localWorkSize, elementCount);
-
-        long start = System.currentTimeMillis();
 
         // ---- Calculate local means map ----
         IJ.log("Calculating local means...");
@@ -299,15 +267,18 @@ public class RedundancyMap_ implements PlugIn {
         IJ.log("--------");
 
         // Calculate weight map
+        long start = System.currentTimeMillis();
+
         IJ.log("Calculating weight map...");
         queue.putWriteBuffer(clWeightMap, false);
         queue.put1DRangeKernel(kernelGetWeightMap, 0, globalWorkSize, localWorkSize);
         queue.finish();
-        queue.putReadBuffer(clWeightMap, true);
-        for (int c = 0; c < weightMap.length; c++) {
-            pearsonMap[c] = clWeightMap.getBuffer().get(c);
+        queue.putReadBuffer(clPearsonMap, true);
+        for (int c = 0; c < pearsonMap.length; c++) {
+            pearsonMap[c] = clPearsonMap.getBuffer().get(c);
         }
         queue.finish();
+        
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Time taken to calculate: " + elapsedTime + " ms");
         IJ.log("--------");
