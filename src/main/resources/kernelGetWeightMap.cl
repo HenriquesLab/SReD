@@ -10,13 +10,11 @@ float getWeight(float ref, float comp);
 kernel void kernelGetWeightMap(
     global float* refPixels,
     global float* localMeans,
-    //global float* localDeviations,
     global float* weightMap,
     global float* pearsonMap,
     local float* tempImage,
     local float* tempMeansMap,
     local float* tempWeightMap,
-    //local float* tempDeviationsMap,
     local float* tempPearsonMap
 ){
     // Calculate weight (based on the Gaussian weight function used in non-local means
@@ -31,12 +29,9 @@ kernel void kernelGetWeightMap(
     int bRH = bH/2;
 
     // Make local copy of the reference image and the local means
-    for(int b=0; b<h; b++) {
-        for(int a=0; a<w; a++) {
-            tempImage[b*w+a] = refPixels[b*w+a];
-            tempMeansMap[b*w+a] = localMeans[b*w+a];
-            //tempDeviationsMap[b*w+a] = localDeviations[b*w+a];
-        }
+    for(int a=0; a<w*h; a++) {
+            tempImage[a] = refPixels[a];
+            tempMeansMap[a] = localMeans[a];
     }
 
     // For each reference pixel
@@ -44,50 +39,58 @@ kernel void kernelGetWeightMap(
         for(x0=1; x0<=1; x0++){
 
             // Get reference patch
-            float refPatch[bW*bH];
-            float sqSum_x = 0;
+            float refPatch[patchSize];
+            float meanSub_x[patchSize];
+            float std_x = 0;
             int refCounter = 0;
             for(int j0=y0-bRH; j0<=y0+bRH; j0++){
                 for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-                    refPatch[refCounter] = tempImage[j0*w+i0];
-                    sqSum_x += (refPatch[refCounter]-tempMeansMap[y0*w+x0])*(refPatch[refCounter]-tempMeansMap[y0*w+x0]);
+                    refPatch[refCounter] = refPixels[j0*w+i0];
+                    meanSub_x[refCounter] = refPatch[refCounter] - localMeans[y0*w+x0];
+                    std_x += meanSub_x[refCounter]*meanSub_x[refCounter];
                     refCounter++;
                 }
             }
+            std_x = sqrt(std_x);
 
             // For each comparison pixel
             for(int y1=1; y1<h-1; y1++){
                 for(int x1=1; x1<w-1; x1++){
 
                     // Get comparison patch
-                    float compPatch[bW*bH];
-                    float sqSum_y = 0;
-                    float sum_xy = 0;
+                    float compPatch[patchSize];
+                    float meanSub_y[patchSize];
+                    float std_y = 0;
+                    float meanSub_xy = 0;
                     int compCounter = 0;
                     for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                         for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                            compPatch[compCounter] = tempImage[j1*w+i1];
-                            sqSum_y += (compPatch[compCounter]-tempMeansMap[y1*w+x1])*(compPatch[compCounter]-tempMeansMap[y1*w+x1]);
-                            sum_xy += (refPatch[refCounter]-tempMeansMap[y0*w+x0])*(compPatch[compCounter]-tempMeansMap[y1*w+x1]);
+                            compPatch[compCounter] = refPixels[j1*w+i1];
+                            meanSub_y[compCounter] = compPatch[compCounter] - localMeans[y1*w+x1];
+                            std_y += meanSub_y[compCounter]*meanSub_y[compCounter];
+                            meanSub_xy += meanSub_x[compCounter] * meanSub_y[compCounter];
                             compCounter++;
+
                         }
                     }
+                    std_y = sqrt(std_y);
 
-                    // Calculate weight and store in a temp weightmap
+                    // Calculate weight and store in a temp weight map
                     weightMap[y1*w+x1] = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
 
                     // Calculate Pearson correlation coefficient
-                    pearsonMap[y1*w+x1] = sum_xy/(sqrt(sqSum_x)*sqrt(sqSum_y));
-
+                    pearsonMap[y1*w+x1] = fmax((float) 0, meanSub_xy/(std_x*std_y));
                 }
+
             }
-
-
-
-
         }
+
+
+
+
     }
 }
+
 
 float getWeight(float ref, float comp){
     float weight = 0;
