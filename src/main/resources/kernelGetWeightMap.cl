@@ -25,8 +25,8 @@ kernel void kernelGetWeightMap(
     int bRH = bH/2;
 
     // For each reference pixel
-    for(y0=1; y0<=1; y0++){
-        for(x0=1; x0<=1; x0++){
+    //for(y0=1; y0<=10; y0++){
+        //for(x0=1; x0<w-1; x0++){
 
             // Create this round's correlation map
             float currentPearsonMap[w*h];
@@ -60,7 +60,7 @@ kernel void kernelGetWeightMap(
                         for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                             compPatch[compCounter] = refPixels[j1*w+i1];
                             meanSub_y[compCounter] = compPatch[compCounter] - localMeans[y1*w+x1];
-                            std_y += meanSub_y[compCounter]*meanSub_y[compCounter];
+                            std_y += meanSub_y[compCounter] * meanSub_y[compCounter];
                             meanSub_xy += meanSub_x[compCounter] * meanSub_y[compCounter];
                             compCounter++;
 
@@ -81,9 +81,10 @@ kernel void kernelGetWeightMap(
             for(int i=0; i<w*h; i++){
                 weighted_mean_pearson += weightMap[i] * currentPearsonMap[i];
             }
-            pearsonMap[y0*w+x0] = weighted_mean_pearson / w*h;
-        }
-    }
+            pearsonMap[y0*w+x0] = weighted_mean_pearson / (w*h);
+        //}
+    //}
+
 }
 
 float getWeight(float ref, float comp){

@@ -159,7 +159,7 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
 
-        int elementCount = w * h;
+        int elementCount = w*h;
         int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
@@ -167,7 +167,7 @@ public class RedundancyMap_ implements PlugIn {
         IJ.log("Calculating local means...");
         queue.putWriteBuffer(clRefPixels, false);
         queue.putWriteBuffer(clLocalMeans, false);
-        queue.put1DRangeKernel(kernelGetLocalMeans, 0, globalWorkSize, localWorkSize);
+        queue.put1DRangeKernel(kernelGetLocalMeans, 0, w*h, 0);
         queue.finish();
         queue.putReadBuffer(clLocalMeans, true);
         for (int a = 0; a < localMeans.length; a++) {
@@ -186,13 +186,28 @@ public class RedundancyMap_ implements PlugIn {
 
         IJ.log("Calculating weight map...");
         queue.putWriteBuffer(clWeightMap, false);
+/*
+        int nXBlocks = w/128 + ((w%128==0)?0:1);
+        int nYBlocks = h/128 + ((h%128==0)?0:1);
+        for(int nYB=0; nYB<nYBlocks; nYB++) {
+            int yWorkSize = min(128, h-nYB*128);
+            for(int nXB=0; nXB<nXBlocks; nXB++) {
+                int xWorkSize = min(128, w-nXB*128);
+                showStatus("Calculating redundancy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
+                queue.put2DRangeKernel(kernelGetWeightMap, nXB*128, nYB*128, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
+            }
+        }
+        */
         queue.put1DRangeKernel(kernelGetWeightMap, 0, globalWorkSize, localWorkSize);
         queue.finish();
+
         queue.putReadBuffer(clPearsonMap, true);
         for (int c = 0; c < pearsonMap.length; c++) {
             pearsonMap[c] = clPearsonMap.getBuffer().get(c);
+            queue.finish();
         }
-        queue.finish();
+
 
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Time taken to calculate: " + elapsedTime + " ms");
