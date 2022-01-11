@@ -9,7 +9,7 @@
 #define patchSize $PATCH_SIZE$
 float getWeight(float ref, float comp);
 
-kernel void kernelGetWeightMap(
+kernel void kernelGetPearsonMap(
     global float* refPixels,
     global float* localMeans,
     global float* pearsonMap
