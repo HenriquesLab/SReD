@@ -1,7 +1,6 @@
 /**
  * TODO: Make exception for when the plugin is started without an active image
  * TODO: Implement progress tracking
- * TODO: Solve redundancy map having an extra column
  * TODO: Think about
  **/
 
@@ -37,6 +36,8 @@ public class RedundancyMap_ implements PlugIn {
 
     @Override
     public void run(String s) {
+        // Start timer
+        long start = System.currentTimeMillis();
 
         // ---- Get reference image and some parameters ----
         ImagePlus imp0 = WindowManager.getCurrentImage();
@@ -153,7 +154,6 @@ public class RedundancyMap_ implements PlugIn {
         argn = 0;
         kernelGetWeightMap.setArg(argn++, clRefPixels);
         kernelGetWeightMap.setArg(argn++, clLocalMeans);
-        kernelGetWeightMap.setArg(argn++, clWeightMap);
         kernelGetWeightMap.setArg(argn++, clPearsonMap);
 
         // ---- Create command queue ----
@@ -164,7 +164,7 @@ public class RedundancyMap_ implements PlugIn {
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
         // ---- Calculate local means map ----
-        IJ.log("Calculating local means...");
+        IJ.log("Calculating redundancy...");
         queue.putWriteBuffer(clRefPixels, false);
         queue.putWriteBuffer(clLocalMeans, false);
         queue.put1DRangeKernel(kernelGetLocalMeans, 0, w*h, 0);
@@ -178,13 +178,11 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetLocalMeans.release();
         programGetLocalMeans.release();
 
-        IJ.log("Done!");
-        IJ.log("--------");
+        //IJ.log("Done!");
+        //IJ.log("--------");
 
-        // Calculate weight map
-        long start = System.currentTimeMillis();
-
-        IJ.log("Calculating weight map...");
+        // Calculate weighted mean Pearson's map
+        //IJ.log("Calculating correlation map...");
         queue.putWriteBuffer(clWeightMap, false);
 /*
         int nXBlocks = w/128 + ((w%128==0)?0:1);
@@ -199,34 +197,19 @@ public class RedundancyMap_ implements PlugIn {
             }
         }
         */
-        queue.put1DRangeKernel(kernelGetWeightMap, 0, globalWorkSize, localWorkSize);
+        queue.put2DRangeKernel(kernelGetWeightMap, 0, 0, w, h, 0,0);
         queue.finish();
 
+        int sizeWithoutBorders = (w-2)*(h-2);
+
+        // Read the map back from the GPU (and finish the mean calculation simultaneously)
         queue.putReadBuffer(clPearsonMap, true);
         for (int c = 0; c < pearsonMap.length; c++) {
-            pearsonMap[c] = clPearsonMap.getBuffer().get(c);
+            pearsonMap[c] = clPearsonMap.getBuffer().get(c)/sizeWithoutBorders;
             queue.finish();
         }
-
-
-        long elapsedTime = System.currentTimeMillis() - start;
-        IJ.log("Time taken to calculate: " + elapsedTime + " ms");
+        IJ.log("Done!");
         IJ.log("--------");
-//        int nXBlocks = w/128 + ((w%128==0)?0:1);
-//        int nYBlocks = h/128 + ((h%128==0)?0:1);
-//        for (int nYB=0; nYB<nYBlocks; nYB++) {
-//            int yWorkSize = min(128, h-nYB*128);
-//            for (int nXB=0; nXB<nXBlocks; nXB++) {
-//                int xWorkSize = min(128, w-nXB*128);
-//                queue.put2DRangeKernel(kernelGetWeightMap, nXB*128, nYB*128, xWorkSize, yWorkSize, 0, 0);
-//                queue.finish();
-//            }
-//        }
-//        queue.putReadBuffer(clWeightMap, true);
-//        queue.finish();
-//        for (int c = 0; c < weightMap.length; c++) {
-//            weightMap[c] = clWeightMap.getBuffer().get(c);
-//        }
 
         // Cleanup all resources associated with this context
         IJ.log("Cleaning up resources...");
@@ -241,9 +224,10 @@ public class RedundancyMap_ implements PlugIn {
         imp1.show();
         IJ.log("Done!");
 
-
+        long elapsedTime = System.currentTimeMillis() - start;
+        IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
+        IJ.log("--------");
     }
-
 
     public static void fillBufferWithFloat(CLBuffer<FloatBuffer> clBuffer, float pixel) {
         FloatBuffer buffer = clBuffer.getBuffer();
