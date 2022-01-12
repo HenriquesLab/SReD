@@ -25,14 +25,14 @@ public class RedundancyMap_ implements PlugIn {
 
     // OpenCL formats
     static private CLContext context;
-    static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetRmseMap;
-    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetRmseMap;
+    static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetRmseMap, programGetSsimMap;
+    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetRmseMap, kernelGetSsimMap;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clRmseMap, clMaeMap;
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clRmseMap, clMaeMap, clSsimMap;
 
     @Override
     public void run(String s) {
@@ -50,10 +50,13 @@ public class RedundancyMap_ implements PlugIn {
         float filterParamSq = (float) pow(0.4 * sigma, 2);
 
         // ---- Patch parameters ----
-        int bW = 3; // Width
-        int bH = 3; // Height
-        int patchSize = bW * bH;
-        int sizeWithoutBorders = (w-2)*(h-2); // TODO: MAke this dynamic
+        int bW = 3; // Patch width
+        int bH = 3; // Patch height
+        int patchSize = bW * bH; // Patch area
+        int offsetX = bW/2; // Offset of the search radius relative to the original image, to avoid borders (x-axis)
+        int offsetY = bH/2; // Offset of the search radius relative to the original image, to avoid borders (y-axis)
+        int sizeWithoutBorders = (w-offsetX*2)*(h-offsetY*2); // The area of the search field (= image without borders)
+
         // ---- Check devices ----
         CLPlatform[] allPlatforms = CLPlatform.listCLPlatforms();
 
@@ -113,6 +116,7 @@ public class RedundancyMap_ implements PlugIn {
         clPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
         clRmseMap = context.createFloatBuffer(w * h, READ_WRITE);
         clMaeMap = context.createFloatBuffer(w * h, READ_WRITE);
+        clSsimMap = context.createFloatBuffer(w * h, READ_WRITE);
 
         // ---- Create programs ----
         // Local means map
@@ -121,6 +125,9 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$HEIGHT$", "" + h);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BW$", "" + bW);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BH$", "" + bH);
+        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$OFFSET_X$", "" + offsetX);
+        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$OFFSET_Y$", "" + offsetY);
         programGetLocalMeans = context.createProgram(programStringGetLocalMeans).build();
 
         // Weighted mean Pearson correlation coefficient map
@@ -131,6 +138,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BH$", "" + bH);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$OFFSET_X$", "" + offsetX);
+        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$OFFSET_Y$", "" + offsetY);
         programGetPearsonMap = context.createProgram(programStringGetPearsonMap).build();
 
         // Weighted mean RMSE map
@@ -141,7 +150,21 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$BH$", "" + bH);
         programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$OFFSET_X$", "" + offsetX);
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$OFFSET_Y$", "" + offsetY);
         programGetRmseMap = context.createProgram(programStringGetRmseMap).build();
+
+        // Weighted mean SSIM map
+        String programStringGetSsimMap = getResourceAsString(RedundancyMap_.class, "kernelGetSsimMap.cl");
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$WIDTH$", "" + w);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$HEIGHT$", "" + h);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$BW$", "" + bW);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$BH$", "" + bH);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$OFFSET_X$", "" + offsetX);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$OFFSET_Y$", "" + offsetY);
+        programGetSsimMap = context.createProgram(programStringGetSsimMap).build();
 
         // ---- Fill buffers ----
         fillBufferWithFloatArray(clRefPixels, refPixels);
@@ -158,10 +181,14 @@ public class RedundancyMap_ implements PlugIn {
         float[] maeMap = new float[w * h];
         fillBufferWithFloatArray(clMaeMap, maeMap);
 
+        float[] ssimMap = new float[w * h];
+        fillBufferWithFloatArray(clSsimMap, ssimMap);
+
         // ---- Create kernels ----
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
         kernelGetPearsonMap = programGetPearsonMap.createCLKernel("kernelGetPearsonMap");
         kernelGetRmseMap = programGetRmseMap.createCLKernel("kernelGetRmseMap");
+        kernelGetSsimMap = programGetSsimMap.createCLKernel("kernelGetSsimMap");
 
         // ---- Set kernel arguments ----
         // Local means map
@@ -182,6 +209,12 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetRmseMap.setArg(argn++, clRmseMap);
         kernelGetRmseMap.setArg(argn++, clMaeMap);
 
+        // Weighted mean SSIM map
+        argn = 0;
+        kernelGetSsimMap.setArg(argn++, clRefPixels);
+        kernelGetSsimMap.setArg(argn++, clLocalMeans);
+        kernelGetSsimMap.setArg(argn++, clSsimMap);
+
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
 
@@ -190,11 +223,26 @@ public class RedundancyMap_ implements PlugIn {
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
         // ---- Calculate local means map ----
-        IJ.log("Calculating redundancy...");
+        IJ.log("Calculating redundancy...please wait...");
+
         queue.putWriteBuffer(clRefPixels, false);
         queue.putWriteBuffer(clLocalMeans, false);
-        queue.put1DRangeKernel(kernelGetLocalMeans, 0, w*h, 0);
+
+        int nXBlocks = w/64 + ((w%64==0)?0:1);
+        int nYBlocks = h/64 + ((h%64==0)?0:1);
+        for(int nYB=0; nYB<nYBlocks; nYB++) {
+            int yWorkSize = min(64, h-nYB*64);
+            for(int nXB=0; nXB<nXBlocks; nXB++) {
+                int xWorkSize = min(64, w-nXB*64);
+                showStatus("Calculating redundancy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
+                queue.put2DRangeKernel(kernelGetLocalMeans, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+            }
+        }
+
+        //queue.put1DRangeKernel(kernelGetLocalMeans, 0, w*h, 0);
         queue.finish();
+
+        // ---- Read the local means map back from the GPU ----
         queue.putReadBuffer(clLocalMeans, true);
         for (int a = 0; a < localMeans.length; a++) {
             localMeans[a] = clLocalMeans.getBuffer().get(a);
@@ -209,20 +257,17 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Calculate weighted mean Pearson's map ----
         queue.putWriteBuffer(clPearsonMap, false);
-/*
-        int nXBlocks = w/128 + ((w%128==0)?0:1);
-        int nYBlocks = h/128 + ((h%128==0)?0:1);
+
         for(int nYB=0; nYB<nYBlocks; nYB++) {
-            int yWorkSize = min(128, h-nYB*128);
+            int yWorkSize = min(64, h-nYB*64);
             for(int nXB=0; nXB<nXBlocks; nXB++) {
-                int xWorkSize = min(128, w-nXB*128);
+                int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating redundancy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetWeightMap, nXB*128, nYB*128, xWorkSize, yWorkSize, 0, 0);
-                queue.finish();
+                queue.put2DRangeKernel(kernelGetPearsonMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
             }
         }
-        */
-        queue.put2DRangeKernel(kernelGetPearsonMap, 0, 0, w, h, 0,0);
+
+        //queue.put2DRangeKernel(kernelGetPearsonMap, 0, 0, w, h, 0,0);
         queue.finish();
 
         // ---- Read the Pearson's map back from the GPU (and finish the mean calculation simultaneously) ----
@@ -232,13 +277,23 @@ public class RedundancyMap_ implements PlugIn {
             queue.finish();
         }
 
-        //kernelGetPearsonMap.release();
-        //programGetPearsonMap.release();
-        //clPearsonMap.release();
+        kernelGetPearsonMap.release();
+        programGetPearsonMap.release();
+        clPearsonMap.release();
 
         // ---- Calculate weighted mean RMSE map ----
         queue.putWriteBuffer(clRmseMap, false);
-        queue.put2DRangeKernel(kernelGetRmseMap, 0, 0, w, h, 0,0);
+
+        for(int nYB=0; nYB<nYBlocks; nYB++) {
+            int yWorkSize = min(64, h-nYB*64);
+            for(int nXB=0; nXB<nXBlocks; nXB++) {
+                int xWorkSize = min(64, w-nXB*64);
+                showStatus("Calculating redundancy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
+                queue.put2DRangeKernel(kernelGetRmseMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+            }
+        }
+
+        //queue.put2DRangeKernel(kernelGetRmseMap, 0, 0, w, h, 0,0);
         queue.finish();
 
         // ---- Read the RMSE and MAE maps back from the GPU (and finish the mean calculation simultaneously) ----
@@ -254,9 +309,36 @@ public class RedundancyMap_ implements PlugIn {
             queue.finish();
         }
 
-        //kernelGetRmseMap.release();
-        //programGetRmseMap.release();
-        //clRmseMap.release();
+        kernelGetRmseMap.release();
+        programGetRmseMap.release();
+        clRmseMap.release();
+        clMaeMap.release();
+
+        // ---- Calculate weighted mean SSIM map ----
+        queue.putWriteBuffer(clSsimMap, false);
+
+        for(int nYB=0; nYB<nYBlocks; nYB++) {
+            int yWorkSize = min(64, h-nYB*64);
+            for(int nXB=0; nXB<nXBlocks; nXB++) {
+                int xWorkSize = min(64, w-nXB*64);
+                showStatus("Calculating redundancy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
+                queue.put2DRangeKernel(kernelGetSsimMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+            }
+        }
+
+        //queue.put2DRangeKernel(kernelGetSsimMap, 0, 0, w, h, 0,0);
+        queue.finish();
+
+        // ---- Read the SSIM map back from the GPU (and finish the mean calculation simultaneously) ----
+        queue.putReadBuffer(clSsimMap, true);
+        for (int f = 0; f < ssimMap.length; f++) {
+            ssimMap[f] = clSsimMap.getBuffer().get(f) / sizeWithoutBorders;
+            queue.finish();
+        }
+
+        kernelGetSsimMap.release();
+        programGetSsimMap.release();
+        clSsimMap.release();
 
         IJ.log("Done!");
         IJ.log("--------");
@@ -284,7 +366,12 @@ public class RedundancyMap_ implements PlugIn {
         FloatProcessor fp3 = new FloatProcessor(w, h, maeMap);
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
-        IJ.log("Done!");
+
+        // SSIM map
+        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMap);
+        ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
+        imp4.show();
+        IJ.log("Finished!");
 
         // ---- Stop timer ----
         long elapsedTime = System.currentTimeMillis() - start;

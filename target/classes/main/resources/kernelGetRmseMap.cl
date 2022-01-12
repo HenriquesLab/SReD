@@ -6,6 +6,8 @@
 #define bH $BH$
 #define filterParamSq $FILTER_PARAM_SQ$
 #define patchSize $PATCH_SIZE$
+#define offset_x $OFFSET_X$
+#define offset_y $OFFSET_Y$
 float getWeight(float ref, float comp);
 float getRmse(float* ref_patch[], float* comp_patch[], int n);
 float getMae(float* ref_patch[], float* comp_patch[], int n);
@@ -41,8 +43,8 @@ kernel void kernelGetRmseMap(
 
     // For each comparison pixel...
     float weight;
-    for(int y1=1; y1<h-1; y1++){
-        for(int x1=1; x1<w-1; x1++){
+    for(int y1=offset_y; y1<h-offset_y; y1++){
+        for(int x1=offset_x; x1<w-offset_x; x1++){
 
         weight = 0;
 

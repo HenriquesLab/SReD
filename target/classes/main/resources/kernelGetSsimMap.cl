@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define w $WIDTH$
 #define h $HEIGHT$
@@ -9,14 +9,12 @@
 #define offset_x $OFFSET_X$
 #define offset_y $OFFSET_Y$
 float getWeight(float ref, float comp);
-float getRmse(float* ref_patch[], float* comp_patch[], int n);
-float getMae(float* ref_patch[], float* comp_patch[], int n);
+float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n);
 
-kernel void kernelGetRmseMap(
+kernel void kernelGetSsimMap(
     global float* refPixels,
     global float* localMeans,
-    global float* rmseMap,
-    global float* maeMap
+    global float* ssimMap
 ){
     // Calculate weight (based on the Gaussian weight function used in non-local means
     // (see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions)
@@ -32,40 +30,48 @@ kernel void kernelGetRmseMap(
     // Get reference patch
     float refPatch[patchSize];
     float meanSub_x[patchSize];
+    float var_x = 0;
     int refCounter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
             refPatch[refCounter] = refPixels[j0*w+i0];
             meanSub_x[refCounter] = refPatch[refCounter] - localMeans[y0*w+x0];
+            var_x += meanSub_x[refCounter]*meanSub_x[refCounter];
             refCounter++;
         }
     }
+    var_x /= patchSize;
 
     // For each comparison pixel...
     float weight;
     for(int y1=offset_y; y1<h-offset_y; y1++){
         for(int x1=offset_x; x1<w-offset_x; x1++){
 
-        weight = 0;
+            weight = 0;
 
             // Get comparison patch Y
             float compPatch[patchSize];
             float meanSub_y[patchSize];
+            float var_y = 0;
+            float cov_xy = 0;
             int compCounter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                     compPatch[compCounter] = refPixels[j1*w+i1];
                     meanSub_y[compCounter] = compPatch[compCounter] - localMeans[y1*w+x1];
+                    var_y += meanSub_y[compCounter]*meanSub_y[compCounter];
+                    cov_xy += meanSub_x[compCounter]*meanSub_y[compCounter];
                     compCounter++;
                 }
             }
+            var_y /= patchSize;
+            cov_xy /= patchSize;
 
             // Calculate weight
             weight = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
 
             // Calculate RMSE(X,Y) and add it to the sum at X
-            rmseMap[y0*w+x0] += getRmse(meanSub_x, meanSub_y, patchSize) * weight;
-            maeMap[y0*w+x0] += getMae(meanSub_x, meanSub_y, patchSize) * weight;
+            ssimMap[y0*w+x0] += getSsim(localMeans[y0*w+x0], localMeans[y1*w+x1], var_x, var_y, cov_xy, patchSize) * weight;
         }
     }
 }
@@ -81,27 +87,13 @@ float getWeight(float mean_x, float mean_y){
     return weight;
 }
 
-float getRmse(float* ref_patch[], float* comp_patch[], int n){
-    float foo = 0;
-    float rmse = 0;
-    for(int i=0; i<n; i++){
-        foo = ref_patch[i] - comp_patch[i];
-        foo = foo*foo;
-        rmse += foo;
-    }
-    rmse = rmse/n;
-    rmse = sqrt(rmse);
-    return rmse;
-}
+float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n){
+    float ssim = 0;
+    float c1 = (0.01*255)*(0.01*255);
+    float c2 = (0.03*255)*(0.03*255);
+    float mean_x_sq = mean_x*mean_x;
+    float mean_y_sq = mean_y*mean_y;
 
-float getMae(float* ref_patch[], float* comp_patch[], int n){
-    float foo = 0;
-    float mae = 0;
-    for(int i=0; i<n; i++){
-        foo = ref_patch[i] - comp_patch[i];
-        foo = fabs(foo);
-        mae += foo;
-    }
-    mae = mae/n;
-    return mae;
+    ssim = (2*mean_x*mean_y+c1)*(2*cov_xy+c2)/((mean_x_sq+mean_y_sq+c1)*(var_x+var_y+c2));
+    return ssim;
 }

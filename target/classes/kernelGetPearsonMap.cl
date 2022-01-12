@@ -1,17 +1,20 @@
-//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define w $WIDTH$
 #define h $HEIGHT$
 #define bW $BW$
 #define bH $BH$
-#define filterParamSq $FILTER_PARAM_SQ$
-#define patchSize $PATCH_SIZE$
+#define filter_param_sq $FILTER_PARAM_SQ$
+#define patch_size $PATCH_SIZE$
+#define offset_x $OFFSET_X$
+#define offset_y $OFFSET_Y$
+
 float getWeight(float ref, float comp);
 
 kernel void kernelGetPearsonMap(
-    global float* refPixels,
-    global float* localMeans,
-    global float* pearsonMap
+    global float* ref_pixels,
+    global float* local_means,
+    global float* pearson_map
 ){
     // Calculate weight (based on the Gaussian weight function used in non-local means
     // (see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions)
@@ -25,16 +28,16 @@ kernel void kernelGetPearsonMap(
     int bRH = bH/2;
 
     // Get reference patch
-    float refPatch[patchSize];
-    float meanSub_x[patchSize];
+    float ref_patch[patch_size];
+    float meanSub_x[patch_size];
     float std_x = 0;
-    int refCounter = 0;
+    int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            refPatch[refCounter] = refPixels[j0*w+i0];
-            meanSub_x[refCounter] = refPatch[refCounter] - localMeans[y0*w+x0];
-            std_x += meanSub_x[refCounter]*meanSub_x[refCounter];
-            refCounter++;
+            ref_patch[ref_counter] = ref_pixels[j0*w+i0];
+            meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
+            std_x += meanSub_x[ref_counter]*meanSub_x[ref_counter];
+            ref_counter++;
         }
     }
 
@@ -44,25 +47,25 @@ kernel void kernelGetPearsonMap(
     // For each comparison pixel...
     float pearson_sum;
     float weight;
-    for(int y1=1; y1<h-1; y1++){
-        for(int x1=1; x1<w-1; x1++){
+    for(int y1=offset_y; y1<h-offset_y; y1++){
+        for(int x1=offset_x; x1<w-offset_x; x1++){
 
         pearson_sum = 0;
         weight = 0;
 
             // Get comparison patch Y
-            float compPatch[patchSize];
-            float meanSub_y[patchSize];
+            float comp_patch[patch_size];
+            float meanSub_y[patch_size];
             float std_y = 0;
             float meanSub_xy = 0;
-            int compCounter = 0;
+            int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    compPatch[compCounter] = refPixels[j1*w+i1];
-                    meanSub_y[compCounter] = compPatch[compCounter] - localMeans[y1*w+x1];
-                    std_y += meanSub_y[compCounter] * meanSub_y[compCounter];
-                    meanSub_xy += meanSub_x[compCounter] * meanSub_y[compCounter];
-                    compCounter++;
+                    comp_patch[comp_counter] = ref_pixels[j1*w+i1];
+                    meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
+                    std_y += meanSub_y[comp_counter] * meanSub_y[comp_counter];
+                    meanSub_xy += meanSub_x[comp_counter] * meanSub_y[comp_counter];
+                    comp_counter++;
                 }
             }
 
@@ -70,10 +73,10 @@ kernel void kernelGetPearsonMap(
             std_y = sqrt(std_y);
 
             // Calculate weight
-            weight = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
+            weight = getWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
 
             // Calculate Pearson correlation coefficient X,Y and add it to the sum at X
-            pearsonMap[y0*w+x0] += fmax((float) 0, meanSub_xy/(std_x*std_y)) * weight;
+            pearson_map[y0*w+x0] += fmax((float) 0, meanSub_xy/(std_x*std_y)) * weight;
         }
     }
 }
@@ -83,7 +86,7 @@ float getWeight(float ref, float comp){
     weight = comp - ref;
     weight = fabs(weight);
     weight = weight*weight;
-    weight = weight/filterParamSq;
+    weight = weight/filter_param_sq;
     weight = (-1) * weight;
     weight = exp(weight);
     return weight;
