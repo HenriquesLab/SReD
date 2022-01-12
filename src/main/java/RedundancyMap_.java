@@ -32,7 +32,7 @@ public class RedundancyMap_ implements PlugIn {
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clRmseMap;
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clRmseMap, clMaeMap;
 
     @Override
     public void run(String s) {
@@ -112,6 +112,7 @@ public class RedundancyMap_ implements PlugIn {
         clLocalMeans = context.createFloatBuffer(w * h, READ_WRITE);
         clPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
         clRmseMap = context.createFloatBuffer(w * h, READ_WRITE);
+        clMaeMap = context.createFloatBuffer(w * h, READ_WRITE);
 
         // ---- Create programs ----
         // Local means map
@@ -154,6 +155,9 @@ public class RedundancyMap_ implements PlugIn {
         float[] rmseMap = new float[w * h];
         fillBufferWithFloatArray(clRmseMap, rmseMap);
 
+        float[] maeMap = new float[w * h];
+        fillBufferWithFloatArray(clMaeMap, maeMap);
+
         // ---- Create kernels ----
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
         kernelGetPearsonMap = programGetPearsonMap.createCLKernel("kernelGetPearsonMap");
@@ -176,6 +180,7 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetRmseMap.setArg(argn++, clRefPixels);
         kernelGetRmseMap.setArg(argn++, clLocalMeans);
         kernelGetRmseMap.setArg(argn++, clRmseMap);
+        kernelGetRmseMap.setArg(argn++, clMaeMap);
 
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
@@ -236,10 +241,16 @@ public class RedundancyMap_ implements PlugIn {
         queue.put2DRangeKernel(kernelGetRmseMap, 0, 0, w, h, 0,0);
         queue.finish();
 
-        // ---- Read the RMSE map back from the GPU (and finish the mean calculation simultaneously) ----
+        // ---- Read the RMSE and MAE maps back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clRmseMap, true);
         for (int d = 0; d < rmseMap.length; d++) {
             rmseMap[d] = clRmseMap.getBuffer().get(d) / sizeWithoutBorders;
+            queue.finish();
+        }
+
+        queue.putReadBuffer(clMaeMap, true);
+        for (int e = 0; e < maeMap.length; e++) {
+            maeMap[e] = clMaeMap.getBuffer().get(e) / sizeWithoutBorders;
             queue.finish();
         }
 
@@ -268,6 +279,11 @@ public class RedundancyMap_ implements PlugIn {
         FloatProcessor fp2 = new FloatProcessor(w, h, rmseMap);
         ImagePlus imp2 = new ImagePlus("RMSE Map", fp2);
         imp2.show();
+
+        // MAE map
+        FloatProcessor fp3 = new FloatProcessor(w, h, maeMap);
+        ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
+        imp3.show();
         IJ.log("Done!");
 
         // ---- Stop timer ----

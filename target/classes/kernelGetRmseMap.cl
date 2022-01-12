@@ -8,11 +8,13 @@
 #define patchSize $PATCH_SIZE$
 float getWeight(float ref, float comp);
 float getRmse(float* ref_patch[], float* comp_patch[], int n);
+float getMae(float* ref_patch[], float* comp_patch[], int n);
 
 kernel void kernelGetRmseMap(
     global float* refPixels,
     global float* localMeans,
-    global float* rmseMap
+    global float* rmseMap,
+    global float* maeMap
 ){
     // Calculate weight (based on the Gaussian weight function used in non-local means
     // (see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions)
@@ -60,7 +62,8 @@ kernel void kernelGetRmseMap(
             weight = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
 
             // Calculate RMSE(X,Y) and add it to the sum at X
-            rmseMap[y0*w+x0] += getRmse(refPatch, compPatch, patchSize) * weight;
+            rmseMap[y0*w+x0] += getRmse(meanSub_x, meanSub_y, patchSize) * weight;
+            maeMap[y0*w+x0] += getMae(meanSub_x, meanSub_y, patchSize) * weight;
         }
     }
 }
@@ -87,4 +90,16 @@ float getRmse(float* ref_patch[], float* comp_patch[], int n){
     rmse = rmse/n;
     rmse = sqrt(rmse);
     return rmse;
+}
+
+float getMae(float* ref_patch[], float* comp_patch[], int n){
+    float foo = 0;
+    float mae = 0;
+    for(int i=0; i<n; i++){
+        foo = ref_patch[i] - comp_patch[i];
+        foo = fabs(foo);
+        mae += foo;
+    }
+    mae = mae/n;
+    return mae;
 }
