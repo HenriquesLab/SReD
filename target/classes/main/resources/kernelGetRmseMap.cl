@@ -1,4 +1,4 @@
-//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define w $WIDTH$
 #define h $HEIGHT$
@@ -7,11 +7,12 @@
 #define filterParamSq $FILTER_PARAM_SQ$
 #define patchSize $PATCH_SIZE$
 float getWeight(float ref, float comp);
+float getRmse(float* ref_patch[], float* comp_patch[], int n);
 
-kernel void kernelGetPearsonMap(
+kernel void kernelGetRmseMap(
     global float* refPixels,
     global float* localMeans,
-    global float* pearsonMap
+    global float* rmseMap
 ){
     // Calculate weight (based on the Gaussian weight function used in non-local means
     // (see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions)
@@ -27,64 +28,63 @@ kernel void kernelGetPearsonMap(
     // Get reference patch
     float refPatch[patchSize];
     float meanSub_x[patchSize];
-    float std_x = 0;
     int refCounter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
             refPatch[refCounter] = refPixels[j0*w+i0];
             meanSub_x[refCounter] = refPatch[refCounter] - localMeans[y0*w+x0];
-            std_x += meanSub_x[refCounter]*meanSub_x[refCounter];
             refCounter++;
         }
     }
 
-    // Get local standard deviation X
-    std_x = sqrt(std_x);
-
     // For each comparison pixel...
-    float pearson_sum;
     float weight;
     for(int y1=1; y1<h-1; y1++){
         for(int x1=1; x1<w-1; x1++){
 
-        pearson_sum = 0;
         weight = 0;
 
             // Get comparison patch Y
             float compPatch[patchSize];
             float meanSub_y[patchSize];
-            float std_y = 0;
-            float meanSub_xy = 0;
             int compCounter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                     compPatch[compCounter] = refPixels[j1*w+i1];
                     meanSub_y[compCounter] = compPatch[compCounter] - localMeans[y1*w+x1];
-                    std_y += meanSub_y[compCounter] * meanSub_y[compCounter];
-                    meanSub_xy += meanSub_x[compCounter] * meanSub_y[compCounter];
                     compCounter++;
                 }
             }
 
-            // Get local standard deviation Y
-            std_y = sqrt(std_y);
-
             // Calculate weight
             weight = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
 
-            // Calculate Pearson correlation coefficient X,Y and add it to the sum at X
-            pearsonMap[y0*w+x0] += fmax((float) 0, meanSub_xy/(std_x*std_y)) * weight;
+            // Calculate RMSE(X,Y) and add it to the sum at X
+            rmseMap[y0*w+x0] += getRmse(refPatch, compPatch, patchSize) * weight;
         }
     }
 }
 
-float getWeight(float ref, float comp){
+float getWeight(float mean_x, float mean_y){
     float weight = 0;
-    weight = comp - ref;
+    weight = mean_y - mean_x;
     weight = fabs(weight);
     weight = weight*weight;
     weight = weight/filterParamSq;
     weight = (-1) * weight;
     weight = exp(weight);
     return weight;
+}
+
+float getRmse(float* ref_patch[], float* comp_patch[], int n){
+    float foo = 0;
+    float rmse = 0;
+    for(int i=0; i<n; i++){
+        foo = ref_patch[i] - comp_patch[i];
+        foo = foo*foo;
+        rmse += foo;
+    }
+    rmse = rmse/n;
+    rmse = sqrt(rmse);
+    return rmse;
 }

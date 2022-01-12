@@ -25,18 +25,19 @@ public class RedundancyMap_ implements PlugIn {
 
     // OpenCL formats
     static private CLContext context;
-    static private CLProgram programGetLocalMeans, programGetPearsonMap;
-    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap;
+    static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetRmseMap;
+    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetRmseMap;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap;
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clRmseMap;
 
     @Override
     public void run(String s) {
-        // Start timer
+
+        // ---- Start timer ----
         long start = System.currentTimeMillis();
 
         // ---- Get reference image and some parameters ----
@@ -51,7 +52,8 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Patch parameters ----
         int bW = 3; // Width
         int bH = 3; // Height
-
+        int patchSize = bW * bH;
+        int sizeWithoutBorders = (w-2)*(h-2); // TODO: MAke this dynamic
         // ---- Check devices ----
         CLPlatform[] allPlatforms = CLPlatform.listCLPlatforms();
 
@@ -109,8 +111,10 @@ public class RedundancyMap_ implements PlugIn {
         clRefPixels = context.createFloatBuffer(w * h, READ_ONLY);
         clLocalMeans = context.createFloatBuffer(w * h, READ_WRITE);
         clPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
+        clRmseMap = context.createFloatBuffer(w * h, READ_WRITE);
 
         // ---- Create programs ----
+        // Local means map
         String programStringGetLocalMeans = getResourceAsString(RedundancyMap_.class, "kernelGetLocalMeans.cl");
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$WIDTH$", "" + w);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$HEIGHT$", "" + h);
@@ -118,16 +122,25 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BH$", "" + bH);
         programGetLocalMeans = context.createProgram(programStringGetLocalMeans).build();
 
-        int patchSize = bW * bH;
+        // Weighted mean Pearson correlation coefficient map
         String programStringGetPearsonMap = getResourceAsString(RedundancyMap_.class, "kernelGetPearsonMap.cl");
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$WIDTH$", "" + w);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$HEIGHT$", "" + h);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BW$", "" + bW);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BH$", "" + bH);
-        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$SIGMA$", "" + sigma);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$PATCH_SIZE$", "" + patchSize);
         programGetPearsonMap = context.createProgram(programStringGetPearsonMap).build();
+
+        // Weighted mean RMSE map
+        String programStringGetRmseMap = getResourceAsString(RedundancyMap_.class, "kernelGetRmseMap.cl");
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$WIDTH$", "" + w);
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$HEIGHT$", "" + h);
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$BW$", "" + bW);
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$BH$", "" + bH);
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
+        programStringGetRmseMap = replaceFirst(programStringGetRmseMap, "$PATCH_SIZE$", "" + patchSize);
+        programGetRmseMap = context.createProgram(programStringGetRmseMap).build();
 
         // ---- Fill buffers ----
         fillBufferWithFloatArray(clRefPixels, refPixels);
@@ -138,19 +151,31 @@ public class RedundancyMap_ implements PlugIn {
         float[] pearsonMap = new float[w * h];
         fillBufferWithFloatArray(clPearsonMap, pearsonMap);
 
+        float[] rmseMap = new float[w * h];
+        fillBufferWithFloatArray(clRmseMap, rmseMap);
+
         // ---- Create kernels ----
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
         kernelGetPearsonMap = programGetPearsonMap.createCLKernel("kernelGetPearsonMap");
+        kernelGetRmseMap = programGetRmseMap.createCLKernel("kernelGetRmseMap");
 
         // ---- Set kernel arguments ----
+        // Local means map
         int argn = 0;
         kernelGetLocalMeans.setArg(argn++, clRefPixels);
         kernelGetLocalMeans.setArg(argn++, clLocalMeans);
 
+        // Weighted mean Pearson correlation coefficient map
         argn = 0;
         kernelGetPearsonMap.setArg(argn++, clRefPixels);
         kernelGetPearsonMap.setArg(argn++, clLocalMeans);
         kernelGetPearsonMap.setArg(argn++, clPearsonMap);
+
+        // Weighted mean RMSE map
+        argn = 0;
+        kernelGetRmseMap.setArg(argn++, clRefPixels);
+        kernelGetRmseMap.setArg(argn++, clLocalMeans);
+        kernelGetRmseMap.setArg(argn++, clRmseMap);
 
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
@@ -177,7 +202,7 @@ public class RedundancyMap_ implements PlugIn {
         //IJ.log("Done!");
         //IJ.log("--------");
 
-        // Calculate weighted mean Pearson's map
+        // ---- Calculate weighted mean Pearson's map ----
         queue.putWriteBuffer(clPearsonMap, false);
 /*
         int nXBlocks = w/128 + ((w%128==0)?0:1);
@@ -195,35 +220,57 @@ public class RedundancyMap_ implements PlugIn {
         queue.put2DRangeKernel(kernelGetPearsonMap, 0, 0, w, h, 0,0);
         queue.finish();
 
-        int sizeWithoutBorders = (w-2)*(h-2);
-
-        // Read the map back from the GPU (and finish the mean calculation simultaneously)
+        // ---- Read the Pearson's map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clPearsonMap, true);
         for (int c = 0; c < pearsonMap.length; c++) {
-            pearsonMap[c] = clPearsonMap.getBuffer().get(c)/sizeWithoutBorders;
+            pearsonMap[c] = clPearsonMap.getBuffer().get(c) / sizeWithoutBorders;
             queue.finish();
         }
 
-        kernelGetPearsonMap.release();
-        programGetPearsonMap.release();
-        clPearsonMap.release();
+        //kernelGetPearsonMap.release();
+        //programGetPearsonMap.release();
+        //clPearsonMap.release();
+
+        // ---- Calculate weighted mean RMSE map ----
+        queue.putWriteBuffer(clRmseMap, false);
+        queue.put2DRangeKernel(kernelGetRmseMap, 0, 0, w, h, 0,0);
+        queue.finish();
+
+        // ---- Read the RMSE map back from the GPU (and finish the mean calculation simultaneously) ----
+        queue.putReadBuffer(clRmseMap, true);
+        for (int d = 0; d < rmseMap.length; d++) {
+            rmseMap[d] = clRmseMap.getBuffer().get(d) / sizeWithoutBorders;
+            queue.finish();
+        }
+
+        //kernelGetRmseMap.release();
+        //programGetRmseMap.release();
+        //clRmseMap.release();
 
         IJ.log("Done!");
         IJ.log("--------");
 
-        // Cleanup all resources associated with this context
+        // ---- Cleanup all resources associated with this context ----
         IJ.log("Cleaning up resources...");
         context.release();
         IJ.log("Done!");
         IJ.log("--------");
 
-        // Display results
+        // ---- Display results ----
         IJ.log("Preparing results for display...");
+
+        // Pearson's map
         FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
-        ImagePlus imp1 = new ImagePlus("Redundancy Map", fp1);
+        ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
+
+        // RMSE map
+        FloatProcessor fp2 = new FloatProcessor(w, h, rmseMap);
+        ImagePlus imp2 = new ImagePlus("RMSE Map", fp2);
+        imp2.show();
         IJ.log("Done!");
 
+        // ---- Stop timer ----
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
         IJ.log("--------");

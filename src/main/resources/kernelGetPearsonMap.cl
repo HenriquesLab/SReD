@@ -1,10 +1,9 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define w $WIDTH$
 #define h $HEIGHT$
 #define bW $BW$
 #define bH $BH$
-#define sigma $SIGMA$
 #define filterParamSq $FILTER_PARAM_SQ$
 #define patchSize $PATCH_SIZE$
 float getWeight(float ref, float comp);
@@ -73,7 +72,7 @@ kernel void kernelGetPearsonMap(
             // Calculate weight
             weight = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
 
-            // Calculate Pearson correlation coefficient X,Y and add it to the sum X
+            // Calculate Pearson correlation coefficient X,Y and add it to the sum at X
             pearsonMap[y0*w+x0] += fmax((float) 0, meanSub_xy/(std_x*std_y)) * weight;
         }
     }
