@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define w $WIDTH$
 #define h $HEIGHT$
@@ -9,13 +9,13 @@
 #define offset_x $OFFSET_X$
 #define offset_y $OFFSET_Y$
 float getWeight(float ref, float comp);
-float getRmse(float* ref_patch[], float* comp_patch[], int n);
+float getNrmse(float* ref_patch[], float* comp_patch[], float mean_y, int n);
 float getMae(float* ref_patch[], float* comp_patch[], int n);
 
-kernel void kernelGetRmseMap(
+kernel void kernelGetNrmseMap(
     global float* ref_pixels,
     global float* local_means,
-    global float* rmse_map,
+    global float* nrmse_map,
     global float* mae_map
 ){
 
@@ -58,8 +58,8 @@ kernel void kernelGetRmseMap(
             // Calculate weight
             weight = getWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
 
-            // Calculate RMSE(X,Y) and add it to the sum at X
-            rmse_map[y0*w+x0] += getRmse(meanSub_x, meanSub_y, patch_size) * weight;
+            // Calculate NRMSE(X,Y) and add it to the sum at X
+            nrmse_map[y0*w+x0] += getNrmse(meanSub_x, meanSub_y, local_means[y1*w+x1], patch_size) * weight;
             mae_map[y0*w+x0] += getMae(meanSub_x, meanSub_y, patch_size) * weight;
         }
     }
@@ -79,17 +79,18 @@ float getWeight(float mean_x, float mean_y){
     return weight;
 }
 
-float getRmse(float* ref_patch[], float* comp_patch[], int n){
+float getNrmse(float* ref_patch[], float* comp_patch[], float mean_y, int n){
     float foo = 0;
-    float rmse = 0;
+    float nrmse = 0;
     for(int i=0; i<n; i++){
         foo = ref_patch[i] - comp_patch[i];
         foo = foo*foo;
-        rmse += foo;
+        nrmse += foo;
     }
-    rmse = rmse/n;
-    rmse = sqrt(rmse);
-    return rmse;
+    nrmse = nrmse/n;
+    nrmse = sqrt(nrmse);
+    nrmse = nrmse/mean_y;
+    return nrmse;
 }
 
 float getMae(float* ref_patch[], float* comp_patch[], int n){

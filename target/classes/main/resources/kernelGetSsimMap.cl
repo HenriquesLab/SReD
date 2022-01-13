@@ -4,23 +4,18 @@
 #define h $HEIGHT$
 #define bW $BW$
 #define bH $BH$
-#define filterParamSq $FILTER_PARAM_SQ$
-#define patchSize $PATCH_SIZE$
+#define filter_param_sq $FILTER_PARAM_SQ$
+#define patch_size $PATCH_SIZE$
 #define offset_x $OFFSET_X$
 #define offset_y $OFFSET_Y$
 float getWeight(float ref, float comp);
 float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n);
 
 kernel void kernelGetSsimMap(
-    global float* refPixels,
-    global float* localMeans,
-    global float* ssimMap
+    global float* ref_pixels,
+    global float* local_means,
+    global float* ssim_map
 ){
-    // Calculate weight (based on the Gaussian weight function used in non-local means
-    // (see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions)
-    // TODO: Check division by zero - also the function is missing the filtering parameter
-    // Java expression: exp((-1)*pow(abs(patchStats1[0]-patchStats0[0]),2)/pow(0.4F*sigma,2))
-    // Can also try exponential decay function: 1-abs(patchStats0[0]-patchStats1[0]/abs(patchStats0[0]+abs(patchStats1[0])))
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
@@ -28,19 +23,19 @@ kernel void kernelGetSsimMap(
     int bRH = bH/2;
 
     // Get reference patch
-    float refPatch[patchSize];
-    float meanSub_x[patchSize];
+    float ref_patch[patch_size];
+    float meanSub_x[patch_size];
     float var_x = 0;
-    int refCounter = 0;
+    int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            refPatch[refCounter] = refPixels[j0*w+i0];
-            meanSub_x[refCounter] = refPatch[refCounter] - localMeans[y0*w+x0];
-            var_x += meanSub_x[refCounter]*meanSub_x[refCounter];
-            refCounter++;
+            ref_patch[ref_counter] = ref_pixels[j0*w+i0];
+            meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
+            var_x += meanSub_x[ref_counter]*meanSub_x[ref_counter];
+            ref_counter++;
         }
     }
-    var_x /= patchSize;
+    var_x /= patch_size;
 
     // For each comparison pixel...
     float weight;
@@ -50,38 +45,41 @@ kernel void kernelGetSsimMap(
             weight = 0;
 
             // Get comparison patch Y
-            float compPatch[patchSize];
-            float meanSub_y[patchSize];
+            float comp_patch[patch_size];
+            float meanSub_y[patch_size];
             float var_y = 0;
             float cov_xy = 0;
-            int compCounter = 0;
+            int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    compPatch[compCounter] = refPixels[j1*w+i1];
-                    meanSub_y[compCounter] = compPatch[compCounter] - localMeans[y1*w+x1];
-                    var_y += meanSub_y[compCounter]*meanSub_y[compCounter];
-                    cov_xy += meanSub_x[compCounter]*meanSub_y[compCounter];
-                    compCounter++;
+                    comp_patch[comp_counter] = ref_pixels[j1*w+i1];
+                    meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
+                    var_y += meanSub_y[comp_counter]*meanSub_y[comp_counter];
+                    cov_xy += meanSub_x[comp_counter]*meanSub_y[comp_counter];
+                    comp_counter++;
                 }
             }
-            var_y /= patchSize;
-            cov_xy /= patchSize;
+            var_y /= patch_size;
+            cov_xy /= patch_size;
 
             // Calculate weight
-            weight = getWeight(localMeans[y0*w+x0], localMeans[y1*w+x1]);
+            weight = getWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
 
             // Calculate RMSE(X,Y) and add it to the sum at X
-            ssimMap[y0*w+x0] += getSsim(localMeans[y0*w+x0], localMeans[y1*w+x1], var_x, var_y, cov_xy, patchSize) * weight;
+            ssim_map[y0*w+x0] += getSsim(local_means[y0*w+x0], local_means[y1*w+x1], var_x, var_y, cov_xy, patch_size) * weight;
         }
     }
 }
 
 float getWeight(float mean_x, float mean_y){
+    // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
+    // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
+
     float weight = 0;
     weight = mean_y - mean_x;
     weight = fabs(weight);
     weight = weight*weight;
-    weight = weight/filterParamSq;
+    weight = weight/filter_param_sq;
     weight = (-1) * weight;
     weight = exp(weight);
     return weight;
