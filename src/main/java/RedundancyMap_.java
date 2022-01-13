@@ -337,7 +337,7 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Read the SSIM map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clSsimMap, true);
         for (int g=0; g<h; g++) {
-            for (int i=0; i<w; h++) {
+            for (int i=0; i<w; i++) {
                 ssimMap[g*w+i] = clSsimMap.getBuffer().get(g*w+i) / sizeWithoutBorders;
                 queue.finish();
             }
