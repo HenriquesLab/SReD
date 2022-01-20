@@ -34,7 +34,7 @@ public class TransformImageByVST_ implements PlugIn {
         // Grab image
         ImagePlus imp = WindowManager.getCurrentImage();
         if (imp == null) {
-            IJ.error("No image found. Please open an image a try again.");
+            IJ.error("No image found. Please open an image and try again.");
             return;
         }
 

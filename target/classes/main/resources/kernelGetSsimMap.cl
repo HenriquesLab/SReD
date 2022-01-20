@@ -87,8 +87,8 @@ float getWeight(float mean_x, float mean_y){
 
 float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n){
     float ssim = 0;
-    float c1 = (0.01*4294967296)*(0.01*4294967296);
-    float c2 = (0.03*4294967296)*(0.03*4294967296);
+    float c1 = (0.01*4294967295)*(0.01*4294967295); // constant1*dynamic range
+    float c2 = (0.03*4294967295)*(0.03*4294967295); // constant2*dynamic range
     float mean_x_sq = mean_x*mean_x;
     float mean_y_sq = mean_y*mean_y;
 

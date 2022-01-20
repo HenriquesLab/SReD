@@ -10,9 +10,8 @@ import ij.ImagePlus;
 import ij.WindowManager;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import ij.process.ImageConverter;
+import java.io.*;
 import java.nio.FloatBuffer;
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
@@ -25,14 +24,17 @@ public class RedundancyMap_ implements PlugIn {
 
     // OpenCL formats
     static private CLContext context;
-    static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetNrmseMap, programGetSsimMap;
-    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetNrmseMap, kernelGetSsimMap;
+    static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetNrmseMap, programGetSsimMap,
+            programGetHuMap, programGetEntropyMap;
+    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetNrmseMap, kernelGetSsimMap,
+            kernelGetHuMap, kernelGetEntropyMap;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clNrmseMap, clMaeMap, clSsimMap;
+    private CLBuffer<FloatBuffer> clRefPixels, clRefPixels8Bit, clLocalMeans, clPearsonMap, clNrmseMap, clMaeMap,
+            clSsimMap, clHuMap, clEntropyMap;
 
     @Override
     public void run(String s) {
@@ -42,6 +44,11 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Get reference image and some parameters ----
         ImagePlus imp0 = WindowManager.getCurrentImage();
+        if (imp0 == null) {
+            IJ.error("No image found. Please open an image and try again.");
+            return;
+        }
+
         FloatProcessor fp0 = imp0.getProcessor().convertToFloatProcessor();
         float[] refPixels = (float[]) fp0.getPixels();
         int w = imp0.getWidth();
@@ -90,7 +97,8 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Create context ----
         context = CLContext.create(clPlatformMaxFlop);
 
-        // Choose the best device (i.e., Filter out CPUs if GPUs are available (FLOPS calculation was giving higher ratings to CPU vs. GPU))
+        // Choose the best device (i.e., Filter out CPUs if GPUs are available (FLOPS calculation was giving
+        // higher ratings to CPU vs. GPU))
         //TODO: Rate devices on Mandelbrot and chooose the best, GPU will perform better
         CLDevice[] allDevices = context.getDevices();
 
@@ -112,11 +120,14 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Create buffers ----
         clRefPixels = context.createFloatBuffer(w * h, READ_ONLY);
+        clRefPixels8Bit = context.createFloatBuffer(w * h, READ_ONLY);
         clLocalMeans = context.createFloatBuffer(w * h, READ_WRITE);
         clPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
         clNrmseMap = context.createFloatBuffer(w * h, READ_WRITE);
         clMaeMap = context.createFloatBuffer(w * h, READ_WRITE);
         clSsimMap = context.createFloatBuffer(w * h, READ_WRITE);
+        clHuMap = context.createFloatBuffer(w * h, READ_WRITE);
+        clEntropyMap = context.createFloatBuffer(w * h, READ_WRITE);
 
         // ---- Create programs ----
         // Local means map
@@ -166,6 +177,30 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$OFFSET_Y$", "" + offsetY);
         programGetSsimMap = context.createProgram(programStringGetSsimMap).build();
 
+        // Hu map
+        String programStringGetHuMap = getResourceAsString(RedundancyMap_.class, "kernelGetHuMap.cl");
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$WIDTH$", "" + w);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$HEIGHT$", "" + h);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$BW$", "" + bW);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$BH$", "" + bH);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$OFFSET_X$", "" + offsetX);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$OFFSET_Y$", "" + offsetY);
+        programGetHuMap = context.createProgram(programStringGetHuMap).build();
+
+        // Entropy map
+        String programStringGetEntropyMap = getResourceAsString(RedundancyMap_.class, "kernelGetEntropyMap.cl");
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$WIDTH$", "" + w);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$HEIGHT$", "" + h);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$BW$", "" + bW);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$BH$", "" + bH);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$OFFSET_X$", "" + offsetX);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$OFFSET_Y$", "" + offsetY);
+        programGetEntropyMap = context.createProgram(programStringGetEntropyMap).build();
+
         // ---- Fill buffers ----
         fillBufferWithFloatArray(clRefPixels, refPixels);
 
@@ -184,11 +219,29 @@ public class RedundancyMap_ implements PlugIn {
         float[] ssimMap = new float[w * h];
         fillBufferWithFloatArray(clSsimMap, ssimMap);
 
+        float[] huMap = new float[w * h];
+        fillBufferWithFloatArray(clHuMap, huMap);
+
+        float[] entropyMap = new float[w * h];
+        fillBufferWithFloatArray(clEntropyMap, entropyMap);
+
+        // Create 8-bit duplicate of reference image (because entropy calculation is better with 8-bit data)
+        ImagePlus imp8Bit = imp0.duplicate();
+        imp8Bit.setTitle("Variance-stabilized image (8-bit)");
+        ImageConverter ic = new ImageConverter(imp8Bit);
+        ic.convertToGray8();
+        imp8Bit.updateAndDraw();
+        FloatProcessor fp8Bit =imp8Bit.getProcessor().convertToFloatProcessor();
+        float[] refPixels8Bit = (float[]) fp8Bit.getPixels();
+        fillBufferWithFloatArray(clRefPixels8Bit, refPixels8Bit);
+
         // ---- Create kernels ----
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
         kernelGetPearsonMap = programGetPearsonMap.createCLKernel("kernelGetPearsonMap");
         kernelGetNrmseMap = programGetNrmseMap.createCLKernel("kernelGetNrmseMap");
         kernelGetSsimMap = programGetSsimMap.createCLKernel("kernelGetSsimMap");
+        kernelGetHuMap = programGetHuMap.createCLKernel("kernelGetHuMap");
+        kernelGetEntropyMap = programGetEntropyMap.createCLKernel("kernelGetEntropyMap");
 
         // ---- Set kernel arguments ----
         // Local means map
@@ -214,6 +267,18 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetSsimMap.setArg(argn++, clRefPixels);
         kernelGetSsimMap.setArg(argn++, clLocalMeans);
         kernelGetSsimMap.setArg(argn++, clSsimMap);
+
+        // Hu map
+        argn = 0;
+        kernelGetHuMap.setArg(argn++, clRefPixels);
+        kernelGetHuMap.setArg(argn++, clLocalMeans);
+        kernelGetHuMap.setArg(argn++, clHuMap);
+
+        // Entropy map
+        argn = 0;
+        kernelGetEntropyMap.setArg(argn++, clRefPixels8Bit);
+        kernelGetEntropyMap.setArg(argn++, clLocalMeans);
+        kernelGetEntropyMap.setArg(argn++, clEntropyMap);
 
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
@@ -346,6 +411,55 @@ public class RedundancyMap_ implements PlugIn {
         programGetSsimMap.release();
         clSsimMap.release();
 
+        // ---- Calculate Hu map ----
+        queue.putWriteBuffer(clHuMap, false);
+
+        for(int nYB=0; nYB<nYBlocks; nYB++) {
+            int yWorkSize = min(64, h-nYB*64);
+            for(int nXB=0; nXB<nXBlocks; nXB++) {
+                int xWorkSize = min(64, w-nXB*64);
+                showStatus("Calculating Hu... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
+                queue.put2DRangeKernel(kernelGetHuMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+            }
+        }
+        queue.finish();
+
+        // ---- Read the Hu map back from the GPU (and finish the mean calculation simultaneously) ----
+        queue.putReadBuffer(clHuMap, true);
+        for (int j=0; j<h; j++) {
+            for (int k=0; k<w; k++) {
+                huMap[j*w+k] = clHuMap.getBuffer().get(j*w+k) / sizeWithoutBorders;
+                queue.finish();
+            }
+        }
+        kernelGetHuMap.release();
+        programGetHuMap.release();
+        clHuMap.release();
+
+        // ---- Calculate entropy map ----
+        queue.putWriteBuffer(clEntropyMap, false);
+        for(int nYB=0; nYB<nYBlocks; nYB++) {
+            int yWorkSize = min(64, h-nYB*64);
+            for(int nXB=0; nXB<nXBlocks; nXB++) {
+                int xWorkSize = min(64, w-nXB*64);
+                showStatus("Calculating entropy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
+                queue.put2DRangeKernel(kernelGetEntropyMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+            }
+        }
+        queue.finish();
+
+        // ---- Read the entropy map back from the GPU (and finish the mean calculation simultaneously) ----
+        queue.putReadBuffer(clEntropyMap, true);
+        for (int l=0; l<h; l++) {
+            for (int m=0; m<w; m++) {
+                entropyMap[l*w+m] = clEntropyMap.getBuffer().get(l*w+m) / sizeWithoutBorders;
+                queue.finish();
+            }
+        }
+        kernelGetEntropyMap.release();
+        programGetEntropyMap.release();
+        clEntropyMap.release();
+
         IJ.log("Done!");
         IJ.log("--------");
 
@@ -377,6 +491,16 @@ public class RedundancyMap_ implements PlugIn {
         FloatProcessor fp4 = new FloatProcessor(w, h, ssimMap);
         ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
         imp4.show();
+
+        // Hu map
+        FloatProcessor fp5 = new FloatProcessor(w, h, huMap);
+        ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
+        imp5.show();
+
+        // Entropy map
+        FloatProcessor fp6 = new FloatProcessor(w, h, entropyMap);
+        ImagePlus imp6 = new ImagePlus("Entropy Map", fp6);
+        imp6.show();
         IJ.log("Finished!");
 
         // ---- Stop timer ----
@@ -384,6 +508,8 @@ public class RedundancyMap_ implements PlugIn {
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
         IJ.log("--------");
     }
+
+    // ---- USER FUNCTIONS ----
 
     public static void fillBufferWithFloat(CLBuffer<FloatBuffer> clBuffer, float pixel) {
         FloatBuffer buffer = clBuffer.getBuffer();

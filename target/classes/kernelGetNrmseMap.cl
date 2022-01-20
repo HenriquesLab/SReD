@@ -9,8 +9,8 @@
 #define offset_x $OFFSET_X$
 #define offset_y $OFFSET_Y$
 float getWeight(float ref, float comp);
-float getNrmse(float* ref_patch[], float* comp_patch[], float mean_y, int n);
-float getMae(float* ref_patch[], float* comp_patch[], int n);
+float getNrmse(float* ref_patch, float* comp_patch, float mean_y, int n);
+float getMae(float* ref_patch, float* comp_patch, int n);
 
 kernel void kernelGetNrmseMap(
     global float* ref_pixels,
@@ -79,7 +79,7 @@ float getWeight(float mean_x, float mean_y){
     return weight;
 }
 
-float getNrmse(float* ref_patch[], float* comp_patch[], float mean_y, int n){
+float getNrmse(float* ref_patch, float* comp_patch, float mean_y, int n){
     float foo = 0;
     float nrmse = 0;
     for(int i=0; i<n; i++){
@@ -93,7 +93,7 @@ float getNrmse(float* ref_patch[], float* comp_patch[], float mean_y, int n){
     return nrmse;
 }
 
-float getMae(float* ref_patch[], float* comp_patch[], int n){
+float getMae(float* ref_patch, float* comp_patch, int n){
     float foo = 0;
     float mae = 0;
     for(int i=0; i<n; i++){
