@@ -9,10 +9,16 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.plugin.PlugIn;
+import ij.process.ByteProcessor;
 import ij.process.FloatProcessor;
 import ij.process.ImageConverter;
+import ij.process.ShortProcessor;
+
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
+import java.nio.ShortBuffer;
+
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
@@ -33,8 +39,10 @@ public class RedundancyMap_ implements PlugIn {
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clRefPixels8Bit, clLocalMeans, clPearsonMap, clNrmseMap, clMaeMap,
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clNrmseMap, clMaeMap,
             clSsimMap, clHuMap, clEntropyMap;
+    private CLBuffer<ShortBuffer> clRefPixels8Bit;
+
 
     @Override
     public void run(String s) {
@@ -57,8 +65,8 @@ public class RedundancyMap_ implements PlugIn {
         float filterParamSq = (float) pow(0.4 * sigma, 2);
 
         // ---- Patch parameters ----
-        int bW = 3; // Patch width
-        int bH = 3; // Patch height
+        int bW = 5; // Patch width
+        int bH = 5; // Patch height
         int patchSize = bW * bH; // Patch area
         int offsetX = bW/2; // Offset of the search radius relative to the original image, to avoid borders (x-axis)
         int offsetY = bH/2; // Offset of the search radius relative to the original image, to avoid borders (y-axis)
@@ -120,7 +128,7 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Create buffers ----
         clRefPixels = context.createFloatBuffer(w * h, READ_ONLY);
-        clRefPixels8Bit = context.createFloatBuffer(w * h, READ_ONLY);
+        clRefPixels8Bit = context.createShortBuffer(w * h, READ_ONLY);
         clLocalMeans = context.createFloatBuffer(w * h, READ_WRITE);
         clPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
         clNrmseMap = context.createFloatBuffer(w * h, READ_WRITE);
@@ -231,9 +239,14 @@ public class RedundancyMap_ implements PlugIn {
         ImageConverter ic = new ImageConverter(imp8Bit);
         ic.convertToGray8();
         imp8Bit.updateAndDraw();
-        FloatProcessor fp8Bit =imp8Bit.getProcessor().convertToFloatProcessor();
-        float[] refPixels8Bit = (float[]) fp8Bit.getPixels();
-        fillBufferWithFloatArray(clRefPixels8Bit, refPixels8Bit);
+        ic.convertToGray16();
+        imp8Bit.updateAndDraw();
+        //FloatProcessor fp8Bit =imp8Bit.getProcessor().convertToFloatProcessor();
+        //float[] refPixels8Bit = (float[]) fp8Bit.getPixels();
+        //fillBufferWithFloatArray(clRefPixels8Bit, refPixels8Bit);
+        ShortProcessor bp = imp8Bit.getProcessor().convertToShortProcessor();
+        short[] refPixels8Bit = (short[]) bp.getPixels();
+        fillBufferWithShortArray(clRefPixels8Bit, refPixels8Bit);
 
         // ---- Create kernels ----
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
@@ -436,6 +449,7 @@ public class RedundancyMap_ implements PlugIn {
         programGetHuMap.release();
         clHuMap.release();
 
+        /*
         // ---- Calculate entropy map ----
         queue.putWriteBuffer(clEntropyMap, false);
         for(int nYB=0; nYB<nYBlocks; nYB++) {
@@ -462,7 +476,7 @@ public class RedundancyMap_ implements PlugIn {
 
         IJ.log("Done!");
         IJ.log("--------");
-
+*/
         // ---- Cleanup all resources associated with this context ----
         IJ.log("Cleaning up resources...");
         context.release();
@@ -518,6 +532,13 @@ public class RedundancyMap_ implements PlugIn {
 
     public static void fillBufferWithFloatArray(CLBuffer<FloatBuffer> clBuffer, float[] pixels) {
         FloatBuffer buffer = clBuffer.getBuffer();
+        for(int n=0; n< pixels.length; n++) {
+            buffer.put(n, pixels[n]);
+        }
+    }
+
+    public static void fillBufferWithShortArray(CLBuffer<ShortBuffer> clBuffer, short[] pixels) {
+        ShortBuffer buffer = clBuffer.getBuffer();
         for(int n=0; n< pixels.length; n++) {
             buffer.put(n, pixels[n]);
         }

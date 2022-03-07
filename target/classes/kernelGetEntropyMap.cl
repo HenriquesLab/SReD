@@ -12,7 +12,7 @@ float getWeight(float ref, float comp);
 float getEntropy(float* patch, int n);
 
 kernel void kernelGetEntropyMap(
-    global float* ref_pixels,
+    global short* ref_pixels,
     global float* local_means,
     global float* entropy_map
 ){
@@ -30,7 +30,7 @@ kernel void kernelGetEntropyMap(
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = ref_pixels[j0*w+i0];
+            ref_patch[ref_counter] = (float) ref_pixels[j0*w+i0];
             meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
             ref_counter++;
         }
@@ -55,7 +55,7 @@ kernel void kernelGetEntropyMap(
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = ref_pixels[j1*w+i1];
+                    comp_patch[comp_counter] = (float) ref_pixels[j1*w+i1];
                     meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
                     comp_counter++;
                 }
@@ -92,13 +92,12 @@ float getEntropy(float* patch, int n){
     for (int depth=0; depth<255; depth++){
         float p = 0.0f;
         for(int length=0; length<n; length++){
-
             if(patch[length] == depth){
                 p += 1.0f;
             }
         }
         p = p/n;
-        entropy += p*log2(p);
+        entropy += p*log2((float) p);
     }
     entropy = entropy*(-1);
     return entropy;
