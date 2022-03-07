@@ -486,37 +486,47 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Display results ----
         IJ.log("Preparing results for display...");
 
-        // Pearson's map
-        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
+        // Pearson's map (normalized to [0,1])
+        float[] pearsonMinMax = findMinMax(pearsonMap, w, h, offsetX, offsetY);
+        float[] pearsonMapNorm = normalize(pearsonMap, w, h, offsetX, offsetY, pearsonMinMax);
+        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
 
-        // NRMSE map
-        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMap);
+        // NRMSE map (normalized to [0,1])
+        float[] nrmseMinMax = findMinMax(nrmseMap, w, h, offsetX, offsetY);
+        float[] nrmseMapNorm = normalize(nrmseMap, w, h, offsetX, offsetY, nrmseMinMax);
+        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMapNorm);
         ImagePlus imp2 = new ImagePlus("NRMSE Map", fp2);
         imp2.show();
 
-        // MAE map
-        FloatProcessor fp3 = new FloatProcessor(w, h, maeMap);
+        // MAE map (normalized to [0,1])
+        float[] maeMinMax = findMinMax(maeMap, w, h, offsetX, offsetY);
+        float[] maeMapNorm = normalize(maeMap, w, h, offsetX, offsetY, maeMinMax);
+        FloatProcessor fp3 = new FloatProcessor(w, h, maeMapNorm);
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
 
-        // SSIM map
-        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMap);
+        // SSIM map (normalized to [0,1])
+        float[] ssimMinMax = findMinMax(ssimMap, w, h, offsetX, offsetY);
+        float[] ssimMapNorm = normalize(ssimMap, w, h, offsetX, offsetY, ssimMinMax);
+        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMapNorm);
         ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
         imp4.show();
 
-        // Hu map
-        FloatProcessor fp5 = new FloatProcessor(w, h, huMap);
+        // Hu map (normalized to [0,1])
+        float[] huMinMax = findMinMax(huMap, w, h, offsetX, offsetY);
+        float[] huMapNorm = normalize(huMap, w, h, offsetX, offsetY, huMinMax);
+        FloatProcessor fp5 = new FloatProcessor(w, h, huMapNorm);
         ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
         imp5.show();
-
-        // Entropy map
+/*
+        // Entropy map (normalized to [0,1])
         FloatProcessor fp6 = new FloatProcessor(w, h, entropyMap);
         ImagePlus imp6 = new ImagePlus("Entropy Map", fp6);
         imp6.show();
         IJ.log("Finished!");
-
+*/
         // ---- Stop timer ----
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
@@ -575,5 +585,35 @@ public class RedundancyMap_ implements PlugIn {
         } else {
             return globalSize + groupSize - r;
         }
+    }
+
+    public static float[] findMinMax(float[] inputArray, int w, int h, int offsetX, int offsetY){
+        float[] minMax = {inputArray[offsetY*w+offsetX], inputArray[offsetY*w+offsetX]};
+
+        for(int j=offsetY+1; j<h-offsetY; j++){
+            for(int i=offsetX+1; i<w-offsetX; i++){
+                if(inputArray[j*w+i] < minMax[0]){
+                    minMax[0] = inputArray[j*w+i];
+                }
+                if(inputArray[j*w+i] > minMax[1]){
+                    minMax[1] = inputArray[j*w+i];
+                }
+            }
+        }
+        return minMax;
+    }
+
+    public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax){
+        float min = minMax[0];
+
+        float denominator = minMax[1] - min;
+        float[] normalizedPixels = new float[w*h];
+
+        for(int j=offsetY; j<h-offsetY; j++) {
+            for (int i=offsetX; i<w-offsetX; i++) {
+                normalizedPixels[j*w+i] = (rawPixels[j*w+i]-min)/denominator;
+            }
+        }
+        return normalizedPixels;
     }
 }
