@@ -89,7 +89,7 @@ float getNrmse(float* ref_patch, float* comp_patch, float mean_y, int n){
     }
     nrmse = nrmse/n;
     nrmse = sqrt(nrmse);
-    nrmse = nrmse/mean_y;
+    nrmse = nrmse/(mean_y+1); // +1 to avoid division by zero
     return nrmse;
 }
 

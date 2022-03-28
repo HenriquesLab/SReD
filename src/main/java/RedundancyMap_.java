@@ -1,7 +1,7 @@
 /**
  * TODO: Make exception for when the plugin is started without an active image
  * TODO: Implement progress tracking
- * TODO: Think about
+ * TODO: check kernels for division by zero
  **/
 
 import com.jogamp.opencl.*;
@@ -65,8 +65,8 @@ public class RedundancyMap_ implements PlugIn {
         float filterParamSq = (float) pow(0.4 * sigma, 2);
 
         // ---- Patch parameters ----
-        int bW = 5; // Patch width
-        int bH = 5; // Patch height
+        int bW = 7; // Patch width
+        int bH = 7; // Patch height
         int patchSize = bW * bH; // Patch area
         int offsetX = bW/2; // Offset of the search radius relative to the original image, to avoid borders (x-axis)
         int offsetY = bH/2; // Offset of the search radius relative to the original image, to avoid borders (y-axis)

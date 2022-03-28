@@ -71,7 +71,7 @@ kernel void kernelGetPearsonMap(
             weight = getWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
 
             // Calculate Pearson correlation coefficient X,Y and add it to the sum at X
-            pearson_map[y0*w+x0] += fmax((float) 0, meanSub_xy/(std_x*std_y)) * weight;
+            pearson_map[y0*w+x0] += fmax((float) 0, meanSub_xy/((std_x*std_y)+1)) * weight; // +1 to avoid division by zero
         }
     }
 }
