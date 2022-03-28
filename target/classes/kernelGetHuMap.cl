@@ -114,9 +114,10 @@ float getInvariant(float* patch, int patch_w, int patch_h, int p, int q){
             moment_00 += patch[j*patch_w+i];
         }
     }
-    centroid_x = moment_10/(moment_00); // +1 to avoid division by zero
-    printf("moment00: %f\n", moment_00);
-    centroid_y = moment_01/(moment_00); // +1 to avoid division by zero
+
+    moment_00 += 0.00000000001f; // Avoid division by zero
+    centroid_x = moment_10/moment_00; //
+    centroid_y = moment_01/moment_00; //
 
     for(int j=0; j<patch_h; j++){
             for(int i=0; i<patch_w; i++){
