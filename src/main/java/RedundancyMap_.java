@@ -65,8 +65,8 @@ public class RedundancyMap_ implements PlugIn {
         float filterParamSq = (float) pow(0.4 * sigma, 2);
 
         // ---- Patch parameters ----
-        int bW = 7; // Patch width
-        int bH = 7; // Patch height
+        int bW = 3; // Patch width
+        int bH = 3; // Patch height
         int patchSize = bW * bH; // Patch area
         int offsetX = bW/2; // Offset of the search radius relative to the original image, to avoid borders (x-axis)
         int offsetY = bH/2; // Offset of the search radius relative to the original image, to avoid borders (y-axis)
@@ -606,7 +606,7 @@ public class RedundancyMap_ implements PlugIn {
     public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax){
         float min = minMax[0];
 
-        float denominator = minMax[1] - min;
+        float denominator = minMax[1] - min + 0.000001f;
         float[] normalizedPixels = new float[w*h];
 
         for(int j=offsetY; j<h-offsetY; j++) {

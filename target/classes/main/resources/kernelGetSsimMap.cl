@@ -9,6 +9,7 @@
 #define offset_x $OFFSET_X$
 #define offset_y $OFFSET_Y$
 float getWeight(float ref, float comp);
+float getExpDecayWeight(float ref, float comp);
 float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n);
 
 kernel void kernelGetSsimMap(
@@ -83,6 +84,18 @@ float getWeight(float mean_x, float mean_y){
     weight = (-1) * weight;
     weight = exp(weight);
     return weight;
+}
+
+float getExpDecayWeight(float ref, float comp){
+    // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
+    // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
+
+    float weight = 0;
+
+
+    weight = 1-(fabs(ref-comp)/fabs(ref+fabs(comp)));
+    return weight;
+
 }
 
 float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n){
