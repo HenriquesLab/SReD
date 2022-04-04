@@ -14,6 +14,7 @@ float getEntropy(float* patch, int n);
 kernel void kernelGetEntropyMap(
     global short* ref_pixels,
     global float* local_means,
+    global float* local_stds,
     global float* entropy_map
 ){
 
