@@ -1,4 +1,4 @@
-//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define w $WIDTH$
 #define h $HEIGHT$
@@ -15,6 +15,7 @@ float getExpDecayWeight(float ref, float comp);
 kernel void kernelGetPearsonMap(
     global float* ref_pixels,
     global float* local_means,
+    global float* local_stds,
     global float* pearson_map
 ){
 
@@ -42,17 +43,17 @@ kernel void kernelGetPearsonMap(
     // Get reference patch values, subtract the mean, and get local standard deviation
     float ref_patch[patch_size];
     float meanSub_x[patch_size];
-    float std_x = 0;
+    float std_x = local_stds[y0*w+x0];
+
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
+            //ref_patch[ref_counter] = ref_pixels[j0*w+i0];
             ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + 0.000001f); // Normalize patch to [0,1]
             meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
-            std_x += meanSub_x[ref_counter]*meanSub_x[ref_counter];
             ref_counter++;
         }
     }
-    std_x = sqrt(std_x);
 
     // For each comparison pixel...
     float weight;
@@ -79,35 +80,34 @@ kernel void kernelGetPearsonMap(
         // Get comparison patch values, subtract the mean, and get local standard deviation
         float comp_patch[patch_size];
         float meanSub_y[patch_size];
-        float std_y = 0;
+        float std_y = local_stds[y1*w+x1];
         float meanSub_xy = 0;
         int comp_counter = 0;
 
         for(int j1=y1-bRH; j1<=y1+bRH; j1++){
             for(int i1=x1-bRW; i1<=x1+bRW; i1++){
+            //comp_patch[comp_counter] = ref_pixels[j1*w+i1];
             comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + 0.000001f); // Normalize patch to [0,1]
             meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
-            std_y += meanSub_y[comp_counter] * meanSub_y[comp_counter];
             meanSub_xy += meanSub_x[comp_counter] * meanSub_y[comp_counter];
             comp_counter++;
             }
         }
-        std_y = sqrt(std_y);
 
         // Calculate weight
         weight = getGaussianWeight(std_x, std_y);
 
         // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-        pearson_map[y0*w+x0] += (1-(meanSub_xy/(std_x*std_y)+0.000001f)) * weight; // Pearson distance
-        //pearson_map[y0*w+x0] += sqrt(1-(meanSub_xy/((std_x*std_y)*(std_x*std_y))+0.000001f)) * weight; // srqt P^earson distance
-        //pearson_map[y0*w+x0] += fmax((float) 0.0f, meanSub_xy/((std_x*std_y)+0.000001f)) * weight; // truncated pearson corr
+        pearson_map[y0*w+x0] += (meanSub_xy / ((std_x * std_y) + 0.01f)) * weight; // Pearson distance
+        //printf("%f\n", pearson_map[y0*w+x0]);
+
         }
     }
 }
 
+// ---- USER FUNCTIONS ----
 float getGaussianWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
-
     float weight = 0;
     weight = comp - ref;
     weight = fabs(weight);
@@ -121,10 +121,7 @@ float getGaussianWeight(float ref, float comp){
 float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
-
     float weight = 0;
-
-
     weight = 1-(fabs(ref-comp)/fabs(ref+fabs(comp)));
     return weight;
 

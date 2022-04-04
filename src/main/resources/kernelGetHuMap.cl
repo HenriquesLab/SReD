@@ -15,6 +15,7 @@ float getInvariant(float* patch, int patch_w, int patch_h, int p, int q);
 kernel void kernelGetHuMap(
     global float* ref_pixels,
     global float* local_means,
+    global float* local_stds,
     global float* hu_map
 ){
 
@@ -71,7 +72,7 @@ kernel void kernelGetHuMap(
             }
 
             // Calculate weight
-            weight = getGaussianWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
+            weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate Hu moment 2 for comparison patch
             invariant_20_y = getInvariant(comp_patch, bW, bH, 2, 0);

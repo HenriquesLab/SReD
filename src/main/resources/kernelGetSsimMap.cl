@@ -15,6 +15,7 @@ float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy
 kernel void kernelGetSsimMap(
     global float* ref_pixels,
     global float* local_means,
+    global float* local_stds,
     global float* ssim_map
 ){
 
@@ -64,9 +65,9 @@ kernel void kernelGetSsimMap(
             cov_xy /= patch_size;
 
             // Calculate weight
-            weight = getGaussianWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
+            weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
-            // Calculate RMSE(X,Y) and add it to the sum at X
+            // Calculate SSIM and add it to the sum at X
             ssim_map[y0*w+x0] += getSsim(local_means[y0*w+x0], local_means[y1*w+x1], var_x, var_y, cov_xy, patch_size) * weight;
         }
     }

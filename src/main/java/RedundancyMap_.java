@@ -39,7 +39,7 @@ public class RedundancyMap_ implements PlugIn {
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clPearsonMap, clNrmseMap, clMaeMap,
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clNrmseMap, clMaeMap,
             clSsimMap, clHuMap, clEntropyMap;
     private CLBuffer<ShortBuffer> clRefPixels8Bit;
 
@@ -130,6 +130,7 @@ public class RedundancyMap_ implements PlugIn {
         clRefPixels = context.createFloatBuffer(w * h, READ_ONLY);
         clRefPixels8Bit = context.createShortBuffer(w * h, READ_ONLY);
         clLocalMeans = context.createFloatBuffer(w * h, READ_WRITE);
+        clLocalStds = context.createFloatBuffer(w * h, READ_WRITE);
         clPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
         clNrmseMap = context.createFloatBuffer(w * h, READ_WRITE);
         clMaeMap = context.createFloatBuffer(w * h, READ_WRITE);
@@ -215,6 +216,9 @@ public class RedundancyMap_ implements PlugIn {
         float[] localMeans = new float[w * h];
         fillBufferWithFloatArray(clLocalMeans, localMeans);
 
+        float[] localStds = new float[w*h];
+        fillBufferWithFloatArray(clLocalStds, localStds);
+
         float[] pearsonMap = new float[w * h];
         fillBufferWithFloatArray(clPearsonMap, pearsonMap);
 
@@ -261,17 +265,20 @@ public class RedundancyMap_ implements PlugIn {
         int argn = 0;
         kernelGetLocalMeans.setArg(argn++, clRefPixels);
         kernelGetLocalMeans.setArg(argn++, clLocalMeans);
+        kernelGetLocalMeans.setArg(argn++, clLocalStds);
 
         // Weighted mean Pearson correlation coefficient map
         argn = 0;
         kernelGetPearsonMap.setArg(argn++, clRefPixels);
         kernelGetPearsonMap.setArg(argn++, clLocalMeans);
+        kernelGetPearsonMap.setArg(argn++, clLocalStds);
         kernelGetPearsonMap.setArg(argn++, clPearsonMap);
 
         // Weighted mean NRMSE map
         argn = 0;
         kernelGetNrmseMap.setArg(argn++, clRefPixels);
         kernelGetNrmseMap.setArg(argn++, clLocalMeans);
+        kernelGetNrmseMap.setArg(argn++, clLocalStds);
         kernelGetNrmseMap.setArg(argn++, clNrmseMap);
         kernelGetNrmseMap.setArg(argn++, clMaeMap);
 
@@ -279,18 +286,21 @@ public class RedundancyMap_ implements PlugIn {
         argn = 0;
         kernelGetSsimMap.setArg(argn++, clRefPixels);
         kernelGetSsimMap.setArg(argn++, clLocalMeans);
+        kernelGetSsimMap.setArg(argn++, clLocalStds);
         kernelGetSsimMap.setArg(argn++, clSsimMap);
 
         // Hu map
         argn = 0;
         kernelGetHuMap.setArg(argn++, clRefPixels);
         kernelGetHuMap.setArg(argn++, clLocalMeans);
+        kernelGetHuMap.setArg(argn++, clLocalStds);
         kernelGetHuMap.setArg(argn++, clHuMap);
 
         // Entropy map
         argn = 0;
         kernelGetEntropyMap.setArg(argn++, clRefPixels8Bit);
         kernelGetEntropyMap.setArg(argn++, clLocalMeans);
+        kernelGetEntropyMap.setArg(argn++, clLocalStds);
         kernelGetEntropyMap.setArg(argn++, clEntropyMap);
 
         // ---- Create command queue ----
@@ -322,16 +332,20 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Read the local means map back from the GPU ----
         queue.putReadBuffer(clLocalMeans, true);
-        for (int v = 0; v < localMeans.length; v++) {
-            localMeans[v] = clLocalMeans.getBuffer().get(v);
+        for (int i = 0; i < localMeans.length; i++) {
+            localMeans[i] = clLocalMeans.getBuffer().get(i);
+        }
+        queue.finish();
+
+        // ---- Read the local stds map back from the GPU ----
+        queue.putReadBuffer(clLocalStds, true);
+        for (int i = 0; i < localStds.length; i++) {
+            localStds[i] = clLocalStds.getBuffer().get(i);
         }
         queue.finish();
 
         kernelGetLocalMeans.release();
         programGetLocalMeans.release();
-
-        //IJ.log("Done!");
-        //IJ.log("--------");
 
         // ---- Calculate weighted mean Pearson's map ----
         queue.putWriteBuffer(clPearsonMap, false);
@@ -344,15 +358,13 @@ public class RedundancyMap_ implements PlugIn {
                 queue.put2DRangeKernel(kernelGetPearsonMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
             }
         }
-
-        //queue.put2DRangeKernel(kernelGetPearsonMap, 0, 0, w, h, 0,0);
         queue.finish();
 
         // ---- Read the Pearson's map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clPearsonMap, true);
-        for (int a = 0; a<h; a++) {
-            for(int b=0; b<w; b++) {
-                pearsonMap[a*w+b] = clPearsonMap.getBuffer().get(a*w+b) / sizeWithoutBorders;
+        for (int y = 0; y<h; y++) {
+            for(int x=0; x<w; x++) {
+                pearsonMap[y*w+x] = clPearsonMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
                 queue.finish();
             }
         }
@@ -378,17 +390,17 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Read the NRMSE and MAE maps back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clNrmseMap, true);
-        for (int c=0; c<h; c++) {
-            for(int d=0; d<w; d++) {
-                nrmseMap[c*w+d] = clNrmseMap.getBuffer().get(c*w+d) / sizeWithoutBorders;
+        for (int y=0; y<h; y++) {
+            for(int x=0; x<w; x++) {
+                nrmseMap[y*w+x] = clNrmseMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
                 queue.finish();
             }
         }
 
         queue.putReadBuffer(clMaeMap, true);
-        for (int e=0; e<h; e++) {
-            for (int f=0; f<w; f++) {
-                maeMap[e*w+f] = clMaeMap.getBuffer().get(e*w+f) / sizeWithoutBorders;
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                maeMap[y*w+x] = clMaeMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
                 queue.finish();
             }
         }
@@ -408,15 +420,13 @@ public class RedundancyMap_ implements PlugIn {
                 queue.put2DRangeKernel(kernelGetSsimMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
             }
         }
-
-        //queue.put2DRangeKernel(kernelGetSsimMap, 0, 0, w, h, 0,0);
         queue.finish();
 
         // ---- Read the SSIM map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clSsimMap, true);
-        for (int g=0; g<h; g++) {
-            for (int i=0; i<w; i++) {
-                ssimMap[g*w+i] = clSsimMap.getBuffer().get(g*w+i) / sizeWithoutBorders;
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                ssimMap[y*w+x] = clSsimMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
                 queue.finish();
             }
         }
@@ -439,9 +449,9 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Read the Hu map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clHuMap, true);
-        for (int j=0; j<h; j++) {
-            for (int k=0; k<w; k++) {
-                huMap[j*w+k] = clHuMap.getBuffer().get(j*w+k) / sizeWithoutBorders;
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                huMap[y*w+x] = clHuMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
                 queue.finish();
             }
         }

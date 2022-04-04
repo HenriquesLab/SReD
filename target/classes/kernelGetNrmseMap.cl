@@ -8,13 +8,15 @@
 #define patch_size $PATCH_SIZE$
 #define offset_x $OFFSET_X$
 #define offset_y $OFFSET_Y$
-float getWeight(float ref, float comp);
+float getGaussianWeight(float ref, float comp);
+float getExpDecayWeight(float ref, float comp);
 float getNrmse(float* ref_patch, float* comp_patch, float mean_y, int n);
 float getMae(float* ref_patch, float* comp_patch, int n);
 
 kernel void kernelGetNrmseMap(
     global float* ref_pixels,
     global float* local_means,
+    global float* local_stds,
     global float* nrmse_map,
     global float* mae_map
 ){
@@ -56,7 +58,7 @@ kernel void kernelGetNrmseMap(
             }
 
             // Calculate weight
-            weight = getWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
+            weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate NRMSE(X,Y) and add it to the sum at X
             nrmse_map[y0*w+x0] += getNrmse(meanSub_x, meanSub_y, local_means[y1*w+x1], patch_size) * weight;
@@ -65,7 +67,7 @@ kernel void kernelGetNrmseMap(
     }
 }
 
-float getWeight(float mean_x, float mean_y){
+float getGaussianWeight(float mean_x, float mean_y){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
 
@@ -76,6 +78,17 @@ float getWeight(float mean_x, float mean_y){
     weight = weight/filter_param_sq;
     weight = (-1) * weight;
     weight = exp(weight);
+    return weight;
+}
+
+float getExpDecayWeight(float ref, float comp){
+    // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
+    // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
+
+    float weight = 0;
+
+
+    weight = 1-(fabs(ref-comp)/fabs(ref+fabs(comp)));
     return weight;
 }
 

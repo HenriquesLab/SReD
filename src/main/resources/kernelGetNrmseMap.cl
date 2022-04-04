@@ -16,6 +16,7 @@ float getMae(float* ref_patch, float* comp_patch, int n);
 kernel void kernelGetNrmseMap(
     global float* ref_pixels,
     global float* local_means,
+    global float* local_stds,
     global float* nrmse_map,
     global float* mae_map
 ){
@@ -57,7 +58,7 @@ kernel void kernelGetNrmseMap(
             }
 
             // Calculate weight
-            weight = getGaussianWeight(local_means[y0*w+x0], local_means[y1*w+x1]);
+            weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate NRMSE(X,Y) and add it to the sum at X
             nrmse_map[y0*w+x0] += getNrmse(meanSub_x, meanSub_y, local_means[y1*w+x1], patch_size) * weight;
