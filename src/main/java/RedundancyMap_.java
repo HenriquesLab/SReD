@@ -13,7 +13,6 @@ import ij.process.ByteProcessor;
 import ij.process.FloatProcessor;
 import ij.process.ImageConverter;
 import ij.process.ShortProcessor;
-
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -31,22 +30,21 @@ public class RedundancyMap_ implements PlugIn {
     // OpenCL formats
     static private CLContext context;
     static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetNrmseMap, programGetSsimMap,
-            programGetHuMap, programGetEntropyMap;
+            programGetHuMap, programGetEntropyMap, programGetPhaseCorrelationMap;
     static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetNrmseMap, kernelGetSsimMap,
-            kernelGetHuMap, kernelGetEntropyMap;
+            kernelGetHuMap, kernelGetEntropyMap, kernelGetPhaseCorrelationMap;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
     private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clNrmseMap, clMaeMap,
-            clSsimMap, clHuMap, clEntropyMap;
+            clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap;
     private CLBuffer<ShortBuffer> clRefPixels8Bit;
 
 
     @Override
     public void run(String s) {
-
         // ---- Start timer ----
         long start = System.currentTimeMillis();
 
@@ -59,9 +57,12 @@ public class RedundancyMap_ implements PlugIn {
 
         FloatProcessor fp0 = imp0.getProcessor().convertToFloatProcessor();
         float[] refPixels = (float[]) fp0.getPixels();
-        int w = imp0.getWidth();
-        int h = imp0.getHeight();
-        float sigma = 1.7F; // TODO: This should be the noise STDDEV, which can be taken from a dark patch in the image
+        float[] refPixelsRaw = (float[]) fp0.getPixels();
+        int w = fp0.getWidth();
+        int h = fp0.getHeight();
+
+
+        float sigma = 1.7f; // TODO: This should be the noise STDDEV, which can be taken from a dark patch in the image
         float filterParamSq = (float) pow(0.4 * sigma, 2);
 
         // ---- Patch parameters ----
@@ -70,9 +71,15 @@ public class RedundancyMap_ implements PlugIn {
         int patchSize = bW * bH; // Patch area
         int offsetX = bW/2; // Offset of the search radius relative to the original image, to avoid borders (x-axis)
         int offsetY = bH/2; // Offset of the search radius relative to the original image, to avoid borders (y-axis)
+        int widthWithoutBorders = w - offsetX*2;
+        int heightWithoutBorders = h - offsetY*2;
         int sizeWithoutBorders = (w-offsetX*2)*(h-offsetY*2); // The area of the search field (= image without borders)
 
-        // ---- Check devices ----
+        // ---- Normalize image ----
+        float minMax[] = findMinMax(refPixels, w, h, 0, 0);
+        refPixels = normalize(refPixels, w, h, 0, 0, minMax, 1, 2);
+
+            // ---- Check devices ----
         CLPlatform[] allPlatforms = CLPlatform.listCLPlatforms();
 
         try {
@@ -137,6 +144,7 @@ public class RedundancyMap_ implements PlugIn {
         clSsimMap = context.createFloatBuffer(w * h, READ_WRITE);
         clHuMap = context.createFloatBuffer(w * h, READ_WRITE);
         clEntropyMap = context.createFloatBuffer(w * h, READ_WRITE);
+        clPhaseCorrelationMap = context.createFloatBuffer(w * h, READ_WRITE);
 
         // ---- Create programs ----
         // Local means map
@@ -210,6 +218,19 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$OFFSET_Y$", "" + offsetY);
         programGetEntropyMap = context.createProgram(programStringGetEntropyMap).build();
 
+        // Phase Correlation Map
+        String programStringGetPhaseCorrelationMap = getResourceAsString(RedundancyMap_.class, "kernelGetPhaseCorrelationMap.cl");
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$WIDTH$", "" + w);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$HEIGHT$", "" + h);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$BW$", "" + bW);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$BH$", "" + bH);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$OFFSET_X$", "" + offsetX);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$OFFSET_Y$", "" + offsetY);
+        programGetPhaseCorrelationMap = context.createProgram(programStringGetPhaseCorrelationMap).build();
+
+
         // ---- Fill buffers ----
         fillBufferWithFloatArray(clRefPixels, refPixels);
 
@@ -237,6 +258,9 @@ public class RedundancyMap_ implements PlugIn {
         float[] entropyMap = new float[w * h];
         fillBufferWithFloatArray(clEntropyMap, entropyMap);
 
+        float[] phaseCorrelationMap = new float[w * h];
+        fillBufferWithFloatArray(clPhaseCorrelationMap, phaseCorrelationMap);
+
         // Create 8-bit duplicate of reference image (because entropy calculation is better with 8-bit data)
         ImagePlus imp8Bit = imp0.duplicate();
         imp8Bit.setTitle("Variance-stabilized image (8-bit)");
@@ -259,6 +283,7 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetSsimMap = programGetSsimMap.createCLKernel("kernelGetSsimMap");
         kernelGetHuMap = programGetHuMap.createCLKernel("kernelGetHuMap");
         kernelGetEntropyMap = programGetEntropyMap.createCLKernel("kernelGetEntropyMap");
+        kernelGetPhaseCorrelationMap = programGetPhaseCorrelationMap.createCLKernel("kernelGetPhaseCorrelationMap");
 
         // ---- Set kernel arguments ----
         // Local means map
@@ -303,6 +328,13 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetEntropyMap.setArg(argn++, clLocalStds);
         kernelGetEntropyMap.setArg(argn++, clEntropyMap);
 
+        // Phase correlation map
+        argn = 0;
+        kernelGetPhaseCorrelationMap.setArg(argn++, clRefPixels);
+        kernelGetPhaseCorrelationMap.setArg(argn++, clLocalMeans);
+        kernelGetPhaseCorrelationMap.setArg(argn++, clLocalStds);
+        kernelGetPhaseCorrelationMap.setArg(argn++, clPhaseCorrelationMap);
+
         // ---- Create command queue ----
         queue = chosenDevice.createCommandQueue();
 
@@ -323,24 +355,26 @@ public class RedundancyMap_ implements PlugIn {
             for(int nXB=0; nXB<nXBlocks; nXB++) {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating local means... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetLocalMeans, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+                queue.put2DRangeKernel(kernelGetLocalMeans, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
             }
         }
-
-        //queue.put1DRangeKernel(kernelGetLocalMeans, 0, w*h, 0);
         queue.finish();
 
         // ---- Read the local means map back from the GPU ----
         queue.putReadBuffer(clLocalMeans, true);
-        for (int i = 0; i < localMeans.length; i++) {
-            localMeans[i] = clLocalMeans.getBuffer().get(i);
+        for (int y=0; y<h; y++) {
+            for(int x=0; x<w; x++) {
+                localMeans[y*w+x] = clLocalMeans.getBuffer().get(y*w+x);
+            }
         }
         queue.finish();
 
         // ---- Read the local stds map back from the GPU ----
         queue.putReadBuffer(clLocalStds, true);
-        for (int i = 0; i < localStds.length; i++) {
-            localStds[i] = clLocalStds.getBuffer().get(i);
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                localStds[y*w+x] = clLocalStds.getBuffer().get(y*w+x);
+            }
         }
         queue.finish();
 
@@ -355,7 +389,7 @@ public class RedundancyMap_ implements PlugIn {
             for(int nXB=0; nXB<nXBlocks; nXB++) {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating Pearson's correlations... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetPearsonMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+                queue.put2DRangeKernel(kernelGetPearsonMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
             }
         }
         queue.finish();
@@ -368,7 +402,6 @@ public class RedundancyMap_ implements PlugIn {
                 queue.finish();
             }
         }
-
         kernelGetPearsonMap.release();
         programGetPearsonMap.release();
         clPearsonMap.release();
@@ -381,7 +414,7 @@ public class RedundancyMap_ implements PlugIn {
             for(int nXB=0; nXB<nXBlocks; nXB++) {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating NRMSE and MAE... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetNrmseMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+                queue.put2DRangeKernel(kernelGetNrmseMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
             }
         }
 
@@ -417,7 +450,7 @@ public class RedundancyMap_ implements PlugIn {
             for(int nXB=0; nXB<nXBlocks; nXB++) {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating SSIM... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetSsimMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+                queue.put2DRangeKernel(kernelGetSsimMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
             }
         }
         queue.finish();
@@ -442,7 +475,7 @@ public class RedundancyMap_ implements PlugIn {
             for(int nXB=0; nXB<nXBlocks; nXB++) {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating Hu... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetHuMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+                queue.put2DRangeKernel(kernelGetHuMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
             }
         }
         queue.finish();
@@ -487,6 +520,32 @@ public class RedundancyMap_ implements PlugIn {
         IJ.log("Done!");
         IJ.log("--------");
 */
+        // ---- Calculate Phase correlation map ----
+        queue.putWriteBuffer(clPhaseCorrelationMap, false);
+
+        for(int nYB=0; nYB<nYBlocks; nYB++) {
+            int yWorkSize = min(64, h-nYB*64);
+            for(int nXB=0; nXB<nXBlocks; nXB++) {
+                int xWorkSize = min(64, w-nXB*64);
+                showStatus("Calculating Phase correlations... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
+                queue.put2DRangeKernel(kernelGetPhaseCorrelationMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+            }
+        }
+
+        queue.finish();
+
+        // ---- Read the Phase correlations map back from the GPU (and finish the mean calculation simultaneously) ----
+        queue.putReadBuffer(clPhaseCorrelationMap, true);
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                phaseCorrelationMap[y*w+x] = clPhaseCorrelationMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
+                queue.finish();
+            }
+        }
+        kernelGetPhaseCorrelationMap.release();
+        programGetPhaseCorrelationMap.release();
+        clPhaseCorrelationMap.release();
+
         // ---- Cleanup all resources associated with this context ----
         IJ.log("Cleaning up resources...");
         context.release();
@@ -498,36 +557,36 @@ public class RedundancyMap_ implements PlugIn {
 
         // Pearson's map (normalized to [0,1])
         float[] pearsonMinMax = findMinMax(pearsonMap, w, h, offsetX, offsetY);
-        float[] pearsonMapNorm = normalize(pearsonMap, w, h, offsetX, offsetY, pearsonMinMax);
-        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
+        float[] pearsonMapNorm = normalize(pearsonMap, w, h, offsetX, offsetY, pearsonMinMax, 0, 0);
+        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
 
         // NRMSE map (normalized to [0,1])
         float[] nrmseMinMax = findMinMax(nrmseMap, w, h, offsetX, offsetY);
-        float[] nrmseMapNorm = normalize(nrmseMap, w, h, offsetX, offsetY, nrmseMinMax);
-        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMapNorm);
+        float[] nrmseMapNorm = normalize(nrmseMap, w, h, offsetX, offsetY, nrmseMinMax, 0, 0);
+        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMap);
         ImagePlus imp2 = new ImagePlus("NRMSE Map", fp2);
         imp2.show();
 
         // MAE map (normalized to [0,1])
         float[] maeMinMax = findMinMax(maeMap, w, h, offsetX, offsetY);
-        float[] maeMapNorm = normalize(maeMap, w, h, offsetX, offsetY, maeMinMax);
-        FloatProcessor fp3 = new FloatProcessor(w, h, maeMapNorm);
+        float[] maeMapNorm = normalize(maeMap, w, h, offsetX, offsetY, maeMinMax, 0, 0);
+        FloatProcessor fp3 = new FloatProcessor(w, h, maeMap);
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
 
         // SSIM map (normalized to [0,1])
         float[] ssimMinMax = findMinMax(ssimMap, w, h, offsetX, offsetY);
-        float[] ssimMapNorm = normalize(ssimMap, w, h, offsetX, offsetY, ssimMinMax);
-        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMapNorm);
+        float[] ssimMapNorm = normalize(ssimMap, w, h, offsetX, offsetY, ssimMinMax, 0, 0);
+        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMap);
         ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
         imp4.show();
 
         // Hu map (normalized to [0,1])
         float[] huMinMax = findMinMax(huMap, w, h, offsetX, offsetY);
-        float[] huMapNorm = normalize(huMap, w, h, offsetX, offsetY, huMinMax);
-        FloatProcessor fp5 = new FloatProcessor(w, h, huMapNorm);
+        float[] huMapNorm = normalize(huMap, w, h, offsetX, offsetY, huMinMax, 0, 0);
+        FloatProcessor fp5 = new FloatProcessor(w, h, huMap);
         ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
         imp5.show();
 /*
@@ -537,6 +596,13 @@ public class RedundancyMap_ implements PlugIn {
         imp6.show();
         IJ.log("Finished!");
 */
+        // Phase map (normalized to [0,1])
+        float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, offsetX, offsetY);
+        float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, offsetX, offsetY, phaseMinMax, 0, 0);
+        FloatProcessor fp6 = new FloatProcessor(w, h, phaseCorrelationMap);
+        ImagePlus imp6 = new ImagePlus("Phase Map", fp6);
+        imp6.show();
+
         // ---- Stop timer ----
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
@@ -613,15 +679,22 @@ public class RedundancyMap_ implements PlugIn {
         return minMax;
     }
 
-    public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax){
-        float min = minMax[0];
+    public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax, float tMin, float tMax){
+        float rMin = minMax[0];
+        float rMax = minMax[1];
+        float denominator = rMax - rMin + 0.000001f;
+        float factor;
 
-        float denominator = minMax[1] - min + 0.000001f;
+        if(tMax == 0 && tMin == 0){
+            factor = 1; // So that the users can say they don't want an artificial range by choosing tMax and tMin = 0
+        }else {
+            factor = tMax - tMin;
+        }
         float[] normalizedPixels = new float[w*h];
 
         for(int j=offsetY; j<h-offsetY; j++) {
             for (int i=offsetX; i<w-offsetX; i++) {
-                normalizedPixels[j*w+i] = (rawPixels[j*w+i]-min)/denominator;
+                normalizedPixels[j*w+i] = (rawPixels[j*w+i]-rMin)/denominator * factor + tMin;
             }
         }
         return normalizedPixels;

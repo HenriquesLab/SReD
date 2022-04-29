@@ -23,12 +23,18 @@ kernel void kernelGetNrmseMap(
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
+
+    // Bound check (avoids borders dynamically based on patch dimensions)
+    if(x0<offset_x || x0>=w-offset_x || y0<offset_y || y0>=h-offset_y){
+        return;
+    }
+
     int bRW = bW/2;
     int bRH = bH/2;
 
     // Get reference patch
-    float ref_patch[patch_size];
-    float meanSub_x[patch_size];
+    float ref_patch[patch_size] = {0.0f};
+    float meanSub_x[patch_size] = {0.0f};
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
@@ -39,11 +45,11 @@ kernel void kernelGetNrmseMap(
     }
 
     // For each comparison pixel...
-    float weight;
+    float weight = 0.0f;
     for(int y1=offset_y; y1<h-offset_y; y1++){
         for(int x1=offset_x; x1<w-offset_x; x1++){
 
-        weight = 0;
+            weight = 0.0f;
 
             // Get comparison patch Y
             float comp_patch[patch_size];
@@ -58,8 +64,8 @@ kernel void kernelGetNrmseMap(
             }
 
             // Calculate weight
-            weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
-
+            //weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
+            weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
             // Calculate NRMSE(X,Y) and add it to the sum at X
             nrmse_map[y0*w+x0] += getNrmse(meanSub_x, meanSub_y, local_means[y1*w+x1], patch_size) * weight;
             mae_map[y0*w+x0] += getMae(meanSub_x, meanSub_y, patch_size) * weight;
@@ -86,9 +92,12 @@ float getExpDecayWeight(float ref, float comp){
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
 
     float weight = 0;
+    if(ref == comp){
+            weight = 1;
+        }else{
+            weight = 1-(fabs(ref-comp)/(ref+comp));
+        }
 
-
-    weight = 1-(fabs(ref-comp)/fabs(ref+fabs(comp)));
     return weight;
 }
 
@@ -102,7 +111,8 @@ float getNrmse(float* ref_patch, float* comp_patch, float mean_y, int n){
     }
     nrmse = nrmse/n;
     nrmse = sqrt(nrmse);
-    nrmse = nrmse/(mean_y+0.000001f);
+    nrmse = nrmse/(mean_y+0.00001f);
+    nrmse = nrmse;
 
     return nrmse;
 }
@@ -116,5 +126,6 @@ float getMae(float* ref_patch, float* comp_patch, int n){
         mae += foo;
     }
     mae = mae/n;
+    //mae = 1-mae;
     return mae;
 }

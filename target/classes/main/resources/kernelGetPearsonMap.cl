@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define w $WIDTH$
 #define h $HEIGHT$
@@ -21,10 +21,16 @@ kernel void kernelGetPearsonMap(
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
+
+    // Bound check (avoids borders dynamically based on patch dimensions)
+    if(x0<offset_x || x0>=w-offset_x || y0<offset_y || y0>=h-offset_y){
+        return;
+    }
+
     int bRW = bW/2;
     int bRH = bH/2;
 
-    // ---- Get reference patch ----
+    // ---- Reference patch ----
     // Get reference patch minimum and maximum
     float min_x = ref_pixels[y0*w+x0];
     float max_x = ref_pixels[y0*w+x0];
@@ -40,67 +46,74 @@ kernel void kernelGetPearsonMap(
         }
     }
 
-    // Get reference patch values, subtract the mean, and get local standard deviation
-    float ref_patch[patch_size];
-    float meanSub_x[patch_size];
+    if(min_x == max_x){
+        min_x = 0.0f;
+        max_x = 1.0f;
+    }
+
+    // Get patch values, subtract the mean, and get local standard deviation
+    float ref_patch[patch_size] = {0.0f};
+    float meanSub_x[patch_size] = {0.0f};
     float std_x = local_stds[y0*w+x0];
 
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            //ref_patch[ref_counter] = ref_pixels[j0*w+i0];
-            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + 0.000001f); // Normalize patch to [0,1]
+            ref_patch[ref_counter] = ref_pixels[j0*w+i0];
+            //ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + 0.00001f); // Normalize patch to [0,1]
             meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
             ref_counter++;
         }
     }
 
     // For each comparison pixel...
-    float weight;
+    float weight = 0.0f;
     for(int y1=offset_y; y1<h-offset_y; y1++){
         for(int x1=offset_x; x1<w-offset_x; x1++){
 
-        weight = 0;
+            weight = 0.0f;
 
-        // Get comparison patch minimum and maximum
-        float min_y = ref_pixels[y1*w+x1];
-        float max_y = ref_pixels[y1*w+x1];
+            // Get patch minimum and maximum
+            float min_y = ref_pixels[y1*w+x1];
+            float max_y = ref_pixels[y1*w+x1];
 
-        for(int j1=y1-bRH; j1<=y1+bRH; j1++){
-            for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                if(ref_pixels[j1*w+i1] < min_y){
-                    min_y = ref_pixels[j1*w+i1];
-                }
-                if(ref_pixels[j1*w+i1] > max_y){
-                    max_y = ref_pixels[j1*w+i1];
+            for(int j1=y1-bRH; j1<=y1+bRH; j1++){
+                for(int i1=x1-bRW; i1<=x1+bRW; i1++){
+                    if(ref_pixels[j1*w+i1] < min_y){
+                        min_y = ref_pixels[j1*w+i1];
+                    }
+                    if(ref_pixels[j1*w+i1] > max_y){
+                        max_y = ref_pixels[j1*w+i1];
+                    }
                 }
             }
-        }
 
-        // Get comparison patch values, subtract the mean, and get local standard deviation
-        float comp_patch[patch_size];
-        float meanSub_y[patch_size];
-        float std_y = local_stds[y1*w+x1];
-        float meanSub_xy = 0;
-        int comp_counter = 0;
+            // Get values, subtract the mean, and get local standard deviation
+            float comp_patch[patch_size] = {0.0f};
+            float meanSub_y[patch_size] = {0.0f};
+            float std_y = local_stds[y1*w+x1];
+            float meanSub_xy = 0.0f;
 
-        for(int j1=y1-bRH; j1<=y1+bRH; j1++){
-            for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-            //comp_patch[comp_counter] = ref_pixels[j1*w+i1];
-            comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + 0.000001f); // Normalize patch to [0,1]
-            meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
-            meanSub_xy += meanSub_x[comp_counter] * meanSub_y[comp_counter];
-            comp_counter++;
+            int comp_counter = 0;
+            for(int j1=y1-bRH; j1<=y1+bRH; j1++){
+                for(int i1=x1-bRW; i1<=x1+bRW; i1++){
+                    comp_patch[comp_counter] = ref_pixels[j1*w+i1];
+                    //comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + 0.00001f); // Normalize patch to [0,1]
+                    meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
+                    meanSub_xy += meanSub_x[comp_counter] * meanSub_y[comp_counter];
+                    comp_counter++;
+                }
             }
-        }
 
-        // Calculate weight
-        weight = getGaussianWeight(std_x, std_y);
+            // Calculate weight
+            weight = getExpDecayWeight(std_x, std_y);
 
-        // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-        pearson_map[y0*w+x0] += (meanSub_xy / ((std_x * std_y) + 0.01f)) * weight; // Pearson distance
-        //printf("%f\n", pearson_map[y0*w+x0]);
-
+            // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
+            if(std_x == 0.0f && std_y == 0.0f){
+                pearson_map[y0*w+x0] += 1.0f * weight; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
+            }else{
+                pearson_map[y0*w+x0] += max(0.0f, (meanSub_xy / ((std_x * std_y) + 0.00001f)) * weight); // Truncate anti-correlations to zero
+            }
         }
     }
 }
@@ -112,7 +125,7 @@ float getGaussianWeight(float ref, float comp){
     weight = comp - ref;
     weight = fabs(weight);
     weight = weight*weight;
-    weight = weight/filter_param_sq;
+    weight = weight/(filter_param_sq + 0.00001f);
     weight = (-1) * weight;
     weight = exp(weight);
     return weight;
@@ -122,7 +135,12 @@ float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
     float weight = 0;
-    weight = 1-(fabs(ref-comp)/fabs(ref+fabs(comp)));
+
+    if(ref == comp){
+        weight = 1;
+    }else{
+        weight = 1-(fabs(ref-comp)/(ref+comp));
+    }
     return weight;
 
 }

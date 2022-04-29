@@ -23,7 +23,7 @@ kernel void kernelGetEntropyMap(
     int bRW = bW/2;
     int bRH = bH/2;
 
-    float entropy_x = 0.0;
+    float entropy_x = 0.0f;
 
     // Get reference patch
     float ref_patch[patch_size];

@@ -21,62 +21,105 @@ kernel void kernelGetHuMap(
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
+
+    // Bound check (avoids borders dynamically based on patch dimensions)
+    if(x0<offset_x || x0>=w-offset_x || y0<offset_y || y0>=h-offset_y){
+        return;
+    }
+
     int bRW = bW/2;
     int bRH = bH/2;
 
-    float invariant_20_x = 0;
-    float invariant_02_x = 0;
-    float hu_x = 0;
+    float invariant_20_x = 0.0f;
+    float invariant_02_x = 0.0f;
+    float hu_x = 0.0f;
+
+    // ---- Get reference patch ----
+    // Get reference patch minimum and maximum
+    float min_x = ref_pixels[y0*w+x0];
+    float max_x = ref_pixels[y0*w+x0];
+
+    for(int j0=y0-bRH; j0<=y0+bRH; j0++){
+        for(int i0=x0-bRW; i0<=x0+bRW; i0++){
+            if(ref_pixels[j0*w+i0] < min_x){
+                min_x = ref_pixels[j0*w+i0];
+            }
+            if(ref_pixels[j0*w+i0] > max_x){
+                max_x = ref_pixels[j0*w+i0];
+            }
+        }
+    }
 
     // Get reference patch
-    float ref_patch[patch_size];
-    float meanSub_x[patch_size];
+    float ref_patch[patch_size] = {0.0f};
+    float meanSub_x[patch_size] = {0.0f};
     int ref_counter = 0;
+
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
             ref_patch[ref_counter] = ref_pixels[j0*w+i0];
+            //ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + 0.00001f); // Normalize patch to [0,1]
             meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
             ref_counter++;
         }
     }
 
     // Calculate Hu moment 2 for reference patch
-    invariant_20_x = getInvariant(ref_patch, bW, bH, 2, 0);
-    invariant_02_x = getInvariant(ref_patch, bW, bH, 0, 2);
+    invariant_20_x = getInvariant(meanSub_x, bW, bH, 2, 0);
+    invariant_02_x = getInvariant(meanSub_x, bW, bH, 0, 2);
     hu_x = invariant_20_x + invariant_02_x;
 
     // For each comparison pixel...
-    float weight;
-    float invariant_20_y;
-    float invariant_02_y;
-    float hu_y;
+    float weight = 0.0f;
+    float invariant_20_y = 0.0f;
+    float invariant_02_y = 0.0f;
+    float hu_y = 0.0f;
 
     for(int y1=offset_y; y1<h-offset_y; y1++){
         for(int x1=offset_x; x1<w-offset_x; x1++){
 
-            weight = 0;
-            invariant_20_y = 0;
-            invariant_02_y = 0;
-            hu_y = 0;
+            weight = 0.0f;
+            invariant_20_y = 0.0f;
+            invariant_02_y = 0.0f;
+            hu_y = 0.0f;
+
+            // Get comparison patch minimum and maximum
+            float min_y = ref_pixels[y1*w+x1];
+            float max_y = ref_pixels[y1*w+x1];
+
+            for(int j1=y1-bRH; j1<=y1+bRH; j1++){
+                for(int i1=x1-bRW; i1<=x1+bRW; i1++){
+                    if(ref_pixels[j1*w+i1] < min_y){
+                        min_y = ref_pixels[j1*w+i1];
+                    }
+                    if(ref_pixels[j1*w+i1] > max_y){
+                        max_y = ref_pixels[j1*w+i1];
+                    }
+                }
+            }
 
             // Get comparison patch Y
-            float comp_patch[patch_size];
-            float meanSub_y[patch_size];
+            float comp_patch[patch_size] = {0.0f};
+            float meanSub_y[patch_size] = {0.0f};
             int comp_counter = 0;
+            float std_y = local_stds[y1*w+x1];
+
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                     comp_patch[comp_counter] = ref_pixels[j1*w+i1];
+                    //comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + 0.00001f); // Normalize patch to [0,1]
                     meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
                     comp_counter++;
                 }
             }
 
             // Calculate weight
-            weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
+            //weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
+            weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate Hu moment 2 for comparison patch
-            invariant_20_y = getInvariant(comp_patch, bW, bH, 2, 0);
-            invariant_02_y = getInvariant(comp_patch, bW, bH, 0, 2);
+            invariant_20_y = getInvariant(meanSub_y, bW, bH, 2, 0);
+            invariant_02_y = getInvariant(meanSub_y, bW, bH, 0, 2);
             hu_y = invariant_20_y + invariant_02_y;
 
             // Calculate Euclidean distance between Hu moments and add to Hu map
@@ -104,9 +147,12 @@ float getExpDecayWeight(float ref, float comp){
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
 
     float weight = 0;
+    if(ref == comp){
+            weight = 1;
+        }else{
+            weight = 1-(fabs(ref-comp)/(ref+comp));
+        }
 
-
-    weight = 1-(fabs(ref-comp)/fabs(ref+fabs(comp)));
     return weight;
 }
 
@@ -129,8 +175,8 @@ float getInvariant(float* patch, int patch_w, int patch_h, int p, int q){
     }
 
     // Avoid division by zero
-    if(moment_00 < 0.000001f){
-        moment_00 += 0.000001f;
+    if(moment_00 < 0.00001f){
+        moment_00 += 0.00001f;
     }
 
     centroid_x = moment_10/moment_00;

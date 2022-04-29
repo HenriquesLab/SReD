@@ -21,13 +21,19 @@ kernel void kernelGetSsimMap(
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
+
+    // Bound check (avoids borders dynamically based on patch dimensions)
+    if(x0<offset_x || x0>=w-offset_x || y0<offset_y || y0>=h-offset_y){
+        return;
+    }
+
     int bRW = bW/2;
     int bRH = bH/2;
 
     // Get reference patch
-    float ref_patch[patch_size];
-    float meanSub_x[patch_size];
-    float var_x = 0;
+    float ref_patch[patch_size] = {0.0f};
+    float meanSub_x[patch_size] = {0.0f};
+    float var_x = 0.0f;
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
@@ -40,17 +46,17 @@ kernel void kernelGetSsimMap(
     var_x /= patch_size;
 
     // For each comparison pixel...
-    float weight;
+    float weight = 0.0f;
     for(int y1=offset_y; y1<h-offset_y; y1++){
         for(int x1=offset_x; x1<w-offset_x; x1++){
 
-            weight = 0;
+            weight = 0.0f;
 
             // Get comparison patch Y
-            float comp_patch[patch_size];
-            float meanSub_y[patch_size];
-            float var_y = 0;
-            float cov_xy = 0;
+            float comp_patch[patch_size] = {0.0f};
+            float meanSub_y[patch_size] = {0.0f};
+            float var_y = 0.0f;
+            float cov_xy = 0.0f;
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
@@ -65,7 +71,8 @@ kernel void kernelGetSsimMap(
             cov_xy /= patch_size;
 
             // Calculate weight
-            weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
+            //weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
+            weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate SSIM and add it to the sum at X
             ssim_map[y0*w+x0] += getSsim(local_means[y0*w+x0], local_means[y1*w+x1], var_x, var_y, cov_xy, patch_size) * weight;
@@ -92,9 +99,12 @@ float getExpDecayWeight(float ref, float comp){
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
 
     float weight = 0;
+    if(ref == comp){
+            weight = 1;
+        }else{
+            weight = 1-(fabs(ref-comp)/(ref+comp));
+        }
 
-
-    weight = 1-(fabs(ref-comp)/fabs(ref+fabs(comp)));
     return weight;
 }
 
