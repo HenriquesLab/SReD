@@ -38,7 +38,7 @@ kernel void kernelGetPhaseCorrelationMap(
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
             ref_patch[ref_counter] = (double) ref_pixels[j0*w+i0];
-            meanSub_x[ref_counter] = (ref_patch[ref_counter] - (double) local_means[y0*w+x0]) / 0.0001; // division by  to scale
+            meanSub_x[ref_counter] = (ref_patch[ref_counter] - (double) local_means[y0*w+x0]) / ((double) local_stds[y0*w+x0] + EPSILON); // division by  to scale
             ref_counter++;
         }
     }
@@ -50,8 +50,8 @@ kernel void kernelGetPhaseCorrelationMap(
         for(int i=0; i<bW; i++){
             for(int jj=0; jj<bH; jj++){
                 for(int ii=0; ii<bW; ii++){
-                    ref_dft_real[j*bW+i] += (meanSub_x[jj*bW+ii] * cos(2*PI*((1*i*ii/bW) + (1*j*jj/bH)))) / (sqrt((double)patch_size));
-                    ref_dft_imag[j*bW+i] -= (meanSub_x[jj*bW+ii] * sin(2*PI*((1*i*ii/bW) + (1*j*jj/bH)))) / (sqrt((double)patch_size));
+                    ref_dft_real[j*bW+i] += (meanSub_x[jj*bW+ii] * cos(2*PI*((1*i*ii/bW) + (1*j*jj/bH)))) / (sqrt((double) patch_size));
+                    ref_dft_imag[j*bW+i] -= (meanSub_x[jj*bW+ii] * sin(2*PI*((1*i*ii/bW) + (1*j*jj/bH)))) / (sqrt((double) patch_size));
                 }
             }
         }
@@ -72,7 +72,7 @@ kernel void kernelGetPhaseCorrelationMap(
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                     comp_patch[comp_counter] = (double) ref_pixels[j1*w+i1];
-                    meanSub_y[comp_counter] = (comp_patch[comp_counter] - (double) local_means[y1*w+x1]) / 0.0001; // Division by 0.5 to scale up the values
+                    meanSub_y[comp_counter] = (comp_patch[comp_counter] - (double) local_means[y1*w+x1]) / ((double) local_stds[y1*w+x1] + EPSILON);
                     comp_counter++;
                 }
             }
@@ -128,7 +128,7 @@ kernel void kernelGetPhaseCorrelationMap(
                 }
             }
 
-            // Determine the maximum value of the cross-correlation and get peak coordinates TODO: OUTPUT IS WRONG
+            // Determine the maximum value of the cross-correlation and get peak coordinates
             double max_value = 0.0f;
             int x_coord = 0;
             int y_coord = 0;
