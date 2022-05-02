@@ -31,6 +31,22 @@ kernel void kernelGetNrmseMap(
 
     int bRW = bW/2;
     int bRH = bH/2;
+    float EPSILON = 0.0000001f;
+
+    // Get reference patch max and min
+    float min_x = ref_pixels[y0*w+x0];
+    float max_x = ref_pixels[y0*w+x0];
+
+    for(int j0=y0-bRH; j0<=y0+bRH; j0++){
+        for(int i0=x0-bRW; i0<=x0+bRW; i0++){
+            if(ref_pixels[j0*w+i0] < min_x){
+               min_x = ref_pixels[j0*w+i0];
+            }
+            if(ref_pixels[j0*w+i0] > max_x){
+                max_x = ref_pixels[j0*w+i0];
+            }
+        }
+    }
 
     // Get reference patch
     float ref_patch[patch_size] = {0.0f};
@@ -39,7 +55,7 @@ kernel void kernelGetNrmseMap(
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
             ref_patch[ref_counter] = ref_pixels[j0*w+i0];
-            meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
+            meanSub_x[ref_counter] = (ref_patch[ref_counter] - local_means[y0*w+x0]) / (max_x + EPSILON);
             ref_counter++;
         }
     }
@@ -51,6 +67,21 @@ kernel void kernelGetNrmseMap(
 
             weight = 0.0f;
 
+            // Get comparison patch minimum and maximum
+            float min_y = ref_pixels[y1*w+x1];
+            float max_y = ref_pixels[y1*w+x1];
+
+            for(int j1=y1-bRH; j1<=y1+bRH; j1++){
+                for(int i1=x1-bRW; i1<=x1+bRW; i1++){
+                    if(ref_pixels[j1*w+i1] < min_y){
+                       min_y = ref_pixels[j1*w+i1];
+                    }
+                    if(ref_pixels[j1*w+i1] > max_y){
+                        max_y = ref_pixels[j1*w+i1];
+                    }
+                }
+            }
+
             // Get comparison patch Y
             float comp_patch[patch_size];
             float meanSub_y[patch_size];
@@ -58,7 +89,7 @@ kernel void kernelGetNrmseMap(
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                     comp_patch[comp_counter] = ref_pixels[j1*w+i1];
-                    meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
+                    meanSub_y[comp_counter] = (comp_patch[comp_counter] - local_means[y1*w+x1]) / (max_y + EPSILON);
                     comp_counter++;
                 }
             }

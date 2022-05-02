@@ -558,35 +558,35 @@ public class RedundancyMap_ implements PlugIn {
         // Pearson's map (normalized to [0,1])
         float[] pearsonMinMax = findMinMax(pearsonMap, w, h, offsetX, offsetY);
         float[] pearsonMapNorm = normalize(pearsonMap, w, h, offsetX, offsetY, pearsonMinMax, 0, 0);
-        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
+        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
 
         // NRMSE map (normalized to [0,1])
         float[] nrmseMinMax = findMinMax(nrmseMap, w, h, offsetX, offsetY);
         float[] nrmseMapNorm = normalize(nrmseMap, w, h, offsetX, offsetY, nrmseMinMax, 0, 0);
-        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMap);
+        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMapNorm);
         ImagePlus imp2 = new ImagePlus("NRMSE Map", fp2);
         imp2.show();
 
         // MAE map (normalized to [0,1])
         float[] maeMinMax = findMinMax(maeMap, w, h, offsetX, offsetY);
         float[] maeMapNorm = normalize(maeMap, w, h, offsetX, offsetY, maeMinMax, 0, 0);
-        FloatProcessor fp3 = new FloatProcessor(w, h, maeMap);
+        FloatProcessor fp3 = new FloatProcessor(w, h, maeMapNorm);
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
 
         // SSIM map (normalized to [0,1])
         float[] ssimMinMax = findMinMax(ssimMap, w, h, offsetX, offsetY);
         float[] ssimMapNorm = normalize(ssimMap, w, h, offsetX, offsetY, ssimMinMax, 0, 0);
-        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMap);
+        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMapNorm);
         ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
         imp4.show();
 
         // Hu map (normalized to [0,1])
         float[] huMinMax = findMinMax(huMap, w, h, offsetX, offsetY);
         float[] huMapNorm = normalize(huMap, w, h, offsetX, offsetY, huMinMax, 0, 0);
-        FloatProcessor fp5 = new FloatProcessor(w, h, huMap);
+        FloatProcessor fp5 = new FloatProcessor(w, h, huMapNorm);
         ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
         imp5.show();
 /*
@@ -599,7 +599,7 @@ public class RedundancyMap_ implements PlugIn {
         // Phase map (normalized to [0,1])
         float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, offsetX, offsetY);
         float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, offsetX, offsetY, phaseMinMax, 0, 0);
-        FloatProcessor fp6 = new FloatProcessor(w, h, phaseCorrelationMap);
+        FloatProcessor fp6 = new FloatProcessor(w, h, phaseMapNorm);
         ImagePlus imp6 = new ImagePlus("Phase Map", fp6);
         imp6.show();
 
