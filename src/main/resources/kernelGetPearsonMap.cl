@@ -6,8 +6,8 @@
 #define bH $BH$
 #define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
-#define offset_x $OFFSET_X$
-#define offset_y $OFFSET_Y$
+#define bRW $BRW$
+#define bRH $BRH$
 
 float getGaussianWeight(float ref, float comp);
 float getExpDecayWeight(float ref, float comp);
@@ -23,12 +23,9 @@ kernel void kernelGetPearsonMap(
     int y0 = get_global_id(1);
 
     // Bound check (avoids borders dynamically based on patch dimensions)
-    if(x0<offset_x || x0>=w-offset_x || y0<offset_y || y0>=h-offset_y){
+    if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
         return;
     }
-
-    int bRW = bW/2;
-    int bRH = bH/2;
 
     // ---- Reference patch ----
     // Get reference patch minimum and maximum
@@ -46,30 +43,28 @@ kernel void kernelGetPearsonMap(
         }
     }
 
+    // TODO: WTF IS THIS?
     if(min_x == max_x){
         min_x = 0.0f;
         max_x = 1.0f;
     }
 
-    // Get patch values, subtract the mean, and get local standard deviation
+    // Get mean-subtracted patch
     float ref_patch[patch_size] = {0.0f};
-    float meanSub_x[patch_size] = {0.0f};
-    float std_x = local_stds[y0*w+x0];
 
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = ref_pixels[j0*w+i0];
+            ref_patch[ref_counter] = ref_pixels[j0*w+i0] - local_means[y0*w+x0];
             //ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + 0.00001f); // Normalize patch to [0,1]
-            meanSub_x[ref_counter] = ref_patch[ref_counter] - local_means[y0*w+x0];
             ref_counter++;
         }
     }
 
     // For each comparison pixel...
     float weight = 0.0f;
-    for(int y1=offset_y; y1<h-offset_y; y1++){
-        for(int x1=offset_x; x1<w-offset_x; x1++){
+    for(int y1=bRH; y1<h-bRH; y1++){
+        for(int x1=bRW; x1<w-bRW; x1++){
 
             weight = 0.0f;
 
@@ -90,29 +85,28 @@ kernel void kernelGetPearsonMap(
 
             // Get values, subtract the mean, and get local standard deviation
             float comp_patch[patch_size] = {0.0f};
-            float meanSub_y[patch_size] = {0.0f};
-            float std_y = local_stds[y1*w+x1];
-            float meanSub_xy = 0.0f;
+            float sum_xy = 0.0f;
 
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = ref_pixels[j1*w+i1];
+                    comp_patch[comp_counter] = ref_pixels[j1*w+i1] - local_means[y1*w+x1];
                     //comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + 0.00001f); // Normalize patch to [0,1]
-                    meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[y1*w+x1];
-                    meanSub_xy += meanSub_x[comp_counter] * meanSub_y[comp_counter];
+                    sum_xy += ref_patch[comp_counter] * comp_patch[comp_counter];
                     comp_counter++;
                 }
             }
 
             // Calculate weight
+            float std_x = local_stds[y0*w+x0];
+            float std_y = local_stds[y1*w+x1];
             weight = getExpDecayWeight(std_x, std_y);
 
             // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
             if(std_x == 0.0f && std_y == 0.0f){
                 pearson_map[y0*w+x0] += 1.0f * weight; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
             }else{
-                pearson_map[y0*w+x0] += max(0.0f, (meanSub_xy / ((std_x * std_y) + 0.00001f)) * weight); // Truncate anti-correlations to zero
+                pearson_map[y0*w+x0] += (float) fmax(0.0f, (float) (sum_xy / ((patch_size * std_x * std_y) + 0.00001f)) * weight); // Truncate anti-correlations to zero
             }
         }
     }

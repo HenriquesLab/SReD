@@ -1,14 +1,11 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
-
 #define w $WIDTH$
 #define h $HEIGHT$
-#define bW $BW$
-#define bH $BH$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
 
-kernel void kernelGetLocalMeans(
+kernel void kernelGetPatchMeans(
 global float* ref_pixels,
 global float* local_means,
 global float* local_stds
@@ -23,18 +20,20 @@ global float* local_stds
     }
 
     // Get patch and calculate local mean
-    double sum = 0.0f;
-    double sq_sum = 0.0f;
+    float mean = 0.0f;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            sum += ref_pixels[j*w+i];
-            sq_sum += ref_pixels[j*w+i]*ref_pixels[j*w+i];
+            mean += ref_pixels[j*w+i];
         }
     }
+    local_means[gy*w+gx] = mean/patch_size;
 
-    double mean = sum / patch_size;
-    double variance = sq_sum / patch_size - mean * mean;
-
-    local_means[gy*w+gx] = (float) mean;
-    local_stds[gy*w+gx] = (float) sqrt(variance);
+    // Calculate standard deviation
+    float std = 0.0f;
+    for(int j=gy-bRH; j<=gy+bRH; j++){
+        for(int i=gx-bRW; i<=gx+bRW; i++){
+            std += (ref_pixels[j*w+i]-local_means[gy*w+gx]) * (ref_pixels[j*w+i]-local_means[gy*w+gx]);
+        }
+    }
+    local_stds[gy*w+gx] = sqrt(std/patch_size);
 }

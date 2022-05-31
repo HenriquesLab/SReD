@@ -69,11 +69,11 @@ public class RedundancyMap_ implements PlugIn {
         int bW = 3; // Patch width
         int bH = 3; // Patch height
         int patchSize = bW * bH; // Patch area
-        int offsetX = bW/2; // Offset of the search radius relative to the original image, to avoid borders (x-axis)
-        int offsetY = bH/2; // Offset of the search radius relative to the original image, to avoid borders (y-axis)
-        int widthWithoutBorders = w - offsetX*2;
-        int heightWithoutBorders = h - offsetY*2;
-        int sizeWithoutBorders = (w-offsetX*2)*(h-offsetY*2); // The area of the search field (= image without borders)
+        int bRW = bW/2; // Patch radius (x-axis)
+        int bRH = bH/2; // Patch radius (y-axis)
+        int widthWithoutBorders = w - bRW*2;
+        int heightWithoutBorders = h - bRH*2;
+        int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
 
         // ---- Normalize image ----
         float minMax[] = findMinMax(refPixels, w, h, 0, 0);
@@ -154,8 +154,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BW$", "" + bW);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BH$", "" + bH);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$OFFSET_X$", "" + offsetX);
-        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$OFFSET_Y$", "" + offsetY);
+        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BRW$", "" + bRW);
+        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BRH$", "" + bRH);
         programGetLocalMeans = context.createProgram(programStringGetLocalMeans).build();
 
         // Weighted mean Pearson correlation coefficient map
@@ -166,8 +166,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BH$", "" + bH);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$OFFSET_X$", "" + offsetX);
-        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$OFFSET_Y$", "" + offsetY);
+        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRW$", "" + bRW);
+        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRH$", "" + bRH);
         programGetPearsonMap = context.createProgram(programStringGetPearsonMap).build();
 
         // Weighted mean NRMSE map
@@ -178,8 +178,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$BH$", "" + bH);
         programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$OFFSET_X$", "" + offsetX);
-        programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$OFFSET_Y$", "" + offsetY);
+        programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$BRW$", "" + bRW);
+        programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$BRH$", "" + bRH);
         programGetNrmseMap = context.createProgram(programStringGetNrmseMap).build();
 
         // Weighted mean SSIM map
@@ -190,8 +190,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$BH$", "" + bH);
         programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$OFFSET_X$", "" + offsetX);
-        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$OFFSET_Y$", "" + offsetY);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$BRW$", "" + bRW);
+        programStringGetSsimMap = replaceFirst(programStringGetSsimMap, "$BRH$", "" + bRH);
         programGetSsimMap = context.createProgram(programStringGetSsimMap).build();
 
         // Hu map
@@ -202,8 +202,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetHuMap = replaceFirst(programStringGetHuMap, "$BH$", "" + bH);
         programStringGetHuMap = replaceFirst(programStringGetHuMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetHuMap = replaceFirst(programStringGetHuMap, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$OFFSET_X$", "" + offsetX);
-        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$OFFSET_Y$", "" + offsetY);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$BRW$", "" + bRW);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$BRH$", "" + bRH);
         programGetHuMap = context.createProgram(programStringGetHuMap).build();
 
         // Entropy map
@@ -214,8 +214,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$BH$", "" + bH);
         programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$OFFSET_X$", "" + offsetX);
-        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$OFFSET_Y$", "" + offsetY);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$BRW$", "" + bRW);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$BRH$", "" + bRH);
         programGetEntropyMap = context.createProgram(programStringGetEntropyMap).build();
 
         // Phase Correlation Map
@@ -226,8 +226,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$BH$", "" + bH);
         programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$FILTER_PARAM_SQ$", "" + filterParamSq);
         programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$OFFSET_X$", "" + offsetX);
-        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$OFFSET_Y$", "" + offsetY);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$BRW$", "" + bRW);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$BRH$", "" + bRH);
         programGetPhaseCorrelationMap = context.createProgram(programStringGetPhaseCorrelationMap).build();
 
 
@@ -500,7 +500,7 @@ public class RedundancyMap_ implements PlugIn {
             for(int nXB=0; nXB<nXBlocks; nXB++) {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating entropy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetEntropyMap, nXB*64+offsetX, nYB*64+offsetY, xWorkSize, yWorkSize, 0, 0);
+                queue.put2DRangeKernel(kernelGetEntropyMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
             }
         }
         queue.finish();
@@ -556,36 +556,36 @@ public class RedundancyMap_ implements PlugIn {
         IJ.log("Preparing results for display...");
 
         // Pearson's map (normalized to [0,1])
-        float[] pearsonMinMax = findMinMax(pearsonMap, w, h, offsetX, offsetY);
-        float[] pearsonMapNorm = normalize(pearsonMap, w, h, offsetX, offsetY, pearsonMinMax, 0, 0);
-        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
+        float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
+        float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
+        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
 
         // NRMSE map (normalized to [0,1])
-        float[] nrmseMinMax = findMinMax(nrmseMap, w, h, offsetX, offsetY);
-        float[] nrmseMapNorm = normalize(nrmseMap, w, h, offsetX, offsetY, nrmseMinMax, 0, 0);
+        float[] nrmseMinMax = findMinMax(nrmseMap, w, h, bRW, bRH);
+        float[] nrmseMapNorm = normalize(nrmseMap, w, h, bRW, bRH, nrmseMinMax, 0, 0);
         FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMapNorm);
         ImagePlus imp2 = new ImagePlus("NRMSE Map", fp2);
         imp2.show();
 
         // MAE map (normalized to [0,1])
-        float[] maeMinMax = findMinMax(maeMap, w, h, offsetX, offsetY);
-        float[] maeMapNorm = normalize(maeMap, w, h, offsetX, offsetY, maeMinMax, 0, 0);
+        float[] maeMinMax = findMinMax(maeMap, w, h, bRW, bRH);
+        float[] maeMapNorm = normalize(maeMap, w, h, bRW, bRH, maeMinMax, 0, 0);
         FloatProcessor fp3 = new FloatProcessor(w, h, maeMapNorm);
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
 
         // SSIM map (normalized to [0,1])
-        float[] ssimMinMax = findMinMax(ssimMap, w, h, offsetX, offsetY);
-        float[] ssimMapNorm = normalize(ssimMap, w, h, offsetX, offsetY, ssimMinMax, 0, 0);
+        float[] ssimMinMax = findMinMax(ssimMap, w, h, bRW, bRH);
+        float[] ssimMapNorm = normalize(ssimMap, w, h, bRW, bRH, ssimMinMax, 0, 0);
         FloatProcessor fp4 = new FloatProcessor(w, h, ssimMapNorm);
         ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
         imp4.show();
 
         // Hu map (normalized to [0,1])
-        float[] huMinMax = findMinMax(huMap, w, h, offsetX, offsetY);
-        float[] huMapNorm = normalize(huMap, w, h, offsetX, offsetY, huMinMax, 0, 0);
+        float[] huMinMax = findMinMax(huMap, w, h, bRW, bRH);
+        float[] huMapNorm = normalize(huMap, w, h, bRW, bRH, huMinMax, 0, 0);
         FloatProcessor fp5 = new FloatProcessor(w, h, huMapNorm);
         ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
         imp5.show();
@@ -597,8 +597,8 @@ public class RedundancyMap_ implements PlugIn {
         IJ.log("Finished!");
 */
         // Phase map (normalized to [0,1])
-        float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, offsetX, offsetY);
-        float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, offsetX, offsetY, phaseMinMax, 0, 0);
+        float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, bRW, bRH);
+        float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, bRW, bRH, phaseMinMax, 0, 0);
         FloatProcessor fp6 = new FloatProcessor(w, h, phaseMapNorm);
         ImagePlus imp6 = new ImagePlus("Phase Map", fp6);
         imp6.show();

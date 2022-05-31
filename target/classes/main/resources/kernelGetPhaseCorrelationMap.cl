@@ -5,8 +5,8 @@
 #define bH $BH$
 #define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
-#define offset_x $OFFSET_X$
-#define offset_y $OFFSET_Y$
+#define bRW $BRW$
+#define bRH $BRH$
 float getGaussianWeight(float ref, float comp);
 float getExpDecayWeight(float ref, float comp);
 
@@ -21,12 +21,10 @@ kernel void kernelGetPhaseCorrelationMap(
     int y0 = get_global_id(1);
 
     // Bound check (avoids borders dynamically based on patch dimensions)
-    if(x0<offset_x || x0>=w-offset_x || y0<offset_y || y0>=h-offset_y){
+    if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
         return;
     }
 
-    int bRW = bW/2;
-    int bRH = bH/2;
     double PI = 3.14159265358979323846f;
     double EPSILON = 0.00001f;
 
@@ -59,8 +57,8 @@ kernel void kernelGetPhaseCorrelationMap(
 
     // For each comparison pixel...
     double weight = 0.0f;
-    for(int y1=offset_y; y1<h-offset_y; y1++){
-        for(int x1=offset_x; x1<w-offset_x; x1++){
+    for(int y1=bRH; y1<h-bRH; y1++){
+        for(int x1=bRW; x1<w-bRW; x1++){
 
             weight = 0.0f;
 

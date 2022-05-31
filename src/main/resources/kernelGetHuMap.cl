@@ -6,8 +6,8 @@
 #define bH $BH$
 #define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
-#define offset_x $OFFSET_X$
-#define offset_y $OFFSET_Y$
+#define bRW $BRW$
+#define bRH $BRH$
 float getGaussianWeight(float ref, float comp);
 float getExpDecayWeight(float ref, float comp);
 float getInvariant(float* patch, int patch_w, int patch_h, int p, int q);
@@ -23,12 +23,9 @@ kernel void kernelGetHuMap(
     int y0 = get_global_id(1);
 
     // Bound check (avoids borders dynamically based on patch dimensions)
-    if(x0<offset_x || x0>=w-offset_x || y0<offset_y || y0>=h-offset_y){
+    if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
         return;
     }
-
-    int bRW = bW/2;
-    int bRH = bH/2;
 
     float invariant_20_x = 0.0f;
     float invariant_02_x = 0.0f;
@@ -75,8 +72,8 @@ kernel void kernelGetHuMap(
     float invariant_02_y = 0.0f;
     float hu_y = 0.0f;
 
-    for(int y1=offset_y; y1<h-offset_y; y1++){
-        for(int x1=offset_x; x1<w-offset_x; x1++){
+    for(int y1=bRH; y1<h-bRH; y1++){
+        for(int x1=bRW; x1<w-bRW; x1++){
 
             weight = 0.0f;
             invariant_20_y = 0.0f;
@@ -113,14 +110,14 @@ kernel void kernelGetHuMap(
                 }
             }
 
-            // Calculate weight
-            //weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
-            weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
-
             // Calculate Hu moment 2 for comparison patch
             invariant_20_y = getInvariant(meanSub_y, bW, bH, 2, 0);
             invariant_02_y = getInvariant(meanSub_y, bW, bH, 0, 2);
             hu_y = invariant_20_y + invariant_02_y;
+
+            // Calculate weight
+            //weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
+            weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate Euclidean distance between Hu moments and add to Hu map
             hu_map[y0*w+x0] += fabs(hu_y - hu_x) * weight;

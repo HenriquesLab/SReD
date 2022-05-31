@@ -6,8 +6,8 @@
 #define bH $BH$
 #define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
-#define offset_x $OFFSET_X$
-#define offset_y $OFFSET_Y$
+#define bRW $BRW$
+#define bRH $BRH$
 float getWeight(float ref, float comp);
 float getEntropy(float* patch, int n);
 
@@ -20,8 +20,6 @@ kernel void kernelGetEntropyMap(
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
-    int bRW = bW/2;
-    int bRH = bH/2;
 
     float entropy_x = 0.0f;
 
@@ -44,8 +42,8 @@ kernel void kernelGetEntropyMap(
     float weight;
     float entropy_y;
 
-    for(int y1=offset_y; y1<h-offset_y; y1++){
-        for(int x1=offset_x; x1<w-offset_x; x1++){
+    for(int y1=bRH; y1<h-bRH; y1++){
+        for(int x1=bRW; x1<w-bRW; x1++){
 
             weight = 0.0;
             entropy_y = 0.0;
