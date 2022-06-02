@@ -1,3 +1,5 @@
+//TODO: Filling buffer with a patch writes wrong values. Currently the kernels are reading the reference patch from the image buffer based on the patch position. Try to fix this to use a patch written in a buffer.
+
 import com.jogamp.opencl.*;
 import ij.IJ;
 import ij.ImagePlus;
@@ -226,7 +228,6 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchMeans.setArg(argn++, clLocalStds);
 
         // Calculate
-
         queue.putWriteBuffer(clRefPixels, false);
         queue.putWriteBuffer(clLocalMeans, false);
 
@@ -253,7 +254,9 @@ public class PatchRed_ implements PlugIn {
         }
         queue.finish();
 
+        // Release memory
         kernelGetPatchMeans.release();
+        programGetPatchMeans.release();
 
         // ---- Create buffers ----
         clRefPatch = context.createFloatBuffer(patchSize, READ_ONLY);
@@ -276,7 +279,6 @@ public class PatchRed_ implements PlugIn {
         fillBufferWithFloatArray(clRefPatch, refPatch);
         fillBufferWithFloatArray(clRefPatchMeanSub, refPatchMeanSub);
 
-
         float[] pearsonMap = new float[wh];
         clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clPearsonMap, pearsonMap);
@@ -285,7 +287,6 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchPearson = programGetPatchPearson.createCLKernel("kernelGetPatchPearson");
 
         argn = 0;
-        kernelGetPatchPearson.setArg(argn++, clRefPatchMeanSub);
         kernelGetPatchPearson.setArg(argn++, clRefPixels);
         kernelGetPatchPearson.setArg(argn++, clLocalMeans);
         kernelGetPatchPearson.setArg(argn++, clLocalStds);
@@ -310,14 +311,12 @@ public class PatchRed_ implements PlugIn {
         clPearsonMap.release();
         programGetPatchPearson.release();
 
-        // Plot image
-
         // ---- NMRSE and MAE ----
         String programStringGetPatchNrmse = getResourceAsString(PatchRed_.class, "kernelGetPatchNrmse.cl");
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$WIDTH$", "" + w);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$HEIGHT$", "" + h);
-        programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BW$", "" + bW);
-        programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BH$", "" + bH);
+        programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$CENTER_X$", "" + centerX);
+        programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$CENTER_Y$", "" + centerY);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BRW$", "" + bRW);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BRH$", "" + bRH);
@@ -337,7 +336,6 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchNrmse = programGetPatchNrmse.createCLKernel("kernelGetPatchNrmse");
 
         argn = 0;
-        kernelGetPatchNrmse.setArg(argn++, clRefPatch);
         kernelGetPatchNrmse.setArg(argn++, clRefPixels);
         kernelGetPatchNrmse.setArg(argn++, clLocalMeans);
         kernelGetPatchNrmse.setArg(argn++, clLocalStds);
@@ -346,6 +344,7 @@ public class PatchRed_ implements PlugIn {
 
         // Calculate NMRSE and MAE
         queue.putWriteBuffer(clNrmseMap, false);
+        queue.putWriteBuffer(clMaeMap, false);
         queue.put2DRangeKernel(kernelGetPatchNrmse, 0, 0, w, h, 0, 0);
         queue.finish();
 
@@ -595,7 +594,7 @@ public class PatchRed_ implements PlugIn {
         // MAE map (normalized to [0,1])
         float[] maeMinMax = findMinMax(maeMap, w, h, bRW, bRH);
         float[] maeMapNorm = normalize(maeMap, w, h, bRW, bRH, maeMinMax, 0, 0);
-        FloatProcessor fp3 = new FloatProcessor(w, h, maeMapNorm);
+        FloatProcessor fp3 = new FloatProcessor(w, h, maeMap);
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
 
@@ -659,7 +658,7 @@ public class PatchRed_ implements PlugIn {
 
     public static void fillBufferWithFloatArray(CLBuffer<FloatBuffer> clBuffer, float[] pixels) {
         FloatBuffer buffer = clBuffer.getBuffer();
-        for(int n=0; n< pixels.length; n++) {
+        for(int n=0; n<pixels.length; n++) {
             buffer.put(n, pixels[n]);
         }
     }

@@ -406,8 +406,9 @@ public class RedundancyMap_ implements PlugIn {
         programGetPearsonMap.release();
         clPearsonMap.release();
 
-        // ---- Calculate weighted mean NRMSE map ----
+        // ---- Calculate weighted mean NRMSE and MAE maps ----
         queue.putWriteBuffer(clNrmseMap, false);
+        queue.putWriteBuffer(clMaeMap, false);
 
         for(int nYB=0; nYB<nYBlocks; nYB++) {
             int yWorkSize = min(64, h-nYB*64);
@@ -418,7 +419,6 @@ public class RedundancyMap_ implements PlugIn {
             }
         }
 
-        //queue.put2DRangeKernel(kernelGetNrmseMap, 0, 0, w, h, 0,0);
         queue.finish();
 
         // ---- Read the NRMSE and MAE maps back from the GPU (and finish the mean calculation simultaneously) ----

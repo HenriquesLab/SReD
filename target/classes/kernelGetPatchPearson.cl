@@ -11,7 +11,6 @@
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPatchPearson(
-    global float* ref_patch_meanSub,
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
@@ -27,10 +26,10 @@ kernel void kernelGetPatchPearson(
     }
 
     // Get mean_subtracted reference patch
-    float ref_patch[patch_size];
+    float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[center_y*w+center_x];
-    int counter = 0;
 
+    int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
             for(int i=center_x-bRW; i<=center_x+bRW; i++){
                 ref_patch[counter] = ref_pixels[j*w+i]-ref_mean;
@@ -39,7 +38,6 @@ kernel void kernelGetPatchPearson(
     }
 
     // For each comparison pixel...
-
     // Get mean_subtracted comparison patch
     float comp_patch[patch_size] = {0.0f};
     counter = 0;

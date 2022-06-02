@@ -1,19 +1,16 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
-#define bW $BW$
-#define bH $BH$
+#define center_x $CENTER_X$
+#define center_y $CENTER_Y$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
 #define std_x $STD_X$
 
 float getExpDecayWeight(float ref, float comp);
-float getNrmse(float* ref, float* comp, float mean_y, int n);
-float getMae(float* ref, float* comp, int n);
 
 kernel void kernelGetPatchNrmse(
-    global float* ref_patch,
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
@@ -30,16 +27,18 @@ kernel void kernelGetPatchNrmse(
     }
 
     // Get reference patch
-    float refPatch[patch_size] = {0.0f};
-    for(int j=0; j<bH; j++){
-        for(int i=0; i<bW; i++){
-            refPatch[j*bW+i] = ref_patch[j*bW+i];
+    float ref_patch[patch_size] = {0.0f};
+    float ref_mean = local_means[center_y*w+center_x];
+
+    int counter = 0;
+    for(int j=center_y-bRH; j<=center_y+bRH; j++){
+        for(int i=center_x-bRW; i<=center_x+bRW; i++){
+            ref_patch[counter] = ref_pixels[j*w+i]-ref_mean;
+            counter++;
         }
     }
 
     // For each comparison pixel...
-    float weight = 0.0f;
-
     // Get comparison patch minimum and maximum
     float min_y = ref_pixels[gy*w+gx];
     float max_y = ref_pixels[gy*w+gx];
@@ -54,25 +53,29 @@ kernel void kernelGetPatchNrmse(
             }
         }
     }
+    float comp_range = max_y-min_y;
 
-    // Get comparison patch Y
+    // Get mean-subtracted comparison patch
     float comp_patch[patch_size];
-    float meanSub_y[patch_size];
-    int comp_counter = 0;
+    float comp_mean = local_means[gy*w+gx];
+    counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[comp_counter] = ref_pixels[j*w+i];
-            meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[gy*w+gx];
-            comp_counter++;
+            comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
+            counter++;
         }
     }
 
-    // Calculate weight
-    weight = getExpDecayWeight(std_x, local_stds[gy*w+gx]);
+    // Calculate NRMSE and MAE
+    float nmrse = 0.0f;
+    float mae = 0.0f;
+    for(int i=0; i<patch_size; i++){
+        nmrse += (ref_patch[i] - comp_patch[i]) * (ref_patch[i] - comp_patch[i]);
+        mae += fabs(ref_patch[i] - comp_patch[i]);
+    }
 
-    // Calculate NRMSE(X,Y) and add it to the sum at X
-    nrmse_map[gy*w+gx] = getNrmse(refPatch, meanSub_y, local_means[gy*w+gx], patch_size) * weight;
-    mae_map[gy*w+gx] = getMae(refPatch, meanSub_y, patch_size);
+    nrmse_map[gy*w+gx] = sqrt((nmrse/patch_size)) / (ref_mean + 0.0000001f);
+    mae_map[gy*w+gx] = mae/patch_size;
 }
 
 
@@ -91,32 +94,4 @@ float getExpDecayWeight(float ref, float comp){
     }
     return weight;
 
-}
-
-float getNrmse(float* ref, float* comp, float mean_y, int n){
-    float foo = 0;
-    float nrmse = 0;
-    for(int i=0; i<n; i++){
-        foo = ref[i] - comp[i];
-        foo = foo*foo;
-        nrmse += foo;
-    }
-    nrmse = nrmse/n;
-    nrmse = sqrt(nrmse);
-    nrmse = nrmse/(mean_y+0.0000001f);
-    nrmse = nrmse;
-
-    return nrmse;
-}
-
-float getMae(float* ref, float* comp, int n){
-    float foo = 0;
-    float mae = 0;
-    for(int i=0; i<n; i++){
-        foo = ref[i] - comp[i];
-        foo = fabs(foo);
-        mae += foo;
-    }
-    mae = mae/n;
-    return mae;
 }

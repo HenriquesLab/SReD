@@ -8,10 +8,9 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+
 float getGaussianWeight(float ref, float comp);
 float getExpDecayWeight(float ref, float comp);
-float getNrmse(float* ref_patch, float* comp_patch, float mean_y, int n);
-float getMae(float* ref_patch, float* comp_patch, int n);
 
 kernel void kernelGetNrmseMap(
     global float* ref_pixels,
@@ -48,12 +47,12 @@ kernel void kernelGetNrmseMap(
 
     // Get reference patch
     float ref_patch[patch_size] = {0.0f};
-    float meanSub_x[patch_size] = {0.0f};
+    float ref_mean = local_means[y0*w+x0];
+
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = ref_pixels[j0*w+i0];
-            meanSub_x[ref_counter] = (ref_patch[ref_counter] - local_means[y0*w+x0]) / (max_x + EPSILON);
+            ref_patch[ref_counter] = ref_pixels[j0*w+i0] - ref_mean;
             ref_counter++;
         }
     }
@@ -80,24 +79,35 @@ kernel void kernelGetNrmseMap(
                 }
             }
 
-            // Get comparison patch Y
+            // Get comparison patch
             float comp_patch[patch_size];
-            float meanSub_y[patch_size];
+            float comp_mean = local_means[y1*w+x1];
+
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = ref_pixels[j1*w+i1];
-                    meanSub_y[comp_counter] = (comp_patch[comp_counter] - local_means[y1*w+x1]) / (max_y + EPSILON);
+                    comp_patch[comp_counter] = ref_pixels[j1*w+i1] - comp_mean;
                     comp_counter++;
                 }
             }
 
             // Calculate weight
-            //weight = getGaussianWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
             weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
-            // Calculate NRMSE(X,Y) and add it to the sum at X
-            nrmse_map[y0*w+x0] += getNrmse(meanSub_x, meanSub_y, local_means[y1*w+x1], patch_size) * weight;
-            mae_map[y0*w+x0] += getMae(meanSub_x, meanSub_y, patch_size) * weight;
+
+            // Calculate NRMSE and MAE
+            float nrmse = 0.0f;
+            float mae = 0.0f;
+
+            for(int i=0; i<patch_size; i++){
+                nrmse += (ref_patch[i] - comp_patch[i]) * (ref_patch[i] - comp_patch[i]);
+                mae += fabs(ref_patch[i] - comp_patch[i]);
+            }
+
+
+
+
+            nrmse_map[y0*w+x0] += 1-((sqrt((nrmse/patch_size)) / (ref_mean + EPSILON)) * weight);
+            mae_map[y0*w+x0] += 1-((mae/patch_size) * weight);
         }
     }
 }
@@ -128,33 +138,4 @@ float getExpDecayWeight(float ref, float comp){
         }
 
     return weight;
-}
-
-float getNrmse(float* ref_patch, float* comp_patch, float mean_y, int n){
-    float foo = 0;
-    float nrmse = 0;
-    for(int i=0; i<n; i++){
-        foo = ref_patch[i] - comp_patch[i];
-        foo = foo*foo;
-        nrmse += foo;
-    }
-    nrmse = nrmse/n;
-    nrmse = sqrt(nrmse);
-    nrmse = nrmse/(mean_y+0.00001f);
-    nrmse = nrmse;
-
-    return nrmse;
-}
-
-float getMae(float* ref_patch, float* comp_patch, int n){
-    float foo = 0;
-    float mae = 0;
-    for(int i=0; i<n; i++){
-        foo = ref_patch[i] - comp_patch[i];
-        foo = fabs(foo);
-        mae += foo;
-    }
-    mae = mae/n;
-    //mae = 1-mae;
-    return mae;
 }

@@ -51,11 +51,12 @@ kernel void kernelGetPearsonMap(
 
     // Get mean-subtracted patch
     float ref_patch[patch_size] = {0.0f};
+    float ref_mean = local_means[y0*w+x0];
 
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = ref_pixels[j0*w+i0] - local_means[y0*w+x0];
+            ref_patch[ref_counter] = ref_pixels[j0*w+i0] - ref_mean;
             //ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + 0.00001f); // Normalize patch to [0,1]
             ref_counter++;
         }
@@ -63,6 +64,7 @@ kernel void kernelGetPearsonMap(
 
     // For each comparison pixel...
     float weight = 0.0f;
+
     for(int y1=bRH; y1<h-bRH; y1++){
         for(int x1=bRW; x1<w-bRW; x1++){
 
