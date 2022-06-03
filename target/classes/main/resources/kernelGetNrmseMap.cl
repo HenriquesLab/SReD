@@ -9,7 +9,6 @@
 #define bRW $BRW$
 #define bRH $BRH$
 
-float getGaussianWeight(float ref, float comp);
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetNrmseMap(
@@ -106,24 +105,10 @@ kernel void kernelGetNrmseMap(
 
 
 
-            nrmse_map[y0*w+x0] += 1-((sqrt((nrmse/patch_size)) / (ref_mean + EPSILON)) * weight);
-            mae_map[y0*w+x0] += 1-((mae/patch_size) * weight);
+            nrmse_map[y0*w+x0] += (sqrt((nrmse/patch_size)) / (ref_mean + EPSILON)) * weight;
+            mae_map[y0*w+x0] += (mae/patch_size) * weight;
         }
     }
-}
-
-float getGaussianWeight(float mean_x, float mean_y){
-    // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
-    // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
-
-    float weight = 0;
-    weight = mean_y - mean_x;
-    weight = fabs(weight);
-    weight = weight*weight;
-    weight = weight/filter_param_sq;
-    weight = (-1) * weight;
-    weight = exp(weight);
-    return weight;
 }
 
 float getExpDecayWeight(float ref, float comp){

@@ -1,18 +1,15 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
+#define center_x $CENTER_X$
+#define center_y $CENTER_Y$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
-#define ref_mean $MEAN_X$
-#define std_x $STD_X$
-#define ref_var $VAR_X$
 
 float getExpDecayWeight(float ref, float comp);
-float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n);
 
 kernel void kernelGetPatchSsim(
-    global float* ref_patch,
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
@@ -27,31 +24,45 @@ kernel void kernelGetPatchSsim(
         return;
     }
 
-    // For each comparison pixel...
-    float weight = 0.0f;
+    float EPSILON = 0.0000001f;
 
-    // Get comparison patch Y
-    float comp_patch[patch_size] = {0.0f};
-    float meanSub_y[patch_size] = {0.0f};
-    float var_y = 0.0f;
-    float cov_xy = 0.0f;
-    int comp_counter = 0;
-    for(int j=gy-bRH; j<=gy+bRH; j++){
-        for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[comp_counter] = ref_pixels[j*w+i];
-            meanSub_y[comp_counter] = comp_patch[comp_counter] - local_means[gy*w+gx];
-            cov_xy += ref_patch[comp_counter]*meanSub_y[comp_counter];
-            comp_counter++;
+    // Get reference patch
+    float ref_patch[patch_size] = {0.0f};
+    float ref_mean = local_means[center_y*w+center_x];
+    float ref_var = local_stds[center_y*w+center_x] * local_stds[center_y*w+center_x];
+
+    int counter = 0;
+    for(int j=center_y-bRH; j<=center_y+bRH; j++){
+        for(int i=center_x-bRW; i<=center_x+bRW; i++){
+            ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
+            counter++;
         }
     }
-    var_y = local_stds[gy*w+gx] * local_stds[gy*w+gx];
-    cov_xy /= patch_size;
 
-    // Calculate weight
-    weight = getExpDecayWeight(std_x, local_stds[gy*w+gx]);
+    // For each comparison pixel...
+    // Get mean-subtracted comparison patch and some variables for SSIM calculation
+    float comp_patch[patch_size] = {0.0f};
+    float comp_mean = local_means[gy*w+gx];
+    float comp_var = local_stds[gy*w+gx] * local_stds[gy*w+gx];
+    float covar = 0.0f;
 
-    // Calculate SSIM and add it to the sum at X
-    ssim_map[gy*w+gx] = getSsim(ref_mean, local_means[gy*w+gx], ref_var, var_y, cov_xy, patch_size);
+    counter = 0;
+    for(int j=gy-bRH; j<=gy+bRH; j++){
+        for(int i=gx-bRW; i<=gx+bRW; i++){
+            comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
+            covar += ref_patch[counter] * comp_patch[counter];
+            counter++;
+        }
+    }
+    covar /= patch_size;
+
+    // Calculate SSIM
+    float c1 = (0.01f * 1.0f) * (0.01f * 1.0f); // constant1 * float dynamic range
+    float c2 = (0.03f * 1.0f) * (0.03f * 1.0f); // constant2 * float dynamic range
+    float ref_mean_sq = ref_mean * ref_mean;
+    float comp_mean_sq = comp_mean * comp_mean;
+
+    ssim_map[gy*w+gx] = (2.0f * covar + c2) / (ref_var + comp_var + c2); // Removed the luminance component to remove intensity-variant component
 }
 
 // ---- USER FUNCTIONS ----
@@ -66,16 +77,4 @@ float getExpDecayWeight(float ref, float comp){
         weight = 1-(fabs(ref-comp)/(ref+comp));
     }
     return weight;
-
-}
-
-float getSsim(float mean_x, float mean_y, float var_x, float var_y, float cov_xy, int n){
-    float ssim = 0;
-    float c1 = (0.01*4294967295)*(0.01*4294967295); // constant1*dynamic range
-    float c2 = (0.03*4294967295)*(0.03*4294967295); // constant2*dynamic range
-    float mean_x_sq = mean_x*mean_x;
-    float mean_y_sq = mean_y*mean_y;
-
-    ssim = (2*mean_x*mean_y+c1)*(2*cov_xy+c2)/((mean_x_sq+mean_y_sq+c1)*(var_x+var_y+c2));
-    return ssim;
 }

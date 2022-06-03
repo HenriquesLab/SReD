@@ -2,6 +2,7 @@
  * TODO: Make exception for when the plugin is started without an active image
  * TODO: Implement progress tracking
  * TODO: check kernels for division by zero
+ * TODO: Make EPSILON host-defined and set it as arguments to kernels
  **/
 
 import com.jogamp.opencl.*;
@@ -558,7 +559,7 @@ public class RedundancyMap_ implements PlugIn {
         // Pearson's map (normalized to [0,1])
         float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
         float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
-        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
+        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
 

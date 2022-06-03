@@ -320,7 +320,6 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BRW$", "" + bRW);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BRH$", "" + bRH);
-        programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$STD_X$", "" + std);
         programGetPatchNrmse = context.createProgram(programStringGetPatchNrmse).build();
 
         // Create and fill buffers
@@ -376,11 +375,10 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$WIDTH$", "" + w);
         programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$HEIGHT$", "" + h);
         programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$CENTER_X$", "" + centerX);
+        programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$CENTER_Y$", "" + centerY);
         programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BRW$", "" + bRW);
         programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BRH$", "" + bRH);
-        programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$MEAN_X$", "" + mean);
-        programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$STD_X$", "" + std);
-        programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$VAR_X$", "" + var);
         programGetPatchSsim = context.createProgram(programStringGetPatchSsim).build();
 
         // Fill buffers
@@ -392,7 +390,6 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchSsim = programGetPatchSsim.createCLKernel("kernelGetPatchSsim");
 
         argn = 0;
-        kernelGetPatchSsim.setArg(argn++, clRefPatch);
         kernelGetPatchSsim.setArg(argn++, clRefPixels);
         kernelGetPatchSsim.setArg(argn++, clLocalMeans);
         kernelGetPatchSsim.setArg(argn++, clLocalStds);
@@ -424,10 +421,10 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BW$", "" + bW);
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BH$", "" + bH);
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$CENTER_X$", "" + centerX);
+        programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$CENTER_Y$", "" + centerY);
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BRW$", "" + bRW);
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BRH$", "" + bRH);
-        programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$STD_X$", "" + std);
-        programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$HU_X$", "" + hu);
         programGetPatchHu = context.createProgram(programStringGetPatchHu).build();
 
         // Fill buffers
@@ -439,7 +436,6 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchHu = programGetPatchHu.createCLKernel("kernelGetPatchHu");
 
         argn = 0;
-        kernelGetPatchHu.setArg(argn++, clRefPatch);
         kernelGetPatchHu.setArg(argn++, clRefPixels);
         kernelGetPatchHu.setArg(argn++, clLocalMeans);
         kernelGetPatchHu.setArg(argn++, clLocalStds);
@@ -601,14 +597,14 @@ public class PatchRed_ implements PlugIn {
         // SSIM map (normalized to [0,1])
         float[] ssimMinMax = findMinMax(ssimMap, w, h, bRW, bRH);
         float[] ssimMapNorm = normalize(ssimMap, w, h, bRW, bRH, ssimMinMax, 0, 0);
-        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMapNorm);
+        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMap);
         ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
         imp4.show();
 
         // Hu map (normalized to [0,1])
         float[] huMinMax = findMinMax(huMap, w, h, bRW, bRH);
         float[] huMapNorm = normalize(huMap, w, h, bRW, bRH, huMinMax, 0, 0);
-        FloatProcessor fp5 = new FloatProcessor(w, h, huMapNorm);
+        FloatProcessor fp5 = new FloatProcessor(w, h, huMap);
         ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
         imp5.show();
 /*

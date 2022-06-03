@@ -6,7 +6,6 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
-#define std_x $STD_X$
 
 float getExpDecayWeight(float ref, float comp);
 
@@ -58,6 +57,7 @@ kernel void kernelGetPatchNrmse(
     // Get mean-subtracted comparison patch
     float comp_patch[patch_size];
     float comp_mean = local_means[gy*w+gx];
+
     counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
