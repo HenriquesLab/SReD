@@ -6,6 +6,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define EPSILON $EPSILON$
 
 float getExpDecayWeight(float ref, float comp);
 
@@ -14,7 +15,8 @@ kernel void kernelGetPatchNrmse(
     global float* local_means,
     global float* local_stds,
     global float* nrmse_map,
-    global float* mae_map
+    global float* mae_map,
+    global float* psnr_map
 ){
 
     int gx = get_global_id(0);
@@ -28,6 +30,7 @@ kernel void kernelGetPatchNrmse(
     // Get reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[center_y*w+center_x];
+    float ref_std = local_stds[center_y*w+center_x];
 
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
@@ -66,7 +69,7 @@ kernel void kernelGetPatchNrmse(
         }
     }
 
-    // Calculate NRMSE and MAE
+    // Calculate NRMSE, MAE and PSNR, and write to buffer
     float nmrse = 0.0f;
     float mae = 0.0f;
     for(int i=0; i<patch_size; i++){
@@ -74,12 +77,11 @@ kernel void kernelGetPatchNrmse(
         mae += fabs(ref_patch[i] - comp_patch[i]);
     }
 
-    nrmse_map[gy*w+gx] = sqrt((nmrse/patch_size)) / (ref_mean + 0.0000001f);
+    nrmse_map[gy*w+gx] = sqrt((nmrse/patch_size)) / (ref_std + EPSILON);
     mae_map[gy*w+gx] = mae/patch_size;
+    psnr_map[gy*w+gx] = (float) 10.0 * (float) log10((float) 1.0 / (float) (nmrse/patch_size+EPSILON));
+
 }
-
-
-
 
 // ---- USER FUNCTIONS ----
 float getExpDecayWeight(float ref, float comp){

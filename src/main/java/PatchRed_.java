@@ -29,20 +29,19 @@ public class PatchRed_ implements PlugIn {
     static private CLContext context;
 
     static private CLProgram programGetPatchMeans, programGetPatchPearson, programGetPatchNrmse, programGetPatchSsim,
-            programGetPatchHu, programGetEntropyMap, programGetPatchPhaseCorrelation;
+            programGetPatchHu, programGetPatchEntropy, programGetPatchPhaseCorrelation;
 
     static private CLKernel kernelGetPatchMeans, kernelGetPatchPearson, kernelGetPatchNrmse, kernelGetPatchSsim,
-            kernelGetPatchHu, kernelGetEntropyMap, kernelGetPatchPhaseCorrelation;
+            kernelGetPatchHu, kernelGetPatchEntropy, kernelGetPatchPhaseCorrelation;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPatch, clRefPatchMeanSub, clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clNrmseMap, clMaeMap,
-            clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap;
+    private CLBuffer<FloatBuffer> clRefPatch, clRefPatchMeanSub, clRefPixels, clLocalMeans, clLocalStds, clPearsonMap,
+            clNrmseMap, clMaeMap, clPsnrMap,clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap;
 
     private CLBuffer<DoubleBuffer> clRefPatchDftReal, clRefPatchDftImag;
-    private CLBuffer<ShortBuffer> clRefPixels8Bit;
 
     @Override
     public void run(String s) {
@@ -108,9 +107,6 @@ public class PatchRed_ implements PlugIn {
         float mean = patchStats[0];
         float var = patchStats[1];
         float std = patchStats[2];
-        double invariant_20 = getInvariant(refPatch, bW, bH, 2, 0);
-        double invariant_02 = getInvariant(refPatch, bW, bH, 0, 2);
-        double hu = invariant_20 + invariant_02;
 
         // Get mean subtracted patch
         float[] refPatchMeanSub = new float[patchSize];
@@ -320,6 +316,8 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BRW$", "" + bRW);
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$BRH$", "" + bRH);
+        programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$EPSILON$", "" + EPSILON);
+
         programGetPatchNrmse = context.createProgram(programStringGetPatchNrmse).build();
 
         // Create and fill buffers
@@ -331,6 +329,10 @@ public class PatchRed_ implements PlugIn {
         clMaeMap = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clMaeMap, maeMap);
 
+        float[] psnrMap = new float[wh];
+        clPsnrMap = context.createFloatBuffer(wh, READ_WRITE);
+        fillBufferWithFloatArray(clPsnrMap, psnrMap);
+
         // Create kernel and set args
         kernelGetPatchNrmse = programGetPatchNrmse.createCLKernel("kernelGetPatchNrmse");
 
@@ -340,6 +342,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchNrmse.setArg(argn++, clLocalStds);
         kernelGetPatchNrmse.setArg(argn++, clNrmseMap);
         kernelGetPatchNrmse.setArg(argn++, clMaeMap);
+        kernelGetPatchNrmse.setArg(argn++, clPsnrMap);
 
         // Calculate NMRSE and MAE
         queue.putWriteBuffer(clNrmseMap, false);
@@ -364,10 +367,19 @@ public class PatchRed_ implements PlugIn {
             }
         }
 
+        queue.putReadBuffer(clPsnrMap, true);
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                psnrMap[y*w+x] = clPsnrMap.getBuffer().get(y*w+x);
+                queue.finish();
+            }
+        }
+
         // Release memory
         kernelGetPatchNrmse.release();
         clNrmseMap.release();
         clMaeMap.release();
+        clPsnrMap.release();
         programGetPatchNrmse.release();
 
         // ---- SSIM ----
@@ -446,7 +458,7 @@ public class PatchRed_ implements PlugIn {
         queue.put2DRangeKernel(kernelGetPatchHu, 0, 0, w, h, 0, 0);
         queue.finish();
 
-        // ---- Read the Hu map back from the GPU (and finish the mean calculation simultaneously) ----
+        // ---- Read the Hu map back from the GPU ----
         queue.putReadBuffer(clHuMap, true);
         for (int y=0; y<h; y++) {
             for (int x=0; x<w; x++) {
@@ -467,17 +479,18 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$BW$", "" + bW);
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$BH$", "" + bH);
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$CENTER_X$", "" + centerX);
+        programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$CENTER_Y$", "" + centerY);
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$BRW$", "" + bRW);
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$BRH$", "" + bRH);
-        programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$STD_X$", "" + std);
         programGetPatchPhaseCorrelation = context.createProgram(programStringGetPatchPhaseCorrelation).build();
 
         // Create and fill buffers
-        clRefPatchDftReal = context.createDoubleBuffer(patchSize, READ_ONLY);
-        fillBufferWithDoubleArray(clRefPatchDftReal, refPatchDftReal);
+        //clRefPatchDftReal = context.createDoubleBuffer(patchSize, READ_ONLY);
+        //fillBufferWithDoubleArray(clRefPatchDftReal, refPatchDftReal);
 
-        clRefPatchDftImag = context.createDoubleBuffer(patchSize, READ_ONLY);
-        fillBufferWithDoubleArray(clRefPatchDftImag, refPatchDftImag);
+        //clRefPatchDftImag = context.createDoubleBuffer(patchSize, READ_ONLY);
+        //fillBufferWithDoubleArray(clRefPatchDftImag, refPatchDftImag);
 
         float[] phaseCorrelationMap = new float[wh];
         clPhaseCorrelationMap = context.createFloatBuffer(wh, READ_WRITE);
@@ -487,8 +500,8 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchPhaseCorrelation = programGetPatchPhaseCorrelation.createCLKernel("kernelGetPatchPhaseCorrelation");
 
         argn = 0;
-        kernelGetPatchPhaseCorrelation.setArg(argn++, clRefPatchDftReal);
-        kernelGetPatchPhaseCorrelation.setArg(argn++, clRefPatchDftImag);
+        //kernelGetPatchPhaseCorrelation.setArg(argn++, clRefPatchDftReal);
+        //kernelGetPatchPhaseCorrelation.setArg(argn++, clRefPatchDftImag);
         kernelGetPatchPhaseCorrelation.setArg(argn++, clRefPixels);
         kernelGetPatchPhaseCorrelation.setArg(argn++, clLocalMeans);
         kernelGetPatchPhaseCorrelation.setArg(argn++, clLocalStds);
@@ -500,7 +513,7 @@ public class PatchRed_ implements PlugIn {
         queue.put2DRangeKernel(kernelGetPatchPhaseCorrelation, 0, 0, w, h, 0, 0);
         queue.finish();
 
-        // ---- Read the Phase correlations map back from the GPU (and finish the mean calculation simultaneously) ----
+        // ---- Read the Phase correlations map back from the GPU ----
         queue.putReadBuffer(clPhaseCorrelationMap, true);
         for (int y=0; y<h; y++) {
             for (int x=0; x<w; x++) {
@@ -511,58 +524,54 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchPhaseCorrelation.release();
         clPhaseCorrelationMap.release();
         programGetPatchPhaseCorrelation.release();
-        clRefPatchDftReal.release();
-        clRefPatchDftImag.release();
+        //clRefPatchDftReal.release();
+        //clRefPatchDftImag.release();
+        // Replicate MATLAB's fftshift function for 2D odd-sized images
 
+        // ---- Entropy ----
+        String programStringGetPatchEntropy = getResourceAsString(PatchRed_.class, "kernelGetPatchEntropy.cl");
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$WIDTH$", "" + w);
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$HEIGHT$", "" + h);
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$CENTER_X$", "" + centerX);
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$CENTER_Y$", "" + centerY);
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$BRW$", "" + bRW);
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$BRH$", "" + bRH);
+        programGetPatchEntropy = context.createProgram(programStringGetPatchEntropy).build();
 
-/*
-        float[] entropyMap = new float[w * h];
+        // Fill buffers
+        float[] entropyMap = new float[wh];
+        clEntropyMap = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clEntropyMap, entropyMap);
 
-        //clRefPixels8Bit = context.createShortBuffer(wh, READ_ONLY);
-        //clEntropyMap = context.createFloatBuffer(wh, READ_WRITE);
+        // Create kernel and set args
+        kernelGetPatchEntropy = programGetPatchEntropy.createCLKernel("kernelGetPatchEntropy");
 
-        // ---- Create kernels ----
-        //kernelGetEntropyMap = programGetPatchRed.createCLKernel("kernelGetEntropyMap");
-
-
-
-        // Entropy map
         argn = 0;
-        kernelGetEntropyMap.setArg(argn++, clRefPatch);
-        kernelGetEntropyMap.setArg(argn++, clRefPixels8Bit);
-        kernelGetEntropyMap.setArg(argn++, clLocalMeans);
-        kernelGetEntropyMap.setArg(argn++, clLocalStds);
-        kernelGetEntropyMap.setArg(argn++, clEntropyMap);
+        kernelGetPatchEntropy.setArg(argn++, clRefPixels);
+        kernelGetPatchEntropy.setArg(argn++, clLocalMeans);
+        kernelGetPatchEntropy.setArg(argn++, clEntropyMap);
 
-
-        // ---- Calculate entropy map ----
+        // Calculate entropy map
         queue.putWriteBuffer(clEntropyMap, false);
-        for(int nYB=0; nYB<nYBlocks; nYB++) {
-            int yWorkSize = min(64, h-nYB*64);
-            for(int nXB=0; nXB<nXBlocks; nXB++) {
-                int xWorkSize = min(64, w-nXB*64);
-                showStatus("Calculating entropy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetEntropyMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
-            }
-        }
+        queue.put2DRangeKernel(kernelGetPatchEntropy, 0, 0, w, h, 0, 0);
         queue.finish();
 
-        // ---- Read the entropy map back from the GPU (and finish the mean calculation simultaneously) ----
+        // Read the entropy map back from the GPU
         queue.putReadBuffer(clEntropyMap, true);
-        for (int l=0; l<h; l++) {
-            for (int m=0; m<w; m++) {
-                entropyMap[l*w+m] = clEntropyMap.getBuffer().get(l*w+m) / sizeWithoutBorders;
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                entropyMap[y*w+x] = clEntropyMap.getBuffer().get(y*w+x);
                 queue.finish();
             }
         }
-        kernelGetEntropyMap.release();
-        programGetEntropyMap.release();
+
+        kernelGetPatchEntropy.release();
         clEntropyMap.release();
+        programGetPatchEntropy.release();
 
         IJ.log("Done!");
         IJ.log("--------");
-*/
 
         // ---- Cleanup all resources associated with this context ----
         IJ.log("Cleaning up resources...");
@@ -576,52 +585,59 @@ public class PatchRed_ implements PlugIn {
         // Pearson's map (normalized to [0,1])
         float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
         float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
-        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
+        FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
 
         // NRMSE map (normalized to [0,1])
         float[] nrmseMinMax = findMinMax(nrmseMap, w, h, bRW, bRH);
         float[] nrmseMapNorm = normalize(nrmseMap, w, h, bRW, bRH, nrmseMinMax, 0, 0);
-        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMap);
+        FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMapNorm);
         ImagePlus imp2 = new ImagePlus("NRMSE Map", fp2);
         imp2.show();
 
         // MAE map (normalized to [0,1])
         float[] maeMinMax = findMinMax(maeMap, w, h, bRW, bRH);
         float[] maeMapNorm = normalize(maeMap, w, h, bRW, bRH, maeMinMax, 0, 0);
-        FloatProcessor fp3 = new FloatProcessor(w, h, maeMap);
+        FloatProcessor fp3 = new FloatProcessor(w, h, maeMapNorm);
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
+
+        // PSNR map (normalized to [0,1])
+        float[] psnrMinMax = findMinMax(psnrMap, w, h, bRW, bRH);
+        float[] psnrMapNorm = normalize(psnrMap, w, h, bRW, bRH, psnrMinMax, 0, 0);
+        FloatProcessor fp4 = new FloatProcessor(w, h, psnrMapNorm);
+        ImagePlus imp4 = new ImagePlus("PSNR Map", fp4);
+        imp4.show();
 
         // SSIM map (normalized to [0,1])
         float[] ssimMinMax = findMinMax(ssimMap, w, h, bRW, bRH);
         float[] ssimMapNorm = normalize(ssimMap, w, h, bRW, bRH, ssimMinMax, 0, 0);
-        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMap);
-        ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
-        imp4.show();
+        FloatProcessor fp5 = new FloatProcessor(w, h, ssimMap);
+        ImagePlus imp5 = new ImagePlus("SSIM Map", fp5);
+        imp5.show();
 
         // Hu map (normalized to [0,1])
         float[] huMinMax = findMinMax(huMap, w, h, bRW, bRH);
         float[] huMapNorm = normalize(huMap, w, h, bRW, bRH, huMinMax, 0, 0);
-        FloatProcessor fp5 = new FloatProcessor(w, h, huMap);
-        ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
-        imp5.show();
-/*
-        // Entropy map (normalized to [0,1])
-        FloatProcessor fp6 = new FloatProcessor(w, h, entropyMap);
-        ImagePlus imp6 = new ImagePlus("Entropy Map", fp6);
+        FloatProcessor fp6 = new FloatProcessor(w, h, huMapNorm);
+        ImagePlus imp6 = new ImagePlus("Hu Map", fp6);
         imp6.show();
-        IJ.log("Finished!");
-*/
+
+        // Entropy map (normalized to [0,1])
+        FloatProcessor fp7 = new FloatProcessor(w, h, entropyMap);
+        ImagePlus imp7 = new ImagePlus("Entropy Map", fp7);
+        imp7.show();
+
         // Phase map (normalized to [0,1])
         float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, bRW, bRH);
         float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, bRW, bRH, phaseMinMax, 0, 0);
-        FloatProcessor fp6 = new FloatProcessor(w, h, phaseMapNorm);
-        ImagePlus imp6 = new ImagePlus("Phase Map", fp6);
-        imp6.show();
+        FloatProcessor fp8 = new FloatProcessor(w, h, phaseMapNorm);
+        ImagePlus imp8 = new ImagePlus("Phase Map", fp8);
+        imp8.show();
 
         // ---- Stop timer ----
+        IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
         IJ.log("--------");

@@ -28,7 +28,8 @@ kernel void kernelGetSsimMap(
     // Get reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[y0*w+x0];
-    float ref_var = local_stds[y0*w+x0] * local_stds[y0*w+x0];
+    float ref_std = local_stds[y0*w+x0];
+    float ref_var = ref_std * ref_std;
 
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
@@ -49,7 +50,8 @@ kernel void kernelGetSsimMap(
             // Get comparison patch Y
             float comp_patch[patch_size] = {0.0f};
             float comp_mean = local_means[y1*w+x1];
-            float comp_var = local_stds[y1*w+x1] * local_stds[y1*w+x1];
+            float comp_std = local_stds[y1*w+x1];
+            float comp_var = comp_std * comp_std;
             float covar = 0.0f;
 
             int comp_counter = 0;
@@ -63,15 +65,15 @@ kernel void kernelGetSsimMap(
             covar /= patch_size;
 
             // Calculate weight
-            weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
+            weight = getExpDecayWeight(ref_std, comp_std);
 
             // Calculate SSIM and add it to the sum at X
             float c1= (0.01f * 1) * (0.01f * 1); // constant1 * float dynamic range
             float c2 = (0.03f * 1) * (0.03f * 1); // constant2 * float dynamic range
-            float ref_mean_sq = ref_mean * ref_mean;
-            float comp_mean_sq = comp_mean * comp_mean;
 
-            ssim_map[y0*w+x0] += ((2.0f * covar + c2) / (ref_var + comp_var + c2)) * weight; // Removed the luminance component to remove intensity-variant component
+            //ssim_map[y0*w+x0] += ((2.0f * ref_std * comp_std + c2) / ((ref_std * ref_std) + (comp_std * comp_std) + c1)) * weight; // Contrast
+            ssim_map[y0*w+x0] += ((2.0f * local_stds[y0*w+x0] * local_stds[y1*w+x1] + c2)/((local_stds[y0*w+x0]*local_stds[y0*w+x0])+(local_stds[y0*w+x0]*local_stds[y0*w+x0]) + c2)) * weight; // Removed the luminance component to remove intensity-variant component
+            //ssim_map[y0*w+x0] += ((2.0f * covar + c2) / (ref_var + comp_var + c2)) * weight; // Removed the luminance component to remove intensity-variant component
         }
     }
 }

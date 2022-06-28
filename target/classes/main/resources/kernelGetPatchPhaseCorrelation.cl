@@ -4,15 +4,14 @@
 #define bW $BW$
 #define bH $BH$
 #define patch_size $PATCH_SIZE$
+#define center_x $CENTER_X$
+#define center_y $CENTER_Y$
 #define bRW $BRW$
 #define bRH $BRH$
-#define std_x $STD_X$
 
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPatchPhaseCorrelation(
-    global double* ref_dft_real,
-    global double* ref_dft_imag,
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
@@ -27,22 +26,46 @@ kernel void kernelGetPatchPhaseCorrelation(
         return;
     }
 
-    double PI = 3.14159265358979323846f;
-    double EPSILON = 0.00001f;
+    double PI = 3.14159265358979323846;
+    double EPSILON = 0.00001;
 
-    // For each comparison pixel...
-    double weight = 0.0f;
+    // Get reference patch
+    double ref_patch[patch_size] = {0.0};
+    double ref_mean = (double) local_means[center_y*w+center_x];
+    double ref_std = (double) local_stds[center_y*w+center_x];
 
-    // Get comparison patch Y
+    int counter = 0;
+    for(int j=center_y-bRH; j<=center_y+bRH; j++){
+        for(int i=center_x-bRW; i<=center_x+bRW; i++){
+            ref_patch[counter] = ((double) ref_pixels[j*w+i] - ref_mean);
+            counter++;
+        }
+    }
+
+    // Calculate reference 2D DFT
+    double ref_dft_real[patch_size] = {0.0};
+    double ref_dft_imag[patch_size] = {0.0};
+    for(int j=0; j<bH; j++){
+        for(int i=0; i<bW; i++){
+            for(int jj=0; jj<bH; jj++){
+                for(int ii=0; ii<bW; ii++){
+                    ref_dft_real[j*bW+i] += (ref_patch[jj*bW+ii] * cos(2.0*PI*((i*ii/bW) + (j*jj/bH)))) / sqrt((double)patch_size);
+                    ref_dft_imag[j*bW+i] -= (ref_patch[jj*bW+ii] * sin(2.0*PI*((i*ii/bW) + (j*jj/bH)))) / sqrt((double)patch_size);
+                }
+            }
+        }
+    }
+
+    // Get comparison patch
     double comp_patch[patch_size] = {0.0};
-    double meanSub_y[patch_size] = {0.0};
+    double comp_mean = (double) local_means[gy*w+gx];
+    double comp_std = (double) local_stds[gy*w+gx];
 
-    int comp_counter = 0;
+    counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[comp_counter] = (double) ref_pixels[j*w+i];
-            meanSub_y[comp_counter] = (comp_patch[comp_counter] - (double) local_means[gy*w+gx]) / ((double) local_stds[gy*w+gx] + EPSILON);
-            comp_counter++;
+            comp_patch[counter] = ((double) ref_pixels[j*w+i] - comp_mean) ;
+            counter++;
         }
     }
 
@@ -54,68 +77,71 @@ kernel void kernelGetPatchPhaseCorrelation(
         for(int i=0; i<bW; i++){
             for(int jj=0; jj<bH; jj++){
                 for(int ii=0; ii<bW; ii++){
-                    comp_dft_real[j*bW+i] += (meanSub_y[jj*bW+ii] * cos(2*PI*((i*ii/bW) + (j*jj/bH)))) / sqrt((double)patch_size);
-                    comp_dft_imag[j*bW+i] -= (meanSub_y[jj*bW+ii] * sin(2*PI*((i*ii/bW) + (j*jj/bH)))) / sqrt((double)patch_size);
+                    comp_dft_real[j*bW+i] += (comp_patch[jj*bW+ii] * cos(2*PI*((i*ii/bW) + (j*jj/bH)))) / sqrt((double)patch_size);
+                    comp_dft_imag[j*bW+i] -= (comp_patch[jj*bW+ii] * sin(2*PI*((i*ii/bW) + (j*jj/bH)))) / sqrt((double)patch_size);
                 }
             }
         }
     }
 
     // Get comparison patch complex conjugate
-    double comp_dft_conj[patch_size] = {0.0f};
+    double comp_dft_conj[patch_size] = {0.0};
     for(int i=0; i<patch_size; i++){
-        comp_dft_conj[i] = (-1) * comp_dft_imag[i];
+        comp_dft_conj[i] = (-1.0) * comp_dft_imag[i];
     }
 
     // Calculate cross-power spectrum
-    double cross_spectrum_real[patch_size] = {0.0f};
-    double cross_spectrum_imag[patch_size] = {0.0f};
-    double multReal = 0.0f;
-    double multImag = 0.0f;
-    double multRealAbs = 0.0f;
-    double multImagAbs = 0.0f;
+    double cross_spectrum_real[patch_size] = {0.0};
+    double cross_spectrum_imag[patch_size] = {0.0};
+    double multReal = 0.0;
+    double multImag = 0.0;
+    double multRealAbs = 0.0;
+    double multImagAbs = 0.0;
     for(int i=0; i<patch_size; i++){
         multReal = ref_dft_real[i] * comp_dft_real[i] - ref_dft_imag[i] * comp_dft_conj[i];
         multImag = ref_dft_real[i] * comp_dft_conj[i] + ref_dft_imag[i] * comp_dft_real[i];
 
-        multRealAbs = fabs((double)multReal);
-        multImagAbs = fabs((double)multImag);
+        multRealAbs = fabs(multReal);
+        multImagAbs = fabs(multImag);
 
-        cross_spectrum_real[i] = ((multReal * multRealAbs) + (multImag * multImagAbs)) / ((multRealAbs * multRealAbs) + (multImagAbs * multImagAbs) + EPSILON);
-        cross_spectrum_imag[i] = ((multImag * multRealAbs) - (multReal * multImagAbs)) / ((multRealAbs * multRealAbs) + (multImagAbs * multImagAbs) + EPSILON);
+        cross_spectrum_real[i] = ((multReal * multRealAbs) + (multImag * multImagAbs)) / ((multRealAbs * multRealAbs) +
+                                 (multImagAbs * multImagAbs) + EPSILON);
+        cross_spectrum_imag[i] = ((multImag * multRealAbs) - (multReal * multImagAbs)) / ((multRealAbs * multRealAbs) +
+                                 (multImagAbs * multImagAbs) + EPSILON);
     }
 
     // Calculate normalized cross-correlation by calculating the inverse DFT of the cross-power spectrum
-    double cross_corr_real[patch_size] = {0.0f};
+    double cross_corr_real[patch_size] = {0.0};
     for(int j=0; j<bH; j++){
         for(int i=0; i<bW; i++){
             for(int jj=0; jj<bH; jj++){
                 for(int ii=0; ii<bW; ii++){
-                    cross_corr_real[j*bW+i] += (cross_spectrum_real[jj*bW+ii] * cos(2*PI*((1*i*ii/bW) + (1*j*jj/bH))) - cross_spectrum_imag[jj*bW+ii] * sin(2*PI*((1*i*ii/bW) + (1*j*jj/bH)))) / sqrt((double)patch_size);
+                    cross_corr_real[j*bW+i] += (cross_spectrum_real[jj*bW+ii] * cos(2*PI*((1*i*ii/bW) + (1*j*jj/bH))) -
+                                                cross_spectrum_imag[jj*bW+ii] * sin(2*PI*((1*i*ii/bW) + (1*j*jj/bH)))) /
+                                                sqrt((double)patch_size);
                 }
             }
         }
     }
 
     // Determine the maximum value of the cross-correlation and get peak coordinates
-    double max_value = 0.0f;
-    int x_coord = 0;
-    int y_coord = 0;
+    double max_value = 0.0;
+    //float x_coord = 0.0f;
+    //float y_coord = 0.0f;
     for(int j=0; j<bH; j++){
         for(int i=0; i<bW; i++){
-            double value = cross_corr_real[j*w+i];
+            double value = cross_corr_real[j*bW+i];
             if(value > max_value){
                 max_value = value;
-                x_coord = i+1; // +1 to change the index range, so that zero coordinates represent no correlation
-                y_coord = j+1; // +1 to change the index range, so that zero coordinates represent no correlation
+                //x_coord = i; // +1 to change the index range, so that zero coordinates represent no correlation
+                //y_coord = j; // +1 to change the index range, so that zero coordinates represent no correlation
             }
         }
     }
-    // Calculate weight
-    weight = (double) getExpDecayWeight(std_x, local_stds[gy*w+gx]);
 
     // Calculate Euclidean distance of peak coordinates to the origin
-    phase_map[gy*w+gx] = (float) sqrt(((double) x_coord * (double) x_coord) + ((double) y_coord * (double) y_coord)); // Euclidean displacement (distance from origin)
+    phase_map[gy*w+gx] = (float) max_value;
+    //phase_map[gy*w+gx] = sqrt((x_coord * x_coord) + (y_coord * y_coord)); // Euclidean displacement (distance from origin)
 }
 
 // ---- USER FUNCTIONS ----

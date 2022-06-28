@@ -26,14 +26,14 @@ kernel void kernelGetPatchHu(
         return;
     }
 
-    // Get reference patch
+    // Get mean-subtracted reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[center_y*w+center_x];
 
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
         for(int i=center_x-bRW; i<=center_x+bRW; i++){
-            ref_patch[counter] = ref_pixels[j*w+i]-ref_mean;
+            ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
             counter++;
         }
     }
@@ -64,42 +64,43 @@ kernel void kernelGetPatchHu(
 
     comp_invariant_20 = getInvariant(comp_patch, bW, bH, 2, 0);
     comp_invariant_02 = getInvariant(comp_patch, bW, bH, 0, 2);
-    float comp_hu = comp_invariant_20 + comp_invariant_02;
+
+    float comp_hu = comp_invariant_20 + comp_invariant_02; // Hu 1
+    //float comp_hu = ((comp_invariant_20 - comp_invariant_02) * (comp_invariant_20 - comp_invariant_02)) + (4.0f * (comp_invariant_11 * comp_invariant_11)); // Hu 2
+    //float comp_hu = ((comp_invariant_30 - 3.0f*comp_invariant_12) * (comp_invariant_30 - 3.0f*comp_invariant_12)) + ((3.0f*comp_invariant_21-comp_invariant_03) * (3.0f*comp_invariant_21-comp_invariant_03)); // Hu 3
+    //float comp_hu = ((comp_invariant_30 + comp_invariant_12) * (comp_invariant_30 + comp_invariant_12)) + ((comp_invariant_21 + comp_invariant_03) * (comp_invariant_21 + comp_invariant_03)); // Hu 4
+
 
     // Calculate Euclidean distance between Hu moments and add to Hu map
-    //hu_map[gy*w+gx] = ref_hu - comp_hu;
-    hu_map[gy*w+gx] = fabs((float) ref_hu - (float) comp_hu);
+    hu_map[gy*w+gx] = fabs((float) comp_hu - (float) ref_hu);
 
 }
 
 // ---- USER FUNCTIONS ----
 float getInvariant(float* patch, int patch_w, int patch_h, int p, int q){
-    float moment_10 = 0.0f;
-    float moment_01 = 0.0f;
-    float moment_00 = 0.0f;
-    float centroid_x = 0.0f;
-    float centroid_y = 0.0f;
+    float x_avg = 0.0f;
+    for(int i=1; i<=patch_w; i++){
+        x_avg += (float)i;
+    }
+    x_avg /= (float)patch_w;
+
+    float y_avg = 0.0f;
+    for(int i=1; i<=patch_h; i++){
+        y_avg += (float)i;
+    }
+    y_avg /= (float)patch_h;
+
     float mu_pq = 0.0f;
-    float invariant = 0.0f;
-
-    // Get centroids x and y
-    for(int j=0; j<patch_h; j++){
-        for(int i=0; i<patch_w; i++){
-            moment_10 += patch[j*patch_w+i] * (float) pown((float) i+1, (int) 1);
-            moment_01 += patch[j*patch_w+i] * (float ) pown((float) j+1, (int) 1);
-            moment_00 += patch[j*patch_w+i];
-        }
-    }
-
-    centroid_x = moment_10 / (moment_00 + 0.0000001f);
-    centroid_y = moment_01 / (moment_00 + 0.0000001f);
+    float mu_00 = 0.0f;
 
     for(int j=0; j<patch_h; j++){
         for(int i=0; i<patch_w; i++){
-            mu_pq += patch[j*patch_w+i] * (float) pown((float) i+1-centroid_x, (int) p) * (float) pown((float) j+1-centroid_y, (int) q);
+            mu_pq += (float) pow((float) i + 1.0f - x_avg, (float) p) * ((float) pow((float) j + 1.0f - y_avg, (float) q)) * patch[j*patch_w+i];
+            mu_00 += patch[j*patch_w+i];
         }
     }
 
-    invariant = mu_pq / (float) (pow(moment_00, (float) (1+(p+q/2))) + 0.0000001f);
+    mu_00 = (float) pow(mu_00, 1.0f + (p+q)/2.0f);
+    float invariant = mu_pq / (mu_00 + 0.0000001f);
     return invariant;
 }

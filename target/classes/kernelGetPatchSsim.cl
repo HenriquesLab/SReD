@@ -29,7 +29,8 @@ kernel void kernelGetPatchSsim(
     // Get reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[center_y*w+center_x];
-    float ref_var = local_stds[center_y*w+center_x] * local_stds[center_y*w+center_x];
+    float ref_std = local_stds[center_y*w+center_x];
+    float ref_var = ref_std * ref_std;
 
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
@@ -43,7 +44,8 @@ kernel void kernelGetPatchSsim(
     // Get mean-subtracted comparison patch and some variables for SSIM calculation
     float comp_patch[patch_size] = {0.0f};
     float comp_mean = local_means[gy*w+gx];
-    float comp_var = local_stds[gy*w+gx] * local_stds[gy*w+gx];
+    float comp_std = local_stds[gy*w+gx];
+    float comp_var = comp_std * comp_std;
     float covar = 0.0f;
 
     counter = 0;
@@ -59,10 +61,10 @@ kernel void kernelGetPatchSsim(
     // Calculate SSIM
     float c1 = (0.01f * 1.0f) * (0.01f * 1.0f); // constant1 * float dynamic range
     float c2 = (0.03f * 1.0f) * (0.03f * 1.0f); // constant2 * float dynamic range
-    float ref_mean_sq = ref_mean * ref_mean;
-    float comp_mean_sq = comp_mean * comp_mean;
-
-    ssim_map[gy*w+gx] = (2.0f * covar + c2) / (ref_var + comp_var + c2); // Removed the luminance component to remove intensity-variant component
+    float c3 = c2 / 2.0f;
+    //ssim_map[gy*w+gx] = fmax(0.0f, (covar + c3) / (ref_std * comp_std + c3)); // Structure (Pearson correlation)
+    //ssim_map[gy*w+gx] = (2.0f * ref_std * comp_std + c2) / (ref_var + comp_var + c1); // Contrast
+    ssim_map[gy*w+gx] = fmax(0.0f, (2.0f * covar + c2) / (ref_var + comp_var + c2)); // Removed the luminance component to remove intensity-variant component
 }
 
 // ---- USER FUNCTIONS ----

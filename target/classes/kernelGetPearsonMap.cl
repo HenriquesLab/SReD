@@ -87,17 +87,18 @@ kernel void kernelGetPearsonMap(
 
             // Get values, subtract the mean, and get local standard deviation
             float comp_patch[patch_size] = {0.0f};
-            float sum_xy = 0.0f;
+            float covar = 0.0f;
 
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                     comp_patch[comp_counter] = ref_pixels[j1*w+i1] - local_means[y1*w+x1];
                     //comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + 0.00001f); // Normalize patch to [0,1]
-                    sum_xy += ref_patch[comp_counter] * comp_patch[comp_counter];
+                    covar += ref_patch[comp_counter] * comp_patch[comp_counter];
                     comp_counter++;
                 }
             }
+            covar /= patch_size;
 
             // Calculate weight
             float std_x = local_stds[y0*w+x0];
@@ -108,7 +109,7 @@ kernel void kernelGetPearsonMap(
             if(std_x == 0.0f && std_y == 0.0f){
                 pearson_map[y0*w+x0] += 1.0f * weight; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
             }else{
-                pearson_map[y0*w+x0] += (float) fmax(0.0f, (float) (sum_xy / ((patch_size * std_x * std_y) + 0.00001f)) * weight); // Truncate anti-correlations to zero
+                pearson_map[y0*w+x0] += (float) fmax(0.0f, (float) (covar / ((std_x * std_y) + 0.00001f)) * weight); // Truncate anti-correlations to zero
             }
         }
     }

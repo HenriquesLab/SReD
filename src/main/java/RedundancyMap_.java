@@ -39,10 +39,8 @@ public class RedundancyMap_ implements PlugIn {
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clNrmseMap, clMaeMap,
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clNrmseMap, clMaeMap, clPsnrMap,
             clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap;
-    private CLBuffer<ShortBuffer> clRefPixels8Bit;
-
 
     @Override
     public void run(String s) {
@@ -61,6 +59,7 @@ public class RedundancyMap_ implements PlugIn {
         float[] refPixelsRaw = (float[]) fp0.getPixels();
         int w = fp0.getWidth();
         int h = fp0.getHeight();
+        int wh = w * h;
 
 
         float sigma = 1.7f; // TODO: This should be the noise STDDEV, which can be taken from a dark patch in the image
@@ -135,17 +134,17 @@ public class RedundancyMap_ implements PlugIn {
         IJ.log("--------");
 
         // ---- Create buffers ----
-        clRefPixels = context.createFloatBuffer(w * h, READ_ONLY);
-        clRefPixels8Bit = context.createShortBuffer(w * h, READ_ONLY);
-        clLocalMeans = context.createFloatBuffer(w * h, READ_WRITE);
-        clLocalStds = context.createFloatBuffer(w * h, READ_WRITE);
-        clPearsonMap = context.createFloatBuffer(w * h, READ_WRITE);
-        clNrmseMap = context.createFloatBuffer(w * h, READ_WRITE);
-        clMaeMap = context.createFloatBuffer(w * h, READ_WRITE);
-        clSsimMap = context.createFloatBuffer(w * h, READ_WRITE);
-        clHuMap = context.createFloatBuffer(w * h, READ_WRITE);
-        clEntropyMap = context.createFloatBuffer(w * h, READ_WRITE);
-        clPhaseCorrelationMap = context.createFloatBuffer(w * h, READ_WRITE);
+        clRefPixels = context.createFloatBuffer(wh, READ_ONLY);
+        clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
+        clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
+        clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
+        clNrmseMap = context.createFloatBuffer(wh, READ_WRITE);
+        clMaeMap = context.createFloatBuffer(wh, READ_WRITE);
+        clPsnrMap = context.createFloatBuffer(wh, READ_WRITE);
+        clSsimMap = context.createFloatBuffer(wh, READ_WRITE);
+        clHuMap = context.createFloatBuffer(wh, READ_WRITE);
+        clEntropyMap = context.createFloatBuffer(wh, READ_WRITE);
+        clPhaseCorrelationMap = context.createFloatBuffer(wh, READ_WRITE);
 
         // ---- Create programs ----
         // Local means map
@@ -235,47 +234,35 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Fill buffers ----
         fillBufferWithFloatArray(clRefPixels, refPixels);
 
-        float[] localMeans = new float[w * h];
+        float[] localMeans = new float[wh];
         fillBufferWithFloatArray(clLocalMeans, localMeans);
 
-        float[] localStds = new float[w*h];
+        float[] localStds = new float[wh];
         fillBufferWithFloatArray(clLocalStds, localStds);
 
-        float[] pearsonMap = new float[w * h];
+        float[] pearsonMap = new float[wh];
         fillBufferWithFloatArray(clPearsonMap, pearsonMap);
 
-        float[] nrmseMap = new float[w * h];
+        float[] nrmseMap = new float[wh];
         fillBufferWithFloatArray(clNrmseMap, nrmseMap);
 
-        float[] maeMap = new float[w * h];
+        float[] maeMap = new float[wh];
         fillBufferWithFloatArray(clMaeMap, maeMap);
 
-        float[] ssimMap = new float[w * h];
+        float[] psnrMap = new float[wh];
+        fillBufferWithFloatArray(clPsnrMap, psnrMap);
+
+        float[] ssimMap = new float[wh];
         fillBufferWithFloatArray(clSsimMap, ssimMap);
 
-        float[] huMap = new float[w * h];
+        float[] huMap = new float[wh];
         fillBufferWithFloatArray(clHuMap, huMap);
 
-        float[] entropyMap = new float[w * h];
+        float[] entropyMap = new float[wh];
         fillBufferWithFloatArray(clEntropyMap, entropyMap);
 
-        float[] phaseCorrelationMap = new float[w * h];
+        float[] phaseCorrelationMap = new float[wh];
         fillBufferWithFloatArray(clPhaseCorrelationMap, phaseCorrelationMap);
-
-        // Create 8-bit duplicate of reference image (because entropy calculation is better with 8-bit data)
-        ImagePlus imp8Bit = imp0.duplicate();
-        imp8Bit.setTitle("Variance-stabilized image (8-bit)");
-        ImageConverter ic = new ImageConverter(imp8Bit);
-        ic.convertToGray8();
-        imp8Bit.updateAndDraw();
-        ic.convertToGray16();
-        imp8Bit.updateAndDraw();
-        //FloatProcessor fp8Bit =imp8Bit.getProcessor().convertToFloatProcessor();
-        //float[] refPixels8Bit = (float[]) fp8Bit.getPixels();
-        //fillBufferWithFloatArray(clRefPixels8Bit, refPixels8Bit);
-        ShortProcessor bp = imp8Bit.getProcessor().convertToShortProcessor();
-        short[] refPixels8Bit = (short[]) bp.getPixels();
-        fillBufferWithShortArray(clRefPixels8Bit, refPixels8Bit);
 
         // ---- Create kernels ----
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
@@ -307,6 +294,7 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetNrmseMap.setArg(argn++, clLocalStds);
         kernelGetNrmseMap.setArg(argn++, clNrmseMap);
         kernelGetNrmseMap.setArg(argn++, clMaeMap);
+        kernelGetNrmseMap.setArg(argn++, clPsnrMap);
 
         // Weighted mean SSIM map
         argn = 0;
@@ -324,7 +312,7 @@ public class RedundancyMap_ implements PlugIn {
 
         // Entropy map
         argn = 0;
-        kernelGetEntropyMap.setArg(argn++, clRefPixels8Bit);
+        kernelGetEntropyMap.setArg(argn++, clRefPixels);
         kernelGetEntropyMap.setArg(argn++, clLocalMeans);
         kernelGetEntropyMap.setArg(argn++, clLocalStds);
         kernelGetEntropyMap.setArg(argn++, clEntropyMap);
@@ -438,10 +426,20 @@ public class RedundancyMap_ implements PlugIn {
                 queue.finish();
             }
         }
+
+        queue.putReadBuffer(clPsnrMap, true);
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                psnrMap[y*w+x] = clPsnrMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
+                queue.finish();
+            }
+        }
+
         kernelGetNrmseMap.release();
         programGetNrmseMap.release();
         clNrmseMap.release();
         clMaeMap.release();
+        clPsnrMap.release();
 
         // ---- Calculate weighted mean SSIM map ----
         queue.putWriteBuffer(clSsimMap, false);
@@ -493,7 +491,7 @@ public class RedundancyMap_ implements PlugIn {
         programGetHuMap.release();
         clHuMap.release();
 
-        /*
+
         // ---- Calculate entropy map ----
         queue.putWriteBuffer(clEntropyMap, false);
         for(int nYB=0; nYB<nYBlocks; nYB++) {
@@ -508,9 +506,9 @@ public class RedundancyMap_ implements PlugIn {
 
         // ---- Read the entropy map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clEntropyMap, true);
-        for (int l=0; l<h; l++) {
-            for (int m=0; m<w; m++) {
-                entropyMap[l*w+m] = clEntropyMap.getBuffer().get(l*w+m) / sizeWithoutBorders;
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                entropyMap[y*w+x] = clEntropyMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
                 queue.finish();
             }
         }
@@ -518,9 +516,6 @@ public class RedundancyMap_ implements PlugIn {
         programGetEntropyMap.release();
         clEntropyMap.release();
 
-        IJ.log("Done!");
-        IJ.log("--------");
-*/
         // ---- Calculate Phase correlation map ----
         queue.putWriteBuffer(clPhaseCorrelationMap, false);
 
@@ -546,6 +541,9 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetPhaseCorrelationMap.release();
         programGetPhaseCorrelationMap.release();
         clPhaseCorrelationMap.release();
+
+        IJ.log("Done!");
+        IJ.log("--------");
 
         // ---- Cleanup all resources associated with this context ----
         IJ.log("Cleaning up resources...");
@@ -577,34 +575,43 @@ public class RedundancyMap_ implements PlugIn {
         ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
         imp3.show();
 
+        // PSNR map (normalized to [0,1]
+        float[] psnrMinMax = findMinMax(psnrMap, w, h, bRW, bRH);
+        float[] psnrMapNorm = normalize(psnrMap, w, h, bRW, bRH, psnrMinMax, 0, 0);
+        FloatProcessor fp4 = new FloatProcessor(w, h, psnrMapNorm);
+        ImagePlus imp4 = new ImagePlus("PSNR Map", fp4);
+        imp4.show();
+
         // SSIM map (normalized to [0,1])
         float[] ssimMinMax = findMinMax(ssimMap, w, h, bRW, bRH);
         float[] ssimMapNorm = normalize(ssimMap, w, h, bRW, bRH, ssimMinMax, 0, 0);
-        FloatProcessor fp4 = new FloatProcessor(w, h, ssimMapNorm);
-        ImagePlus imp4 = new ImagePlus("SSIM Map", fp4);
-        imp4.show();
+        FloatProcessor fp5 = new FloatProcessor(w, h, ssimMapNorm);
+        ImagePlus imp5 = new ImagePlus("SSIM Map", fp5);
+        imp5.show();
 
         // Hu map (normalized to [0,1])
         float[] huMinMax = findMinMax(huMap, w, h, bRW, bRH);
         float[] huMapNorm = normalize(huMap, w, h, bRW, bRH, huMinMax, 0, 0);
-        FloatProcessor fp5 = new FloatProcessor(w, h, huMapNorm);
-        ImagePlus imp5 = new ImagePlus("Hu Map", fp5);
-        imp5.show();
-/*
-        // Entropy map (normalized to [0,1])
-        FloatProcessor fp6 = new FloatProcessor(w, h, entropyMap);
-        ImagePlus imp6 = new ImagePlus("Entropy Map", fp6);
+        FloatProcessor fp6 = new FloatProcessor(w, h, huMapNorm);
+        ImagePlus imp6 = new ImagePlus("Hu Map", fp6);
         imp6.show();
-        IJ.log("Finished!");
-*/
+
+        // Entropy map (normalized to [0,1])
+        float[] entropyMinMax = findMinMax(entropyMap, w, h, bRW, bRH);
+        float[] entropyMapNorm = normalize(entropyMap, w, h, bRW, bRH, entropyMinMax, 0, 0);
+        FloatProcessor fp7 = new FloatProcessor(w, h, entropyMap);
+        ImagePlus imp7 = new ImagePlus("Entropy Map", fp7);
+        imp7.show();
+
         // Phase map (normalized to [0,1])
         float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, bRW, bRH);
         float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, bRW, bRH, phaseMinMax, 0, 0);
-        FloatProcessor fp6 = new FloatProcessor(w, h, phaseMapNorm);
-        ImagePlus imp6 = new ImagePlus("Phase Map", fp6);
-        imp6.show();
+        FloatProcessor fp8 = new FloatProcessor(w, h, phaseMapNorm);
+        ImagePlus imp8 = new ImagePlus("Phase Map", fp8);
+        imp8.show();
 
         // ---- Stop timer ----
+        IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
         IJ.log("--------");
