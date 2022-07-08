@@ -45,7 +45,9 @@ public class PatchRed_ implements PlugIn {
 
     @Override
     public void run(String s) {
+
         float EPSILON = 0.0000001f;
+
         // ---- Start timer ----
         long start = System.currentTimeMillis();
 
@@ -269,6 +271,8 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRW$", "" + bRW);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRH$", "" + bRH);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$STD_X$", "" + std);
+        programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$EPSILON$", "" + EPSILON);
+
         programGetPatchPearson = context.createProgram(programStringGetPatchPearson).build();
 
         // Fill buffers
@@ -437,6 +441,7 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$CENTER_Y$", "" + centerY);
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BRW$", "" + bRW);
         programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BRH$", "" + bRH);
+        programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$EPSILON$", "" + EPSILON);
         programGetPatchHu = context.createProgram(programStringGetPatchHu).build();
 
         // Fill buffers
@@ -483,6 +488,7 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$CENTER_Y$", "" + centerY);
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$BRW$", "" + bRW);
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$BRH$", "" + bRH);
+        programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$EPSILON$", "" + EPSILON);
         programGetPatchPhaseCorrelation = context.createProgram(programStringGetPatchPhaseCorrelation).build();
 
         // Create and fill buffers
@@ -537,6 +543,7 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$BRW$", "" + bRW);
         programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$BRH$", "" + bRH);
+        programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$EPSILON$", "" + EPSILON);
         programGetPatchEntropy = context.createProgram(programStringGetPatchEntropy).build();
 
         // Fill buffers
@@ -550,6 +557,7 @@ public class PatchRed_ implements PlugIn {
         argn = 0;
         kernelGetPatchEntropy.setArg(argn++, clRefPixels);
         kernelGetPatchEntropy.setArg(argn++, clLocalMeans);
+        kernelGetPatchEntropy.setArg(argn++, clLocalStds);
         kernelGetPatchEntropy.setArg(argn++, clEntropyMap);
 
         // Calculate entropy map

@@ -7,6 +7,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define EPSILON $EPSILON$
 float getExpDecayWeight(float ref, float comp);
 float getInvariant(float* patch, int patch_w, int patch_h, int p, int q);
 
@@ -152,6 +153,6 @@ float getInvariant(float* patch, int patch_w, int patch_h, int p, int q){
     }
 
     mu_00 = (float) pow(mu_00, 1.0f + (p+q)/2.0f);
-    float invariant = mu_pq / (mu_00 + 0.0000001f);
+    float invariant = mu_pq / (mu_00 + EPSILON);
     return invariant;
 }

@@ -1,8 +1,6 @@
 /**
- * TODO: Make exception for when the plugin is started without an active image
  * TODO: Implement progress tracking
  * TODO: check kernels for division by zero
- * TODO: Make EPSILON host-defined and set it as arguments to kernels
  **/
 
 import com.jogamp.opencl.*;
@@ -40,6 +38,9 @@ public class RedundancyMap_ implements PlugIn {
 
     @Override
     public void run(String s) {
+
+        float EPSILON = 0.0000001f;
+
         // ---- Start timer ----
         long start = System.currentTimeMillis();
 
@@ -163,6 +164,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRW$", "" + bRW);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRH$", "" + bRH);
+        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$EPSILON$", "" + EPSILON);
+
         programGetPearsonMap = context.createProgram(programStringGetPearsonMap).build();
 
         // Weighted mean NRMSE map
@@ -175,6 +178,7 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$PATCH_SIZE$", "" + patchSize);
         programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$BRW$", "" + bRW);
         programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$BRH$", "" + bRH);
+        programStringGetNrmseMap = replaceFirst(programStringGetNrmseMap, "$EPSILON$", "" + EPSILON);
         programGetNrmseMap = context.createProgram(programStringGetNrmseMap).build();
 
         // Weighted mean SSIM map
@@ -199,6 +203,7 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetHuMap = replaceFirst(programStringGetHuMap, "$PATCH_SIZE$", "" + patchSize);
         programStringGetHuMap = replaceFirst(programStringGetHuMap, "$BRW$", "" + bRW);
         programStringGetHuMap = replaceFirst(programStringGetHuMap, "$BRH$", "" + bRH);
+        programStringGetHuMap = replaceFirst(programStringGetHuMap, "$EPSILON$", "" + EPSILON);
         programGetHuMap = context.createProgram(programStringGetHuMap).build();
 
         // Entropy map
@@ -211,6 +216,7 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$PATCH_SIZE$", "" + patchSize);
         programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$BRW$", "" + bRW);
         programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap, "$BRH$", "" + bRH);
+        programStringGetEntropyMap = replaceFirst(programStringGetEntropyMap,"$EPSILON$", "" + EPSILON);
         programGetEntropyMap = context.createProgram(programStringGetEntropyMap).build();
 
         // Phase Correlation Map
@@ -223,8 +229,8 @@ public class RedundancyMap_ implements PlugIn {
         programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$BRW$", "" + bRW);
         programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$BRH$", "" + bRH);
+        programStringGetPhaseCorrelationMap = replaceFirst(programStringGetPhaseCorrelationMap, "$EPSILON$", "" + EPSILON);
         programGetPhaseCorrelationMap = context.createProgram(programStringGetPhaseCorrelationMap).build();
-
 
         // ---- Fill buffers ----
         fillBufferWithFloatArray(clRefPixels, refPixels);

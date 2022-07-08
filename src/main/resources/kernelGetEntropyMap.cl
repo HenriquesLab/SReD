@@ -7,6 +7,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define EPSILON $EPSILON$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetEntropyMap(
@@ -31,7 +32,7 @@ kernel void kernelGetEntropyMap(
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = ref_pixels[j0*w+i0] - ref_mean;
+            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean) / (local_stds[y0*w+x0] + EPSILON);
             ref_counter++;
         }
     }
@@ -102,7 +103,7 @@ kernel void kernelGetEntropyMap(
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = ref_pixels[j1*w+i1] - comp_mean;
+                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean) / (local_stds[y1*w+x1] + EPSILON);
                     comp_counter++;
                 }
             }

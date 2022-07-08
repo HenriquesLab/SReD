@@ -6,10 +6,12 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define EPSILON $EPSILON$
 
 kernel void kernelGetPatchEntropy(
     global float* ref_pixels,
     global float* local_means,
+    global float* local_stds,
     global float* entropy_map
 ){
 
@@ -21,8 +23,6 @@ kernel void kernelGetPatchEntropy(
         return;
     }
 
-    float EPSILON = 0.0000001f;
-
     // Get mean-subtracted reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[center_y*w+center_x];
@@ -30,7 +30,7 @@ kernel void kernelGetPatchEntropy(
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
         for(int i=center_x-bRW; i<=center_x+bRW; i++){
-            ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
+            ref_patch[counter] = (ref_pixels[j*w+i] - ref_mean) / (local_stds[center_y*w+center_x] + EPSILON);
             counter++;
         }
     }
@@ -94,7 +94,7 @@ kernel void kernelGetPatchEntropy(
     counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
+            comp_patch[counter] = (ref_pixels[j*w+i] - comp_mean) / (local_stds[gy*w+gx] + EPSILON);
             counter++;
         }
     }

@@ -1,5 +1,4 @@
 //#pragma OPENCL EXTENSION cl_khr_fp64 : enable
-
 #define w $WIDTH$
 #define h $HEIGHT$
 #define bW $BW$
@@ -8,7 +7,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
-
+#define EPSILON $EPSILON$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetNrmseMap(
@@ -27,8 +26,6 @@ kernel void kernelGetNrmseMap(
     if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
         return;
     }
-
-    float EPSILON = 0.0000001f;
 
     // Get reference patch max and min
     float min_x = ref_pixels[y0*w+x0];
@@ -106,7 +103,7 @@ kernel void kernelGetNrmseMap(
 
             nrmse_map[y0*w+x0] += sqrt(nrmse/patch_size) * weight;
             mae_map[y0*w+x0] += (mae/patch_size) * weight;
-            psnr_map[y0*w+x0] += ((float) 10.0 * (float) log10((float) 1.0 / (float) (nrmse/patch_size +  EPSILON))) * log10(weight+EPSILON);
+            psnr_map[y0*w+x0] += ((float) 10.0 * (float) log10((float) 1.0 / (float) (nrmse/patch_size + EPSILON))) * weight;
         }
     }
 }

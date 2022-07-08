@@ -8,7 +8,7 @@
 #define center_y $CENTER_Y$
 #define bRW $BRW$
 #define bRH $BRH$
-
+#define EPSILON $EPSILON$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPatchPhaseCorrelation(
@@ -27,7 +27,6 @@ kernel void kernelGetPatchPhaseCorrelation(
     }
 
     double PI = 3.14159265358979323846;
-    double EPSILON = 0.00001;
 
     // Get reference patch
     double ref_patch[patch_size] = {0.0};

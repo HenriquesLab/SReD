@@ -6,8 +6,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
-#define std_x $STD_X$
-
+#define EPSILON $EPSILON$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPatchPearson(
@@ -28,11 +27,12 @@ kernel void kernelGetPatchPearson(
     // Get mean_subtracted reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[center_y*w+center_x];
+    float ref_std = local_stds[center_y*w+center_x];
 
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
             for(int i=center_x-bRW; i<=center_x+bRW; i++){
-                ref_patch[counter] = ref_pixels[j*w+i]-ref_mean;
+                ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
                 counter++;
         }
     }
@@ -40,10 +40,13 @@ kernel void kernelGetPatchPearson(
     // For each comparison pixel...
     // Get mean_subtracted comparison patch
     float comp_patch[patch_size] = {0.0f};
+    float comp_mean = local_means[gy*w+gx];
+    float comp_std = local_stds[gy*w+gx];
+
     counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[counter] = ref_pixels[j*w+i] - local_means[gy*w+gx];
+            comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
             counter++;
         }
     }
@@ -56,28 +59,27 @@ kernel void kernelGetPatchPearson(
     covar /= patch_size;
 
     // Calculate weight
-    float std_y = local_stds[gy*w+gx];
     float weight = 0.0f;
-    weight = getExpDecayWeight(std_x, std_y);
+    weight = getExpDecayWeight(ref_std, comp_std);
 
     // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-    if(std_x == 0.0f && std_y == 0.0f){
+    if(ref_std == 0.0f && comp_std == 0.0f){
         pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
     }else{
-        pearson_map[gy*w+gx] = (float) fmax(0.0f, (float)(covar / ((std_x*std_y) + 0.00001f))); // Truncate anti-correlations
+        pearson_map[gy*w+gx] = (float) fmax(0.0f, (float)(covar / ((ref_std * comp_std) + EPSILON))); // Truncate anti-correlations
     }
 }
 
 // ---- USER FUNCTIONS ----
 float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
-    // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
+    // Alternative: exponential decay function: 1 - abs(mean_x - mean_y / abs(mean_x + abs(mean_y)))
     float weight = 0;
 
     if(ref == comp){
         weight = 1;
     }else{
-        weight = 1-(fabs(ref-comp)/(ref+comp));
+        weight = 1 - (fabs(ref - comp) / (ref + comp));
     }
     return weight;
 

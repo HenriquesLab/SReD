@@ -6,7 +6,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
-
+#define EPSILON $EPSILON$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPatchSsim(
@@ -23,8 +23,6 @@ kernel void kernelGetPatchSsim(
     if(gx<bRW || gx>=w-bRW || gy<bRH || gy>=h-bRH){
         return;
     }
-
-    float EPSILON = 0.0000001f;
 
     // Get reference patch
     float ref_patch[patch_size] = {0.0f};

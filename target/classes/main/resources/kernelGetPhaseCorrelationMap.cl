@@ -7,6 +7,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define EPSILON $EPSILON$
 float getGaussianWeight(float ref, float comp);
 float getExpDecayWeight(float ref, float comp);
 
@@ -26,7 +27,6 @@ kernel void kernelGetPhaseCorrelationMap(
     }
 
     double PI = 3.14159265358979323846f;
-    double EPSILON = 0.00001f;
 
     // Get reference patch and subtract the mean
     double ref_patch[patch_size] = {0.0f};
