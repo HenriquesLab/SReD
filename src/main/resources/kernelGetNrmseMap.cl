@@ -45,7 +45,7 @@ kernel void kernelGetNrmseMap(
         }
     }
 
-    // Get reference patch
+    // Get mean-subtracted reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[y0*w+x0];
     float ref_std = local_stds[y0*w+x0];
@@ -53,7 +53,7 @@ kernel void kernelGetNrmseMap(
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean);
+            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean) / (ref_std + EPSILON);
             ref_counter++;
         }
     }
@@ -80,14 +80,14 @@ kernel void kernelGetNrmseMap(
                 }
             }
 
-            // Get comparison patch
+            // Get comparison patch MEAN SUBTRACTION
             float comp_patch[patch_size];
             float comp_mean = local_means[y1*w+x1];
-
+            float comp_std = local_stds[y1*w+x1];
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
+                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean) / (comp_std + EPSILON);
                     comp_counter++;
                 }
             }
@@ -104,9 +104,9 @@ kernel void kernelGetNrmseMap(
                 mae += fabs(ref_patch[i] - comp_patch[i]);
             }
 
-            nrmse_map[y0*w+x0] += (sqrt((nrmse/patch_size)) / (ref_std + EPSILON)) * weight;
+            nrmse_map[y0*w+x0] += sqrt(nrmse/patch_size)  * weight;
             mae_map[y0*w+x0] += (mae/patch_size) * weight;
-            psnr_map[y0*w+x0] += (float) 10.0 * (float) log10((float) 1.0 / (float) (nrmse/patch_size+EPSILON));
+            psnr_map[y0*w+x0] += (float) 10.0 * (float) log10((float) 1.0 / (float) (nrmse/patch_size +  EPSILON));
         }
     }
 }

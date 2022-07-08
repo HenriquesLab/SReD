@@ -81,7 +81,7 @@ kernel void kernelGetEntropyMap(
         }
         p /= patch_size;
         if(p != 0.0){
-            ref_entropy += p * (float) log10((float) 1.0 / p);
+            ref_entropy += p * (float) log2((float) 1.0 / p);
         }else{
             continue;
         }
@@ -153,7 +153,7 @@ kernel void kernelGetEntropyMap(
                 p /= patch_size;
 
                 if(p != 0.0){
-                    comp_entropy += p * (float) log10((float) 1.0 / p);
+                    comp_entropy += p * (float) log2((float) 1.0 / p);
                 }else{
                     continue;
                 }
@@ -163,7 +163,7 @@ kernel void kernelGetEntropyMap(
             weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate delta entropy and add it to the sum at reference coordinates
-            entropy_map[y0*w+x0] += fabs(ref_entropy - comp_entropy) * weight;
+            entropy_map[y0*w+x0] += fabs((float)((-1.0)*ref_entropy) - ((-1.0)*comp_entropy)) * weight;
         }
     }
 }

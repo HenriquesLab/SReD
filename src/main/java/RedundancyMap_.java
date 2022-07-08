@@ -10,12 +10,8 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.plugin.PlugIn;
-import ij.process.ByteProcessor;
 import ij.process.FloatProcessor;
-import ij.process.ImageConverter;
-import ij.process.ShortProcessor;
 import java.io.*;
-import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 
@@ -56,7 +52,6 @@ public class RedundancyMap_ implements PlugIn {
 
         FloatProcessor fp0 = imp0.getProcessor().convertToFloatProcessor();
         float[] refPixels = (float[]) fp0.getPixels();
-        float[] refPixelsRaw = (float[]) fp0.getPixels();
         int w = fp0.getWidth();
         int h = fp0.getHeight();
         int wh = w * h;
@@ -599,7 +594,7 @@ public class RedundancyMap_ implements PlugIn {
         // Entropy map (normalized to [0,1])
         float[] entropyMinMax = findMinMax(entropyMap, w, h, bRW, bRH);
         float[] entropyMapNorm = normalize(entropyMap, w, h, bRW, bRH, entropyMinMax, 0, 0);
-        FloatProcessor fp7 = new FloatProcessor(w, h, entropyMap);
+        FloatProcessor fp7 = new FloatProcessor(w, h, entropyMapNorm);
         ImagePlus imp7 = new ImagePlus("Entropy Map", fp7);
         imp7.show();
 

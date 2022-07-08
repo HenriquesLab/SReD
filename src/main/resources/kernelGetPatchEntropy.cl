@@ -80,7 +80,7 @@ kernel void kernelGetPatchEntropy(
         }
         p /= patch_size;
         if(p != 0.0){
-            ref_entropy += p * (float) log10((float) 1.0/p);
+            ref_entropy += p * (float) log2((float) 1.0/p);
         }else{
             continue;
         }
@@ -145,12 +145,12 @@ kernel void kernelGetPatchEntropy(
         p /= patch_size;
 
         if(p != 0.0){
-            comp_entropy += p * (float) log10((float) 1.0/p);
+            comp_entropy += p * (float) log2((float) 1.0/p);
         }else{
             continue;
         }
     }
 
     // Calculate delta entropy and store in entropy map
-    entropy_map[gy*w+gx] = fabs(ref_entropy - comp_entropy); // Delta entropy
+    entropy_map[gy*w+gx] = fabs(((-1)*ref_entropy) - ((-1)*comp_entropy)); // Delta entropy
 }

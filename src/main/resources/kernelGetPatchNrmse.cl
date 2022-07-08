@@ -35,7 +35,7 @@ kernel void kernelGetPatchNrmse(
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
         for(int i=center_x-bRW; i<=center_x+bRW; i++){
-            ref_patch[counter] = ref_pixels[j*w+i]-ref_mean;
+            ref_patch[counter] = (ref_pixels[j*w+i]-ref_mean) / (ref_std + EPSILON);
             counter++;
         }
     }
@@ -60,11 +60,12 @@ kernel void kernelGetPatchNrmse(
     // Get mean-subtracted comparison patch
     float comp_patch[patch_size];
     float comp_mean = local_means[gy*w+gx];
+    float comp_std = local_stds[gy*w+gx];
 
     counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
+            comp_patch[counter] = (ref_pixels[j*w+i] - comp_mean) / (comp_std + EPSILON);
             counter++;
         }
     }
@@ -77,7 +78,7 @@ kernel void kernelGetPatchNrmse(
         mae += fabs(ref_patch[i] - comp_patch[i]);
     }
 
-    nrmse_map[gy*w+gx] = sqrt((nmrse/patch_size)) / (ref_std + EPSILON);
+    nrmse_map[gy*w+gx] = sqrt(nmrse/patch_size);
     mae_map[gy*w+gx] = mae/patch_size;
     psnr_map[gy*w+gx] = (float) 10.0 * (float) log10((float) 1.0 / (float) (nmrse/patch_size+EPSILON));
 
