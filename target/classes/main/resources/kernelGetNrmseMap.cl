@@ -104,9 +104,9 @@ kernel void kernelGetNrmseMap(
                 mae += fabs(ref_patch[i] - comp_patch[i]);
             }
 
-            nrmse_map[y0*w+x0] += sqrt(nrmse/patch_size)  * weight;
+            nrmse_map[y0*w+x0] += sqrt(nrmse/patch_size) * weight;
             mae_map[y0*w+x0] += (mae/patch_size) * weight;
-            psnr_map[y0*w+x0] += (float) 10.0 * (float) log10((float) 1.0 / (float) (nrmse/patch_size +  EPSILON));
+            psnr_map[y0*w+x0] += ((float) 10.0 * (float) log10((float) 1.0 / (float) (nrmse/patch_size +  EPSILON))) * weight;
         }
     }
 }
