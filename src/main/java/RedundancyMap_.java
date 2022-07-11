@@ -6,12 +6,16 @@
 import com.jogamp.opencl.*;
 import ij.IJ;
 import ij.ImagePlus;
+import ij.ImageStack;
 import ij.WindowManager;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
+
+import java.awt.*;
 import java.io.*;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
+import java.util.Arrays;
 
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
@@ -346,9 +350,9 @@ public class RedundancyMap_ implements PlugIn {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating local means... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
                 queue.put2DRangeKernel(kernelGetLocalMeans, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
             }
         }
-        queue.finish();
 
         // ---- Read the local means map back from the GPU ----
         queue.putReadBuffer(clLocalMeans, true);
@@ -380,9 +384,9 @@ public class RedundancyMap_ implements PlugIn {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating Pearson's correlations... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
                 queue.put2DRangeKernel(kernelGetPearsonMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
             }
         }
-        queue.finish();
 
         // ---- Read the Pearson's map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clPearsonMap, true);
@@ -406,10 +410,10 @@ public class RedundancyMap_ implements PlugIn {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating NRMSE and MAE... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
                 queue.put2DRangeKernel(kernelGetNrmseMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
             }
         }
 
-        queue.finish();
 
         // ---- Read the NRMSE and MAE maps back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clNrmseMap, true);
@@ -451,9 +455,9 @@ public class RedundancyMap_ implements PlugIn {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating SSIM... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
                 queue.put2DRangeKernel(kernelGetSsimMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
             }
         }
-        queue.finish();
 
         // ---- Read the SSIM map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clSsimMap, true);
@@ -476,9 +480,9 @@ public class RedundancyMap_ implements PlugIn {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating Hu... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
                 queue.put2DRangeKernel(kernelGetHuMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
             }
         }
-        queue.finish();
 
         // ---- Read the Hu map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clHuMap, true);
@@ -501,9 +505,9 @@ public class RedundancyMap_ implements PlugIn {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating entropy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
                 queue.put2DRangeKernel(kernelGetEntropyMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
             }
         }
-        queue.finish();
 
         // ---- Read the entropy map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clEntropyMap, true);
@@ -516,7 +520,7 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetEntropyMap.release();
         programGetEntropyMap.release();
         clEntropyMap.release();
-
+        /*
         // ---- Calculate Phase correlation map ----
         queue.putWriteBuffer(clPhaseCorrelationMap, false);
 
@@ -526,10 +530,9 @@ public class RedundancyMap_ implements PlugIn {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating Phase correlations... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
                 queue.put2DRangeKernel(kernelGetPhaseCorrelationMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.finish();
             }
         }
-
-        queue.finish();
 
         // ---- Read the Phase correlations map back from the GPU (and finish the mean calculation simultaneously) ----
         queue.putReadBuffer(clPhaseCorrelationMap, true);
@@ -542,7 +545,7 @@ public class RedundancyMap_ implements PlugIn {
         kernelGetPhaseCorrelationMap.release();
         programGetPhaseCorrelationMap.release();
         clPhaseCorrelationMap.release();
-
+*/
         IJ.log("Done!");
         IJ.log("--------");
 
@@ -559,66 +562,96 @@ public class RedundancyMap_ implements PlugIn {
         float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
         float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
         FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
-        ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
-        imp1.show();
 
         // NRMSE map (normalized to [0,1])
         float[] nrmseMinMax = findMinMax(nrmseMap, w, h, bRW, bRH);
         float[] nrmseMapNorm = normalize(nrmseMap, w, h, bRW, bRH, nrmseMinMax, 0, 0);
         FloatProcessor fp2 = new FloatProcessor(w, h, nrmseMapNorm);
-        ImagePlus imp2 = new ImagePlus("NRMSE Map", fp2);
-        imp2.show();
 
         // MAE map (normalized to [0,1])
         float[] maeMinMax = findMinMax(maeMap, w, h, bRW, bRH);
         float[] maeMapNorm = normalize(maeMap, w, h, bRW, bRH, maeMinMax, 0, 0);
         FloatProcessor fp3 = new FloatProcessor(w, h, maeMapNorm);
-        ImagePlus imp3 = new ImagePlus("MAE Map", fp3);
-        imp3.show();
 
         // PSNR map (normalized to [0,1]
         float[] psnrMinMax = findMinMax(psnrMap, w, h, bRW, bRH);
         float[] psnrMapNorm = normalize(psnrMap, w, h, bRW, bRH, psnrMinMax, 0, 0);
         FloatProcessor fp4 = new FloatProcessor(w, h, psnrMapNorm);
-        ImagePlus imp4 = new ImagePlus("PSNR Map", fp4);
-        imp4.show();
 
         // SSIM map (normalized to [0,1])
         float[] ssimMinMax = findMinMax(ssimMap, w, h, bRW, bRH);
         float[] ssimMapNorm = normalize(ssimMap, w, h, bRW, bRH, ssimMinMax, 0, 0);
         FloatProcessor fp5 = new FloatProcessor(w, h, ssimMapNorm);
-        ImagePlus imp5 = new ImagePlus("SSIM Map", fp5);
-        imp5.show();
 
         // Hu map (normalized to [0,1])
         float[] huMinMax = findMinMax(huMap, w, h, bRW, bRH);
         float[] huMapNorm = normalize(huMap, w, h, bRW, bRH, huMinMax, 0, 0);
         FloatProcessor fp6 = new FloatProcessor(w, h, huMapNorm);
-        ImagePlus imp6 = new ImagePlus("Hu Map", fp6);
-        imp6.show();
 
         // Entropy map (normalized to [0,1])
         float[] entropyMinMax = findMinMax(entropyMap, w, h, bRW, bRH);
         float[] entropyMapNorm = normalize(entropyMap, w, h, bRW, bRH, entropyMinMax, 0, 0);
         FloatProcessor fp7 = new FloatProcessor(w, h, entropyMapNorm);
-        ImagePlus imp7 = new ImagePlus("Entropy Map", fp7);
-        imp7.show();
 
         // Phase map (normalized to [0,1])
         float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, bRW, bRH);
         float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, bRW, bRH, phaseMinMax, 0, 0);
         FloatProcessor fp8 = new FloatProcessor(w, h, phaseMapNorm);
-        ImagePlus imp8 = new ImagePlus("Phase Map", fp8);
-        imp8.show();
+
+        // Create image stack holding the redundancy maps
+        ImageStack ims = new ImageStack(w, h);
+        ims.addSlice("Pearson", fp1);
+        ims.addSlice("NRMSE", fp2);
+        ims.addSlice("MAE", fp3);
+        ims.addSlice("PSNR", fp4);
+        ims.addSlice("SSIM", fp5);
+        ims.addSlice("Hu", fp6);
+        ims.addSlice("Entropy", fp7);
+        ImagePlus ip0 = new ImagePlus("Redundancy Maps", ims);
+        ip0.show();
 
         // ---- Stop timer ----
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
         IJ.log("--------");
+
+        // ---- Find relevant positions
+        // Get unique values
+        float[] pearsonUnique = getUniqueValues(pearsonMap, wh);
+        System.out.println(pearsonUnique[1]);
+
+
+
+
+
     }
 
     // ---- USER FUNCTIONS ----
+    public static float[] getUniqueValues(float[] inArr, int n){
+        // Sort input array
+        Arrays.sort(inArr);
+
+        // Get number of unique values
+        int count = 1; // Starts at 1 because first value is not checked
+        for(int i=0; i<n-1; i++){
+            if(inArr[i] != inArr[i+1]){
+                count++;
+            }
+        }
+
+        // Get unique values
+        float[] outArr = new float[count];
+        int index = 0;
+        for(int i=0; i<n-1; i++){
+            if(inArr[i] != inArr[i+1]){
+                outArr[index] = inArr[i];
+                index++;
+            }
+        }
+        outArr[index] = inArr[n-1]; // Add the last unique value, which is not added in the loop
+        return outArr;
+    }
 
     public static void fillBufferWithFloat(CLBuffer<FloatBuffer> clBuffer, float pixel) {
         FloatBuffer buffer = clBuffer.getBuffer();
