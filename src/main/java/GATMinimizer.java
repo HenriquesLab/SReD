@@ -115,7 +115,7 @@ public class GATMinimizer implements UserFunction {
                 error += (delta * delta) / nBlocks;
             }
         }
-        IJ.log("gain:"+gain+" sigma:"+sigma+" offset:"+offset+" error: " + error);
+        //IJ.log("gain:"+gain+" sigma:"+sigma+" offset:"+offset+" error: " + error);
 
         return error;
     }

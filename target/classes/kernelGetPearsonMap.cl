@@ -1,27 +1,43 @@
 //#pragma OPENCL EXTENSION cl_khr_fp64 : enable
-
 #define w $WIDTH$
 #define h $HEIGHT$
 #define bW $BW$
 #define bH $BH$
-#define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
 #define EPSILON $EPSILON$
+#define nUnique $NUNIQUE$
+#define speedUp $SPEEDUP$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPearsonMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
+    global int* uniqueStdCoords,
     global float* pearson_map
 ){
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
 
-    // Bound check (avoids borders dynamically based on patch dimensions)
+    // Check if reference pixel belongs to the unique list, and if not, kill the thread
+    if(speedUp == 1){
+        int isUnique = 0;
+        for(int i=0; i<nUnique; i++){
+            if(y0*w+x0 == uniqueStdCoords[i]){
+                isUnique = 1;
+                break;
+            }
+        }
+
+        if(isUnique == 0){
+            return;
+        }
+    }
+
+    // Bound check to avoids borders dynamically based on patch dimensions
     if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
         return;
     }
@@ -104,12 +120,13 @@ kernel void kernelGetPearsonMap(
             float std_x = local_stds[y0*w+x0];
             float std_y = local_stds[y1*w+x1];
             weight = getExpDecayWeight(std_x, std_y);
+            float similarity = 1.0f - (fabs(std_x-std_y)/(fabs(std_x)+fabs(std_y) + EPSILON));
 
             // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
             if(std_x == 0.0f && std_y == 0.0f){
-                pearson_map[y0*w+x0] += 1.0f * weight; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
+                pearson_map[y0*w+x0] += 0.0f * weight; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same, so 1-PEarson = 1-1 = 0)
             }else{
-                pearson_map[y0*w+x0] += (float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON)) * weight); // Truncate anti-correlations to zero
+                pearson_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON))))) * weight; // Truncate anti-correlations to zero
             }
         }
     }
@@ -120,12 +137,8 @@ float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
     float weight = 0;
+    float similarity = 1.0f - (fabs(ref-comp)/(fabs(ref)+fabs(comp) + EPSILON));
+    weight =  ((float) pow(100, similarity) - 1) / 99;
 
-    if(ref == comp){
-        weight = 1;
-    }else{
-        weight = 1-(fabs(ref-comp)/(ref+comp));
-    }
     return weight;
-
 }

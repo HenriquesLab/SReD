@@ -644,6 +644,11 @@ public class PatchRed_ implements PlugIn {
         ImagePlus imp8 = new ImagePlus("Phase Map", fp8);
         imp8.show();
 
+        // STDS TODO: FINISH THIS
+        FloatProcessor fp9 = new FloatProcessor(w, h, localStds);
+        ImagePlus imp9 = new ImagePlus("Local Stds", fp9);
+        imp9.show();
+
         // ---- Stop timer ----
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;

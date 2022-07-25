@@ -3,23 +3,38 @@
 #define h $HEIGHT$
 #define bW $BW$
 #define bH $BH$
-#define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
 #define EPSILON $EPSILON$
-float getGaussianWeight(float ref, float comp);
+#define speedUp $SPEEDUP$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPhaseCorrelationMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
+    global float* uniqueStdCoords,
     global float* phase_map
 ){
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
+
+    // Check if reference pixel belongs to the unique list, and if not, kill the thread
+    if(speedUp == 1){
+        int isUnique = 0;
+        for(int i=0; i<nUnique; i++){
+            if(y0*w+x0 == uniqueStdCoords[i]){
+                isUnique = 1;
+                break;
+            }
+        }
+
+        if(isUnique == 0){
+            return;
+        }
+    }
 
     // Bound check (avoids borders dynamically based on patch dimensions)
     if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
@@ -149,20 +164,6 @@ kernel void kernelGetPhaseCorrelationMap(
     }
 }
 
-float getGaussianWeight(float mean_x, float mean_y){
-    // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
-    // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
-
-    float weight = 0;
-    weight = mean_y - mean_x;
-    weight = fabs(weight);
-    weight = weight*weight;
-    weight = weight/filter_param_sq;
-    weight = (-1) * weight;
-    weight = exp(weight);
-    return weight;
-}
-
 float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
@@ -171,7 +172,7 @@ float getExpDecayWeight(float ref, float comp){
     if(ref == comp){
             weight = 1;
         }else{
-            weight = 1-(fabs(ref-comp)/(ref+comp));
+            weight = 1 - (2 * (fabs(ref-comp)/(fabs(ref) + fabs(comp))));
         }
 
     return weight;

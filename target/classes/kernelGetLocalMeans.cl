@@ -1,5 +1,4 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
-
 #define w $WIDTH$
 #define h $HEIGHT$
 #define bW $BW$
@@ -9,9 +8,9 @@
 #define bRH $BRH$
 
 kernel void kernelGetLocalMeans(
-global float* ref_pixels,
-global float* local_means,
-global float* local_stds
+    global float* ref_pixels,
+    global float* local_means,
+    global float* local_stds
 ){
 
     int gx = get_global_id(0);
@@ -28,7 +27,7 @@ global float* local_stds
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
             sum += ref_pixels[j*w+i];
-            sq_sum += ref_pixels[j*w+i]*ref_pixels[j*w+i];
+            sq_sum += ref_pixels[j*w+i] * ref_pixels[j*w+i];
         }
     }
 

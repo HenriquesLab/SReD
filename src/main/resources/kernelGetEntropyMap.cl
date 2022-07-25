@@ -1,24 +1,41 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
 #define bW $BW$
 #define bH $BH$
-#define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
 #define EPSILON $EPSILON$
+#define nUnique $NUNIQUE$
+#define speedUp $SPEEDUP$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetEntropyMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
+    global int* uniqueStdCoords,
     global float* entropy_map
 ){
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
+
+    // Check if reference pixel belongs to the unique list, and if not, kill the thread
+    if(speedUp == 1){
+        int unique = 0;
+        for(int i=0; i<nUnique; i++){
+            if(y0*w+x0 == uniqueStdCoords[i]){
+                unique = 1;
+                break;
+            }
+        }
+
+        if(unique == 0){
+            return;
+        }
+    }
 
     // Bound check (avoids borders dynamically based on patch dimensions)
     if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
@@ -172,13 +189,9 @@ kernel void kernelGetEntropyMap(
 float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
-
     float weight = 0;
-    if(ref == comp){
-            weight = 1;
-        }else{
-            weight = 1-(fabs(ref-comp)/(ref+comp));
-        }
+    float similarity = 1.0f - (fabs(ref-comp)/(fabs(ref)+fabs(comp) + EPSILON));
+    weight =  ((float) pow(100, similarity) - 1) / 99;
 
     return weight;
 }

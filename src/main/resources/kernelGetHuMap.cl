@@ -3,11 +3,12 @@
 #define h $HEIGHT$
 #define bW $BW$
 #define bH $BH$
-#define filter_param_sq $FILTER_PARAM_SQ$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
 #define EPSILON $EPSILON$
+#define nUnique $NUNIQUE$
+#define speedUp $SPEEDUP$
 float getExpDecayWeight(float ref, float comp);
 float getInvariant(float* patch, int patch_w, int patch_h, int p, int q);
 
@@ -15,11 +16,27 @@ kernel void kernelGetHuMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
+    global int* uniqueStdCoords,
     global float* hu_map
 ){
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
+
+    // Check if reference pixel belongs to the unique list, and if not, kill the thread
+    if(speedUp == 1){
+        int isUnique = 0;
+        for(int i=0; i<nUnique; i++){
+            if(y0*w+x0 == uniqueStdCoords[i]){
+                isUnique = 1;
+                break;
+            }
+        }
+
+        if(isUnique == 0){
+            return;
+        }
+    }
 
     // Bound check (avoids borders dynamically based on patch dimensions)
     if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
@@ -110,6 +127,7 @@ kernel void kernelGetHuMap(
             weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate Euclidean distance between Hu moments and add to Hu map
+            //hu_map[y0*w+x0] += (1 - (0.5 * ((fabs((float) comp_hu - (float) ref_hu)) / (fabs((float) comp_hu + (float) ref_hu) + EPSILON)))) * weight;
             hu_map[y0*w+x0] += fabs((float) comp_hu - (float) ref_hu) * weight;
         }
     }
@@ -118,13 +136,9 @@ kernel void kernelGetHuMap(
 float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
-
     float weight = 0;
-    if(ref == comp){
-            weight = 1;
-        }else{
-            weight = 1-(fabs(ref-comp)/(ref+comp));
-        }
+    float similarity = 1.0f - (fabs(ref-comp)/(fabs(ref)+fabs(comp) + EPSILON));
+    weight =  ((float) pow(100, similarity) - 1) / 99;
 
     return weight;
 }
