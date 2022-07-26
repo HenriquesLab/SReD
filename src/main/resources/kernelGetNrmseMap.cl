@@ -59,7 +59,7 @@ kernel void kernelGetNrmseMap(
         }
     }
 
-    // Get mean-subtracted reference patch
+    // Get normalized reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[y0*w+x0];
     float ref_std = local_stds[y0*w+x0];
@@ -94,7 +94,7 @@ kernel void kernelGetNrmseMap(
                 }
             }
 
-            // Get comparison patch MEAN SUBTRACTION
+            // Get normalized comparison patch
             float comp_patch[patch_size];
             float comp_mean = local_means[y1*w+x1];
             float comp_std = local_stds[y1*w+x1];
