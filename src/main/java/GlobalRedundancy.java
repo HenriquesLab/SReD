@@ -155,7 +155,7 @@ public class GlobalRedundancy implements UserFunction {
         }
 
         // Release resources
-        kernelGetLocalMeans.release(); // TODO MAKE SENSE TO RELEASE KERNELS HERE?
+        kernelGetLocalMeans.release(); // TODO: MAKES SENSE TO RELEASE KERNELS HERE? WILL THEY BE USED AGAIN?
         programGetLocalMeans.release();
 
         // ---- Get array of unique StdDev values and a set of coordinates for each, and write to GPU
@@ -207,7 +207,6 @@ public class GlobalRedundancy implements UserFunction {
                 queue.finish();
             }
         }
-
         // Read the Pearson's map back from the GPU (and finish the mean calculation simultaneously)
         queue.putReadBuffer(clPearsonMap, true);
         for (int y = 0; y<h; y++) {
@@ -473,7 +472,7 @@ public class GlobalRedundancy implements UserFunction {
             for(int nXB=0; nXB<nXBlocks; nXB++) {
                 int xWorkSize = min(64, w-nXB*64);
                 showStatus("Calculating entropy... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                //queue.put2DRangeKernel(kernelGetEntropyMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
+                queue.put2DRangeKernel(kernelGetEntropyMap, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
                 queue.finish();
             }
         }

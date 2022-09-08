@@ -62,7 +62,8 @@ kernel void kernelGetPatchSsim(
     float c3 = c2 / 2.0f;
     //ssim_map[gy*w+gx] = fmax(0.0f, (covar + c3) / (ref_std * comp_std + c3)); // Structure (Pearson correlation)
     //ssim_map[gy*w+gx] = (2.0f * ref_std * comp_std + c2) / (ref_var + comp_var + c1); // Contrast
-    ssim_map[gy*w+gx] = fmax(0.0f, (2.0f * covar + c2) / (ref_var + comp_var + c2)); // Removed the luminance component to remove intensity-variant component
+    //ssim_map[gy*w+gx] = fmax(0.0f, (2.0f * covar + c2) / (ref_var + comp_var + c2)); // Removed the luminance component to remove intensity-variant component
+      ssim_map[gy*w+gx] = 1.0f - ((float) fmax(0.0f, ((2.0f * ref_std * comp_std + c2) / (ref_std * ref_std + comp_std * comp_std + c2))));
 }
 
 // ---- USER FUNCTIONS ----

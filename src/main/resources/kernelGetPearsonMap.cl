@@ -120,13 +120,12 @@ kernel void kernelGetPearsonMap(
             float std_x = local_stds[y0*w+x0];
             float std_y = local_stds[y1*w+x1];
             weight = getExpDecayWeight(std_x, std_y);
-            float similarity = 1.0f - (fabs(std_x-std_y)/(fabs(std_x)+fabs(std_y) + EPSILON));
 
             // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
             if(std_x == 0.0f && std_y == 0.0f){
-                pearson_map[y0*w+x0] += 0.0f * weight; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same, so 1-PEarson = 1-1 = 0)
+                pearson_map[y0*w+x0] += 0.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same, so 1-PEarson = 1-1 = 0)
             }else{
-                pearson_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON))))) * weight; // Truncate anti-correlations to zero
+                pearson_map[y0*w+x0] += (float) (1.0f - ((float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON))))) * weight; // Pearson distance, truncate anti-correlations to zero
             }
         }
     }
@@ -138,7 +137,7 @@ float getExpDecayWeight(float ref, float comp){
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
     float weight = 0;
     float similarity = 1.0f - (fabs(ref-comp)/(fabs(ref)+fabs(comp) + EPSILON));
-    weight =  ((float) pow(100, similarity) - 1) / 99;
+    weight = ((float) pow(100, similarity) - 1) / 99;
 
     return weight;
 }

@@ -89,8 +89,8 @@ kernel void kernelGetSsimMap(
             float c1 = 0.01f * 0.01f;
             float c2 = 0.03f * 0.03f;
 
-            //ssim_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, (((2.0f * ref_mean * comp_mean + c1) * (2.0f * covar + c2)) / (((ref_mean * ref_mean) + (comp_mean * comp_mean) + c1) * ((ref_std * ref_std) + (comp_std * comp_std) + c2)))))) * weight;
-            ssim_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, ((2.0f * ref_std * comp_std + c2) / (ref_std * ref_std + comp_std * comp_std + c2))))) * weight; // Contrast component (distance, not similarity)
+            ssim_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, (((2.0f * ref_mean * comp_mean + c1) * (2.0f * covar + c2)) / (((ref_mean * ref_mean) + (comp_mean * comp_mean) + c1) * ((ref_std * ref_std) + (comp_std * comp_std) + c2)))))) * weight;
+            //ssim_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, ((2.0f * ref_std * comp_std + c2) / (ref_std * ref_std + comp_std * comp_std + c2))))) * weight; // Contrast component (distance, not similarity)
         }
     }
 }

@@ -32,7 +32,7 @@ kernel void kernelGetLocalMeans(
     }
 
     double mean = sum / patch_size;
-    double variance = sq_sum / patch_size - mean * mean;
+    double variance = fabs(sq_sum / (double) patch_size - mean * mean); // fabs() avoids negative values; solves a bug
 
     local_means[gy*w+gx] = (float) mean;
     local_stds[gy*w+gx] = (float) sqrt(variance);

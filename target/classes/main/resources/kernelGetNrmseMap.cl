@@ -122,7 +122,7 @@ kernel void kernelGetNrmseMap(
 
             nrmse_map[y0*w+x0] += nrmse * weight;
             mae_map[y0*w+x0] += (mae/patch_size) * weight;
-            psnr_map[y0*w+x0] += ((float) 20.0 * (float) log10((float) 1.0f / (float) (nrmse + EPSILON))) * weight;
+            psnr_map[y0*w+x0] += ((float) 20.0f * (float) log10((float) 1.0f / (float) (nrmse + EPSILON))) * weight;
         }
     }
 }

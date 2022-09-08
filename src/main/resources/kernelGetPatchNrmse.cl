@@ -82,7 +82,7 @@ kernel void kernelGetPatchNrmse(
 
     nrmse_map[gy*w+gx] = nmrse;
     mae_map[gy*w+gx] = mae/patch_size;
-    psnr_map[gy*w+gx] = (float) 20.0 * (float) log10((float) 1.0 / (float) (nmrse + EPSILON));
+    psnr_map[gy*w+gx] = (float) 20.0f * (float) log10((float) 1.0f / (float) (nmrse + EPSILON));
 
 }
 
