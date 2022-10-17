@@ -23,6 +23,7 @@ import static ij.IJ.showStatus;
 import static java.lang.Math.*;
 import static nanoj.core2.NanoJCL.replaceFirst;
 
+
 public class PatchRed_ implements PlugIn {
 
     // OpenCL formats
@@ -39,7 +40,7 @@ public class PatchRed_ implements PlugIn {
     static private CLCommandQueue queue;
 
     private CLBuffer<FloatBuffer> clRefPatch, clRefPatchMeanSub, clRefPixels, clLocalMeans, clLocalStds, clPearsonMap,
-            clNrmseMap, clMaeMap, clPsnrMap,clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap;
+            clNrmseMap, clMaeMap, clPsnrMap,clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap, clGaussianKernel;
 
     private CLBuffer<DoubleBuffer> clRefPatchDftReal, clRefPatchDftImag;
 
@@ -198,6 +199,7 @@ public class PatchRed_ implements PlugIn {
         clRefPixels = context.createFloatBuffer(wh, READ_ONLY);
         clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
+        clGaussianKernel = context.createFloatBuffer(patchSize, READ_ONLY);
 
         // Create program
         String programStringGetPatchMeans = getResourceAsString(PatchRed_.class, "kernelGetPatchMeans.cl");
@@ -217,6 +219,9 @@ public class PatchRed_ implements PlugIn {
         float[] localStds = new float[w*h];
         fillBufferWithFloatArray(clLocalStds, localStds);
 
+        float[] gaussianKernel = makeGaussianKernel(bW, 0.5f);
+        fillBufferWithFloatArray(clGaussianKernel, gaussianKernel);
+
         // Create kernel and set args
         kernelGetPatchMeans = programGetPatchMeans.createCLKernel("kernelGetPatchMeans");
 
@@ -224,10 +229,12 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchMeans.setArg(argn++, clRefPixels);
         kernelGetPatchMeans.setArg(argn++, clLocalMeans);
         kernelGetPatchMeans.setArg(argn++, clLocalStds);
+        kernelGetPatchMeans.setArg(argn++, clGaussianKernel);
 
         // Calculate
         queue.putWriteBuffer(clRefPixels, false);
         queue.putWriteBuffer(clLocalMeans, false);
+        queue.putWriteBuffer(clGaussianKernel, false);
 
         showStatus("Calculating local means...");
 
@@ -291,6 +298,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchPearson.setArg(argn++, clLocalMeans);
         kernelGetPatchPearson.setArg(argn++, clLocalStds);
         kernelGetPatchPearson.setArg(argn++, clPearsonMap);
+        kernelGetPatchPearson.setArg(argn++, clGaussianKernel);
 
         // Calculate Pearson's correlation coefficient ----
         queue.putWriteBuffer(clPearsonMap, false);
@@ -347,6 +355,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchNrmse.setArg(argn++, clNrmseMap);
         kernelGetPatchNrmse.setArg(argn++, clMaeMap);
         kernelGetPatchNrmse.setArg(argn++, clPsnrMap);
+        kernelGetPatchNrmse.setArg(argn++, clGaussianKernel);
 
         // Calculate NMRSE and MAE
         queue.putWriteBuffer(clNrmseMap, false);
@@ -410,6 +419,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchSsim.setArg(argn++, clLocalMeans);
         kernelGetPatchSsim.setArg(argn++, clLocalStds);
         kernelGetPatchSsim.setArg(argn++, clSsimMap);
+        kernelGetPatchSsim.setArg(argn++, clGaussianKernel);
 
         // Calculate SSIM
         queue.putWriteBuffer(clSsimMap, false);
@@ -457,6 +467,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchHu.setArg(argn++, clLocalMeans);
         kernelGetPatchHu.setArg(argn++, clLocalStds);
         kernelGetPatchHu.setArg(argn++, clHuMap);
+        kernelGetPatchHu.setArg(argn++, clGaussianKernel);
 
         // Calculate Hu invariant
         queue.putWriteBuffer(clHuMap, false);
@@ -477,6 +488,7 @@ public class PatchRed_ implements PlugIn {
         clHuMap.release();
         programGetPatchHu.release();
 
+        /*
         // ---- Phase correlation ----
         String programStringGetPatchPhaseCorrelation = getResourceAsString(PatchRed_.class, "kernelGetPatchPhaseCorrelation.cl");
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$WIDTH$", "" + w);
@@ -533,7 +545,7 @@ public class PatchRed_ implements PlugIn {
         //clRefPatchDftReal.release();
         //clRefPatchDftImag.release();
         // Replicate MATLAB's fftshift function for 2D odd-sized images
-
+*/
         // ---- Entropy ----
         String programStringGetPatchEntropy = getResourceAsString(PatchRed_.class, "kernelGetPatchEntropy.cl");
         programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$WIDTH$", "" + w);
@@ -559,6 +571,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchEntropy.setArg(argn++, clLocalMeans);
         kernelGetPatchEntropy.setArg(argn++, clLocalStds);
         kernelGetPatchEntropy.setArg(argn++, clEntropyMap);
+        kernelGetPatchEntropy.setArg(argn++, clGaussianKernel);
 
         // Calculate entropy map
         queue.putWriteBuffer(clEntropyMap, false);
@@ -636,14 +649,14 @@ public class PatchRed_ implements PlugIn {
         FloatProcessor fp7 = new FloatProcessor(w, h, entropyMap);
         ImagePlus imp7 = new ImagePlus("Entropy Map", fp7);
         imp7.show();
-
+/*
         // Phase map (normalized to [0,1])
         float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, bRW, bRH);
         float[] phaseMapNorm = normalize(phaseCorrelationMap, w, h, bRW, bRH, phaseMinMax, 0, 0);
         FloatProcessor fp8 = new FloatProcessor(w, h, phaseMapNorm);
         ImagePlus imp8 = new ImagePlus("Phase Map", fp8);
         imp8.show();
-
+*/
         // STDS TODO: FINISH THIS
         FloatProcessor fp9 = new FloatProcessor(w, h, localStds);
         ImagePlus imp9 = new ImagePlus("Local Stds", fp9);
@@ -670,7 +683,7 @@ public class PatchRed_ implements PlugIn {
         }
 
         double mean = sum / n;
-        double variance = sq_sum / n - mean * mean;
+        double variance = abs(sq_sum / n - mean * mean); // abs() solves a bug where negative zeros appeared
 
         return new float[]{(float) mean, (float) variance, (float) sqrt(variance)};
 
@@ -798,6 +811,30 @@ public class PatchRed_ implements PlugIn {
 
         float invariant = (float) (mu_pq / pow(moment_00, (1+(p+q/2))));
         return invariant;
+    }
+
+    public float[] makeGaussianKernel(int size, float sigma){
+        float[] kernel = new float[size*size];
+        float sumTotal = 0;
+
+        int radius = size/2;
+        float distance = 0;
+
+        float euler = (float) (1.0f / (2.0 * Math.PI * (sigma*sigma)));
+
+        for(int j=-radius; j<=radius; j++){
+            for(int i=-radius; i<=radius; i++){
+                distance = ((i*i)+(j*j)) / (2 * (sigma*sigma));
+                kernel[(j+radius)*size+(i+radius)] = (float) (euler * Math.exp(-distance));
+                sumTotal += kernel[(j+radius)*size+(i+radius)];
+            }
+        }
+
+        for(int i=0; i<size*size; i++){
+            kernel[i] = kernel[i] / sumTotal;
+        }
+
+        return kernel;
     }
 }
 

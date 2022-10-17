@@ -45,7 +45,6 @@ public class GATMinimizer implements UserFunction {
         gain = params[0];
         sigma = params[1];
         offset = params[2];
-
         //gain = gain == 0? params[0]: gain;
         //sigma = sigma == 0? params[1]: sigma;
         //offset = offset == 0? params[2]: offset;
@@ -100,7 +99,6 @@ public class GATMinimizer implements UserFunction {
         int nBlocks = nBlockX * nBlockY;
 
         double error = 0;
-
         for (int bY=0; bY<nBlockY; bY++) {
             for (int bX=0; bX<nBlockX; bX++) {
 
@@ -115,8 +113,8 @@ public class GATMinimizer implements UserFunction {
                 error += (delta * delta) / nBlocks;
             }
         }
+        
         //IJ.log("gain:"+gain+" sigma:"+sigma+" offset:"+offset+" error: " + error);
-
         return error;
     }
 

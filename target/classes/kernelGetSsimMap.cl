@@ -86,11 +86,14 @@ kernel void kernelGetSsimMap(
             weight = getExpDecayWeight(ref_std, comp_std);
 
             // Calculate SSIM and add it to the sum at X
-            float c1 = 0.01f * 0.01f;
-            float c2 = 0.03f * 0.03f;
+            float c1 = 0.001f; // Only correct for float images
+            float c2 = 0.0009f; // Only correct for float images
+            float c3 = 0.00045f; // Only correct for float images
 
-            ssim_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, (((2.0f * ref_mean * comp_mean + c1) * (2.0f * covar + c2)) / (((ref_mean * ref_mean) + (comp_mean * comp_mean) + c1) * ((ref_std * ref_std) + (comp_std * comp_std) + c2)))))) * weight;
-            //ssim_map[y0*w+x0] += (1.0f - ((float) fmax(0.0f, ((2.0f * ref_std * comp_std + c2) / (ref_std * ref_std + comp_std * comp_std + c2))))) * weight; // Contrast component (distance, not similarity)
+            //ssim_map[y0*w+x0] += ((1.0f - ((float) fmax(0.0f, (((2.0f * ref_mean * comp_mean + c1) * (2.0f * covar + c2)) / (((ref_mean * ref_mean) + (comp_mean * comp_mean) + c1) * ((ref_std * ref_std) + (comp_std * comp_std) + c2)))))) / 2) * weight;
+            //ssim_map[y0*w+x0] += ((1.0f - ((float) fmax(0.0f, ((2.0f * ref_std * comp_std + c2) / (ref_std * ref_std + comp_std * comp_std + c2))))) / 2) * weight; // Contrast component (distance, not similarity)
+            float ref_comp_std = ref_std * comp_std;
+            ssim_map[y0*w+x0] += ((1.0f - fmax(0.0f, (((2.0f * ref_comp_std + c2) / ((ref_std * ref_std) + (comp_std * comp_std) + c2)) * ((covar + c3) / (ref_comp_std + c3))))) / 2) * weight;
         }
     }
 }

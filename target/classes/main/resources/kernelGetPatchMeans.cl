@@ -8,7 +8,8 @@
 kernel void kernelGetPatchMeans(
 global float* ref_pixels,
 global float* local_means,
-global float* local_stds
+global float* local_stds,
+global float* gaussian_kernel
 ){
 
     int gx = get_global_id(0);
@@ -23,7 +24,7 @@ global float* local_stds
     float mean = 0.0f;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            mean += ref_pixels[j*w+i];
+            mean += ref_pixels[j*w+i]; //* gaussian_kernel[(j-gy)*w+(i-gx)];
         }
     }
     local_means[gy*w+gx] = mean/patch_size;

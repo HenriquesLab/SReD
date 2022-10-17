@@ -6,17 +6,21 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define filter_param $FILTERPARAM$
 #define EPSILON $EPSILON$
 #define nUnique $NUNIQUE$
 #define speedUp $SPEEDUP$
 float getExpDecayWeight(float ref, float comp);
+float getGaussianWeight(float ref, float comp, float h2);
 
 kernel void kernelGetPearsonMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
     global int* uniqueStdCoords,
-    global float* pearson_map
+    global float* pearson_map,
+    global float* gaussian_kernel,
+    global float* weight_sum
 ){
 
     int x0 = get_global_id(0);
@@ -71,7 +75,7 @@ kernel void kernelGetPearsonMap(
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = ref_pixels[j0*w+i0] - ref_mean;
+            ref_patch[ref_counter] = (ref_pixels[j0*w+i0]) - ref_mean;
             //ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + EPSILON); // Normalize patch to [0,1]
             ref_counter++;
         }
@@ -108,7 +112,7 @@ kernel void kernelGetPearsonMap(
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = ref_pixels[j1*w+i1] - comp_mean;
+                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1]) - comp_mean;
                     //comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + EPSILON); // Normalize patch to [0,1]
                     covar += ref_patch[comp_counter] * comp_patch[comp_counter];
                     comp_counter++;
@@ -119,18 +123,14 @@ kernel void kernelGetPearsonMap(
             // Calculate weight
             float std_x = local_stds[y0*w+x0];
             float std_y = local_stds[y1*w+x1];
-            weight = getExpDecayWeight(std_x, std_y);
+            weight = getGaussianWeight(std_x, std_y, filter_param);
+            weight_sum[y0*w+x0] += weight;
 
-/*
-if(isnan(std_x) == 1){
-printf("%i %i\n", y0, y1);
-}
-*/
             // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
             if(std_x == 0.0f && std_y == 0.0f){
-                pearson_map[y0*w+x0] += 0.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same, so 1-PEarson = 1-1 = 0)
+                pearson_map[y0*w+x0] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same, so 1-PEarson = 1-1 = 0)
             }else{
-                pearson_map[y0*w+x0] += (float) (1.0f - ((float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON))))) * weight; // Pearson distance, truncate anti-correlations to zero
+                pearson_map[y0*w+x0] += (float) ((float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON)))) * weight; // Pearson distance, truncate anti-correlations to zero
             }
         }
     }
@@ -141,8 +141,14 @@ float getExpDecayWeight(float ref, float comp){
     // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
     // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
     float weight = 0;
-    float similarity = 1.0f - (fabs(ref-comp)/(fabs(ref)+fabs(comp) + EPSILON));
+    float similarity = (-fabs(ref-comp)/(fabs(ref)+fabs(comp) + EPSILON));
     weight = ((float) pow(100, similarity) - 1) / 99;
 
+    return weight;
+}
+
+float getGaussianWeight(float ref, float comp, float h2){
+    float weight = (-1) * (((fabs(comp-ref)) * (fabs(comp-ref))) / (h2 + EPSILON));
+    weight = exp(weight);
     return weight;
 }

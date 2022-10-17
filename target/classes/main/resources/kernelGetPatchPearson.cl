@@ -13,7 +13,8 @@ kernel void kernelGetPatchPearson(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
-    global float* pearson_map
+    global float* pearson_map,
+    global float* gaussian_kernel
 ){
 
     int gx = get_global_id(0);
@@ -32,7 +33,7 @@ kernel void kernelGetPatchPearson(
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
             for(int i=center_x-bRW; i<=center_x+bRW; i++){
-                ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
+                ref_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter]  - ref_mean;
                 counter++;
         }
     }
@@ -46,7 +47,7 @@ kernel void kernelGetPatchPearson(
     counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
+            comp_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter] - comp_mean;
             counter++;
         }
     }
@@ -66,7 +67,7 @@ kernel void kernelGetPatchPearson(
     if(ref_std == 0.0f && comp_std == 0.0f){
         pearson_map[gy*w+gx] = 0.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
     }else{
-        pearson_map[gy*w+gx] = (1.0f - ((float) fmax(0.0f, (float)(covar / ((ref_std * comp_std) + EPSILON))))); // Truncate anti-correlations
+        pearson_map[gy*w+gx] = (1.0f - ((float) fmax(0.0f, (float)(covar / ((ref_std * comp_std) + EPSILON))))); // Pearson distance, Truncate anti-correlations
     }
 }
 

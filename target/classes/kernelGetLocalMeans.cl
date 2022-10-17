@@ -10,7 +10,8 @@
 kernel void kernelGetLocalMeans(
     global float* ref_pixels,
     global float* local_means,
-    global float* local_stds
+    global float* local_stds,
+    global float* gaussian_kernel
 ){
 
     int gx = get_global_id(0);
@@ -22,12 +23,19 @@ kernel void kernelGetLocalMeans(
     }
 
     // Get patch and calculate local mean
+    //float gauss_kernel[patch_size] = {0.011f, 0.084f, 0.011f, 0.084f, 0.619f, 0.084f, 0.011f, 0.084f, 0.011f};
+
+    double value = 0.0f;
     double sum = 0.0f;
     double sq_sum = 0.0f;
+
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            sum += ref_pixels[j*w+i];
-            sq_sum += ref_pixels[j*w+i] * ref_pixels[j*w+i];
+            //value = ref_pixels[j*w+i] * gaussian_kernel[(j-gy)*patch_size+(i-gx)];
+            value = ref_pixels[j*w+i];
+
+            sum += value;
+            sq_sum += value * value;
         }
     }
 

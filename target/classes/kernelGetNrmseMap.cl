@@ -18,7 +18,8 @@ kernel void kernelGetNrmseMap(
     global int* uniqueStdCoords,
     global float* nrmse_map,
     global float* mae_map,
-    global float* psnr_map
+    global float* psnr_map,
+    global float* gaussian_kernel
 ){
 
     int x0 = get_global_id(0);
@@ -67,7 +68,7 @@ kernel void kernelGetNrmseMap(
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean) / (ref_std + EPSILON);
+            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean);
             ref_counter++;
         }
     }
@@ -101,7 +102,7 @@ kernel void kernelGetNrmseMap(
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean) / (comp_std + EPSILON);
+                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
                     comp_counter++;
                 }
             }

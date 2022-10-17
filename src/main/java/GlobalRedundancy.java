@@ -18,7 +18,7 @@ import java.util.Set;
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
-import static java.lang.Math.min;
+import static java.lang.Math.*;
 import static nanoj.core2.NanoJCL.replaceFirst;
 
 public class GlobalRedundancy implements UserFunction {
@@ -32,13 +32,13 @@ public class GlobalRedundancy implements UserFunction {
             kernelGetHuMap, kernelGetEntropyMap, kernelGetPhaseCorrelationMap;
 
     private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clNrmseMap, clMaeMap, clPsnrMap,
-            clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap;
+            clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap, clGaussianKernel, clWeightSum;
 
     private CLBuffer<IntBuffer> clUniqueStdCoords;
 
     // Image parameters
     public float[] refPixels, localMeans, localStds, pearsonMap, nrmseMap, maeMap, psnrMap, ssimMap, huMap, entropyMap,
-            phaseCorrelationMap;
+            phaseCorrelationMap, weightSum;
     public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, speedUp, useGAT;
     public float EPSILON;
 
@@ -60,6 +60,7 @@ public class GlobalRedundancy implements UserFunction {
         this.speedUp = speedUp;
         this.useGAT = useGAT;
         localMeans = new float[wh];
+        weightSum = new float[wh];
         localStds = new float[wh];
         pearsonMap = new float[wh];
         nrmseMap = new float[wh];
@@ -89,6 +90,9 @@ public class GlobalRedundancy implements UserFunction {
         float minMax[] = findMinMax(refPixels, w, h, 0, 0);
         refPixels = normalize(refPixels, w, h, 0, 0, minMax, 1, 2);
 
+        // Estimate noise standard deviation
+        float noiseStdDev = estimateNoiseVar(refPixels, w, h);
+
         // ---- Write image to GPU ----
         clRefPixels = context.createFloatBuffer(wh, READ_ONLY);
         fillBufferWithFloatArray(clRefPixels, refPixels);
@@ -107,6 +111,11 @@ public class GlobalRedundancy implements UserFunction {
         programGetLocalMeans = context.createProgram(programStringGetLocalMeans).build();
 
         // Create, fill and write buffers
+        float[] gaussianKernel = makeGaussianKernel(bW, 0.5f);
+        clGaussianKernel = context.createFloatBuffer(patchSize, READ_ONLY);
+        fillBufferWithFloatArray(clGaussianKernel, gaussianKernel);
+        queue.putWriteBuffer(clGaussianKernel, false);
+
         clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clLocalMeans, localMeans);
         queue.putWriteBuffer(clLocalMeans, false);
@@ -122,6 +131,7 @@ public class GlobalRedundancy implements UserFunction {
         kernelGetLocalMeans.setArg(argn++, clRefPixels);
         kernelGetLocalMeans.setArg(argn++, clLocalMeans);
         kernelGetLocalMeans.setArg(argn++, clLocalStds);
+        kernelGetLocalMeans.setArg(argn++, clGaussianKernel);
 
         // Calculate
         int nXBlocks = w/64 + ((w%64==0)?0:1);
@@ -177,6 +187,7 @@ public class GlobalRedundancy implements UserFunction {
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRW$", "" + bRW);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRH$", "" + bRH);
+        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTERPARAM$", "" + noiseStdDev);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$EPSILON$", "" + EPSILON);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$NUNIQUE$", "" + nUnique);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$SPEEDUP$", "" + speedUp);
@@ -187,6 +198,10 @@ public class GlobalRedundancy implements UserFunction {
         fillBufferWithFloatArray(clPearsonMap, pearsonMap);
         queue.putWriteBuffer(clPearsonMap, false);
 
+        clWeightSum = context.createFloatBuffer(wh, READ_ONLY);
+        fillBufferWithFloatArray(clWeightSum, weightSum);
+        queue.putWriteBuffer(clWeightSum, false);
+
         // Create kernel and set kernel args
         kernelGetPearsonMap = programGetPearsonMap.createCLKernel("kernelGetPearsonMap");
 
@@ -196,6 +211,8 @@ public class GlobalRedundancy implements UserFunction {
         kernelGetPearsonMap.setArg(argn++, clLocalStds);
         kernelGetPearsonMap.setArg(argn++, clUniqueStdCoords);
         kernelGetPearsonMap.setArg(argn++, clPearsonMap);
+        kernelGetPearsonMap.setArg(argn++, clGaussianKernel);
+        kernelGetPearsonMap.setArg(argn++, clWeightSum);
 
         // Calculate
         for(int nYB=0; nYB<nYBlocks; nYB++) {
@@ -207,6 +224,16 @@ public class GlobalRedundancy implements UserFunction {
                 queue.finish();
             }
         }
+
+        // Read the weight sum map back from the GPU
+        queue.putReadBuffer(clWeightSum, true);
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                weightSum[y*w+x] = clWeightSum.getBuffer().get(y*w+x);
+                queue.finish();
+            }
+        }
+
         // Read the Pearson's map back from the GPU (and finish the mean calculation simultaneously)
         queue.putReadBuffer(clPearsonMap, true);
         for (int y = 0; y<h; y++) {
@@ -265,6 +292,7 @@ public class GlobalRedundancy implements UserFunction {
         kernelGetNrmseMap.setArg(argn++, clNrmseMap);
         kernelGetNrmseMap.setArg(argn++, clMaeMap);
         kernelGetNrmseMap.setArg(argn++, clPsnrMap);
+        kernelGetNrmseMap.setArg(argn++, clGaussianKernel);
 
         // Calculate
         for(int nYB=0; nYB<nYBlocks; nYB++) {
@@ -614,11 +642,16 @@ public class GlobalRedundancy implements UserFunction {
         ims.addSlice("SSIM", fp5);
         ims.addSlice("Hu", fp6);
         ims.addSlice("Entropy", fp7);
+
         FloatProcessor fp9 = new FloatProcessor(w, h, localStds);
         ims.addSlice("Local stds", fp9);
 
+        FloatProcessor fp10 = new FloatProcessor(w, h, weightSum);
+        ims.addSlice("Weight sum", fp10);
+
         ImagePlus ip0 = new ImagePlus("Redundancy Maps", ims);
         ip0.show();
+
     }
 
     @Override
@@ -774,5 +807,127 @@ public class GlobalRedundancy implements UserFunction {
         }
 
         return image;
+    }
+
+    public float[] makeGaussianKernel(int size, float sigma){
+        float[] kernel = new float[size*size];
+        float sumTotal = 0;
+
+        int radius = size/2;
+        float distance = 0;
+
+        float euler = (float) (1.0f / (2.0 * Math.PI * (sigma*sigma)));
+
+        for(int j=-radius; j<=radius; j++){
+            for(int i=-radius; i<=radius; i++){
+                distance = ((i*i)+(j*j)) / (2 * (sigma*sigma));
+                kernel[(j+radius)*size+(i+radius)] = (float) (euler * Math.exp(-distance));
+                sumTotal += kernel[(j+radius)*size+(i+radius)];
+            }
+        }
+
+        for(int i=0; i<size*size; i++){
+            kernel[i] = kernel[i] / sumTotal;
+        }
+
+        return kernel;
+    }
+
+    public float[] linspace(float start, float stop, int n){
+        float[] output = new float[n];
+        // Return empty array if start equals stop, a.k.a., bad user input
+        if(start==stop) {
+            return output;
+
+        }else if(start > stop){
+
+            float step = abs((start - stop) / n);
+            float value = start;
+            for (int i = 0; i <= n; i++) {
+                value += step;
+                output[i] = value;
+            }
+
+        }else if(start<stop){
+
+            float step = abs((start - stop) / n);
+            float value = stop;
+            for (int i=0; i<=n; i++){
+                value -= step;
+                output[i] = value;
+            }
+        }
+
+        return output;
+    }
+
+    float estimateNoiseVar(float[] inImg, int w, int h){
+        //Based on Liu, W. et al. - "A fast noise variance estimation algorithm". doi: 10.1109/PrimeAsia.2011.6075071
+
+        // Define block size based on image dimensions (8x8 if image dimensions are below or equal to 352x288 pixels, 16x16 otherwise)
+        int sizeThreshold = 352*288;
+        int bL = 0; // Block length
+        int bA = 0; // Block area, i.e., total number of pixels in the block
+
+        if(w*h <= sizeThreshold){
+            bL = 8;
+            bA = bL * bL;
+        }else{
+            bL = 16;
+            bA = bL * bL;
+        }
+
+        // Get total number of non-overlapping blocks
+        int nXBlocks = w / bL;
+        int nYBlocks = h / bL;
+        int nBlocks = nXBlocks * nYBlocks;
+
+        // Get block variances
+        float[] vars = new float[nBlocks]; // Array to store variances
+        float[] block = new float[bA]; // Array to temporarily store the current block's pixels
+        int counter0; // Counter for temporary block indexes
+        int counter1 = 0; // Counter for variances array indexes
+
+        for(int y=0; y<h-bL; y=y+bL){
+            for(int x=0; x<w-bL; x=x+bL){
+                counter0 = 0;
+
+                // Get current block
+                for(int yy=y; yy<y+bL; yy++){
+                    for(int xx=x; xx<x+bL; xx++){
+                        block[counter0] = inImg[yy*w+xx];
+                        counter0++;
+                    }
+                }
+
+                // Get current block variance (single-pass)
+                double sum = 0;
+                double sum2 = 0;
+                for(int i=0; i<bA; i++){
+                    sum += block[i];
+                    sum2 += block[i] * block[i];
+                }
+                double mean = sum / bA;
+                vars[counter1] = (float) abs(sum2 / bA - mean * mean);
+                counter1++;
+            }
+        }
+
+        // Get the 3% lowest variances and calculate their average
+        Arrays.sort(vars);
+        int num = (int) (0.03f * nBlocks + 1);
+        System.out.println("NUM: " + num);
+        float avgVar = 0;
+        for(int i=0; i<=num; i++){
+            avgVar += vars[i];
+            System.out.println("VAR"+i+": "+ vars[i]);
+        }
+        avgVar /= num;
+        System.out.println("AVGVAR: " + avgVar);
+
+        // Calculate noise variance
+        float noiseVar = (1.0f + 0.001f * (avgVar - 40.0f)) * avgVar;
+        System.out.println("NOISEVAR: " + noiseVar);
+        return noiseVar;
     }
 }

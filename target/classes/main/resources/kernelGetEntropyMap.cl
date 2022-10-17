@@ -42,6 +42,8 @@ kernel void kernelGetEntropyMap(
         return;
     }
 
+    float gauss_kernel[patch_size] = {0.011f, 0.084f, 0.011f, 0.084f, 0.619f, 0.084f, 0.011f, 0.084f, 0.011f};
+
     // Get mean-subtracted reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[y0*w+x0];
@@ -49,7 +51,7 @@ kernel void kernelGetEntropyMap(
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean) / (local_stds[y0*w+x0] + EPSILON);
+            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean);
             ref_counter++;
         }
     }
@@ -99,7 +101,7 @@ kernel void kernelGetEntropyMap(
         }
         p /= patch_size;
         if(p != 0.0){
-            ref_entropy += p * (float) log2((float) 1.0 / p);
+            ref_entropy += p * (float) log10((float) 1.0 / p);
         }else{
             continue;
         }
@@ -120,7 +122,7 @@ kernel void kernelGetEntropyMap(
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean) / (local_stds[y1*w+x1] + EPSILON);
+                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
                     comp_counter++;
                 }
             }
@@ -171,7 +173,7 @@ kernel void kernelGetEntropyMap(
                 p /= patch_size;
 
                 if(p != 0.0){
-                    comp_entropy += p * (float) log2((float) 1.0 / p);
+                    comp_entropy += p * (float) log10((float) 1.0 / p);
                 }else{
                     continue;
                 }
@@ -181,7 +183,7 @@ kernel void kernelGetEntropyMap(
             weight = getExpDecayWeight(local_stds[y0*w+x0], local_stds[y1*w+x1]);
 
             // Calculate delta entropy and add it to the sum at reference coordinates
-            entropy_map[y0*w+x0] += fabs((float)((-1.0)*ref_entropy) - ((-1.0)*comp_entropy)) * weight;
+            entropy_map[y0*w+x0] += fabs(((-1.0f) * ref_entropy) - ((-1.0f) * comp_entropy)) * weight;
         }
     }
 }

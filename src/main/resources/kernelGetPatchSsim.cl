@@ -13,7 +13,8 @@ kernel void kernelGetPatchSsim(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
-    global float* ssim_map
+    global float* ssim_map,
+    global float* gaussian_kernel
 ){
 
     int gx = get_global_id(0);
@@ -33,7 +34,7 @@ kernel void kernelGetPatchSsim(
     int counter = 0;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
         for(int i=center_x-bRW; i<=center_x+bRW; i++){
-            ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
+            ref_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter] - ref_mean;
             counter++;
         }
     }
@@ -49,7 +50,7 @@ kernel void kernelGetPatchSsim(
     counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
+            comp_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter] - comp_mean;
             covar += ref_patch[counter] * comp_patch[counter];
             counter++;
         }
