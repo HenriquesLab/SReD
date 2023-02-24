@@ -5,14 +5,21 @@
  **/
 
 import com.jogamp.opencl.*;
+import distance.Euclidean;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
+import org.apache.commons.math3.ml.clustering.CentroidCluster;
+import org.apache.commons.math3.ml.clustering.KMeansPlusPlusClusterer;
+import org.apache.commons.math3.ml.distance.EuclideanDistance;
+import org.apache.commons.math3.ml.clustering.DoublePoint;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class RedundancyMap_ implements PlugIn {
 
@@ -28,6 +35,8 @@ public class RedundancyMap_ implements PlugIn {
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Redundancy map");
         gd.addNumericField("Box length in pixels: ", 3, 2);
         gd.addCheckbox("Stabilise variance?", false);
+        gd.addCheckbox("Use Gaussian windows?", false);
+        gd.addNumericField("Sigma: ", 0.5f);
         gd.showDialog();
         if (gd.wasCanceled()) return;
 
@@ -36,10 +45,19 @@ public class RedundancyMap_ implements PlugIn {
         int bH = bW; // Patch height
         int downScale = 0; // Downscale factor
         int speedUp = 0; // Speed up factor (0 = no speed up)
+
         int useGAT = 0; // Use GAT (0 = no GAT)
         if(gd.getNextBoolean() == true) {
             useGAT = 1;
         }
+
+        int gaussWind = 0;
+        if(gd.getNextBoolean() == true){
+            gaussWind = 1;
+        }
+
+        float gaussSigma = (float) gd.getNextNumber();
+
         float EPSILON = 0.0000001f;
 
         // ---- Start timer ----
@@ -132,11 +150,11 @@ public class RedundancyMap_ implements PlugIn {
 
             // Calculate redundancy maps
             GlobalRedundancy red025 = new GlobalRedundancy(refPixels025, w025, h025, bW, bH, EPSILON, context, queue,
-                    speedUp, useGAT);
+                    speedUp, useGAT, gaussWind, gaussSigma);
             red025.run();
         }else{
             GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp,
-                    useGAT);
+                    useGAT, gaussWind, gaussSigma);
             red0.run();
         }
 
@@ -215,4 +233,34 @@ public class RedundancyMap_ implements PlugIn {
 
         return outArr;
     }
+
+    public static int getOptimalK(double[][] featureVectors, int maxK){
+        // Convert feature vectors array into List
+        List<DoublePoint> featureVectorList = new ArrayList<>();
+        for(double[] featureVector : featureVectors){
+            featureVectorList.add(new DoublePoint(featureVector));
+        }
+
+        int optimalK = 1;
+        double previousWCSS = Double.MAX_VALUE;
+        for(int k=1; k<=maxK; k++){
+            KMeansPlusPlusClusterer<DoublePoint> kMeans = new KMeansPlusPlusClusterer<>(k, 1000, new EuclideanDistance());
+            List<CentroidCluster<DoublePoint>> clusters = kMeans.cluster(featureVectorList);
+            double wcss = 0.0;
+            for (CentroidCluster<DoublePoint> cluster : clusters) {
+                for (DoublePoint featureVector : cluster.getPoints()) {
+                    double distance = new EuclideanDistance().compute(cluster.getCenter().getPoint(), featureVector.getPoint());
+                    wcss += distance * distance;
+                }
+            }
+            if (wcss > previousWCSS) {
+                break;
+            }
+            previousWCSS = wcss;
+            optimalK = k;
+        }
+        return optimalK;
+    }
+
+    // ADD FUNCTIONS HERE
 }

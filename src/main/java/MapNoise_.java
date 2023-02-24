@@ -144,7 +144,6 @@ public class MapNoise_ implements PlugIn {
         // Get gain, sigma, offset and error from the minimizer and transform pixel values
         float[] pixelsGAT;
         pixelsGAT = TransformImageByVST_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
-        float error = (float) minimizer.finalError;
 
         IJ.log("Normalising image...");
 
@@ -235,6 +234,7 @@ public class MapNoise_ implements PlugIn {
         programGetLocalStatistics.release();
 
         // Create noise mask
+        float error = 0; // TODO: SET TO ZERO FOR TESTING; SHOULD BE DEVIATION FROM "VARIANCE = 1"
         float[] noiseMask = new float[wh];
         float finalError = ((error*newRange)/ogRange)/2; // Normalise error to the range of the normalised image and divide by two
         IJ.log("Original range: "+ogRange);

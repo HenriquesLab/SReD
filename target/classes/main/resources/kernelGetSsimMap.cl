@@ -17,7 +17,11 @@ kernel void kernelGetSsimMap(
     global float* local_means,
     global float* local_stds,
     global int* uniqueStdCoords,
-    global float* ssim_map
+    global float* ssim_map,
+    global float* luminance_map,
+    global float* contrast_map,
+    global float* structure_map
+
 ){
 
     int x0 = get_global_id(0);
@@ -88,7 +92,11 @@ kernel void kernelGetSsimMap(
             // Calculate SSIM and add it to the sum at X
             float c1 = 0.001f; // Only correct for float images
             float c2 = 0.0009f; // Only correct for float images
-            float c3 = 0.00045f; // Only correct for float images
+            float c3 = c2 / 2; // Only correct for float images
+
+            luminance_map[y0*w+x0] = ((2.0f * ref_mean * comp_mean + c1) / ((ref_mean * ref_mean) + (comp_mean * comp_mean) + c1)) * weight;
+            contrast_map[y0*w+x0] = ((2.0f * ref_std * comp_std + c2) / ((ref_std * ref_std) * (comp_std * comp_std) + c2)) * weight;
+            structure_map[y0*w+x0] = ((covar + c3) / (ref_std * comp_std + c3)) * weight;
 
             //ssim_map[y0*w+x0] += ((1.0f - ((float) fmax(0.0f, (((2.0f * ref_mean * comp_mean + c1) * (2.0f * covar + c2)) / (((ref_mean * ref_mean) + (comp_mean * comp_mean) + c1) * ((ref_std * ref_std) + (comp_std * comp_std) + c2)))))) / 2) * weight;
             //ssim_map[y0*w+x0] += ((1.0f - ((float) fmax(0.0f, ((2.0f * ref_std * comp_std + c2) / (ref_std * ref_std + comp_std * comp_std + c2))))) / 2) * weight; // Contrast component (distance, not similarity)

@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
+import java.util.Arrays;
 
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
@@ -30,17 +31,17 @@ public class PatchRed_ implements PlugIn {
     static private CLContext context;
 
     static private CLProgram programGetPatchMeans, programGetPatchPearson, programGetPatchNrmse, programGetPatchSsim,
-            programGetPatchHu, programGetPatchEntropy, programGetPatchPhaseCorrelation;
+            programGetPatchHu, programGetPatchEntropy, programGetPatchPhaseCorrelation, programGetPatchHausdorff;
 
     static private CLKernel kernelGetPatchMeans, kernelGetPatchPearson, kernelGetPatchNrmse, kernelGetPatchSsim,
-            kernelGetPatchHu, kernelGetPatchEntropy, kernelGetPatchPhaseCorrelation;
+            kernelGetPatchHu, kernelGetPatchEntropy, kernelGetPatchPhaseCorrelation, kernelGetPatchHausdorff;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
     private CLBuffer<FloatBuffer> clRefPatch, clRefPatchMeanSub, clRefPixels, clLocalMeans, clLocalStds, clPearsonMap,
-            clNrmseMap, clMaeMap, clPsnrMap,clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap, clGaussianKernel;
+            clNrmseMap, clMaeMap, clPsnrMap,clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap, clGaussianKernel, clHausdorffMap;
 
     private CLBuffer<DoubleBuffer> clRefPatchDftReal, clRefPatchDftImag;
 
@@ -83,6 +84,7 @@ public class PatchRed_ implements PlugIn {
         int bRW = bW/2; // Patch radius (x-axis)
         int bRH = bH/2; // Patch radius (y-axis)
         int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
+        int circlePatchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW));
         int centerX = bx + bRW; // Patch center (x-axis)
         int centerY = by + bRH; // Patch center (y-axis)
 
@@ -117,6 +119,7 @@ public class PatchRed_ implements PlugIn {
             refPatchMeanSub[i] = refPatch[i] - mean;
         }
 
+        /*
         // Get patch DFT (not using built-in function just to keep the same function as in the OpenCl kernel
         double[] refPatchDftReal = new double[patchSize];
         double[] refPatchDftImag = new double[patchSize];
@@ -131,6 +134,7 @@ public class PatchRed_ implements PlugIn {
                 }
             }
         }
+*/
 
         // ---- Check devices ----
         CLPlatform[] allPlatforms = CLPlatform.listCLPlatforms();
@@ -202,12 +206,16 @@ public class PatchRed_ implements PlugIn {
         clGaussianKernel = context.createFloatBuffer(patchSize, READ_ONLY);
 
         // Create program
+        int circle = 1; // Circular patches
         String programStringGetPatchMeans = getResourceAsString(PatchRed_.class, "kernelGetPatchMeans.cl");
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRW$", "" + bRW);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRH$", "" + bRH);
+        programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$CIRCLE$", "" + circle);
+        programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$NPIXELS$", "" + circlePatchSize);
+
         programGetPatchMeans = context.createProgram(programStringGetPatchMeans).build();
 
         // Fill buffers
@@ -219,7 +227,9 @@ public class PatchRed_ implements PlugIn {
         float[] localStds = new float[w*h];
         fillBufferWithFloatArray(clLocalStds, localStds);
 
-        float[] gaussianKernel = makeGaussianKernel(bW, 0.5f);
+        //float[] gaussianKernel = makeGaussianKernel(bW, 0.5f);
+        float[] gaussianKernel = new float[patchSize];
+        Arrays.fill(gaussianKernel, 1.0f);
         fillBufferWithFloatArray(clGaussianKernel, gaussianKernel);
 
         // Create kernel and set args
@@ -277,8 +287,9 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRW$", "" + bRW);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRH$", "" + bRH);
-        programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$STD_X$", "" + std);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$EPSILON$", "" + EPSILON);
+        programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$CIRCLE$", "" + circle);
+        programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$NPIXELS$", "" + circlePatchSize);
 
         programGetPatchPearson = context.createProgram(programStringGetPatchPearson).build();
 
@@ -318,7 +329,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchPearson.release();
         clPearsonMap.release();
         programGetPatchPearson.release();
-
+  /*
         // ---- NMRSE and MAE ----
         String programStringGetPatchNrmse = getResourceAsString(PatchRed_.class, "kernelGetPatchNrmse.cl");
         programStringGetPatchNrmse = replaceFirst(programStringGetPatchNrmse, "$WIDTH$", "" + w);
@@ -488,7 +499,7 @@ public class PatchRed_ implements PlugIn {
         clHuMap.release();
         programGetPatchHu.release();
 
-        /*
+
         // ---- Phase correlation ----
         String programStringGetPatchPhaseCorrelation = getResourceAsString(PatchRed_.class, "kernelGetPatchPhaseCorrelation.cl");
         programStringGetPatchPhaseCorrelation = replaceFirst(programStringGetPatchPhaseCorrelation, "$WIDTH$", "" + w);
@@ -546,6 +557,7 @@ public class PatchRed_ implements PlugIn {
         //clRefPatchDftImag.release();
         // Replicate MATLAB's fftshift function for 2D odd-sized images
 */
+        /*
         // ---- Entropy ----
         String programStringGetPatchEntropy = getResourceAsString(PatchRed_.class, "kernelGetPatchEntropy.cl");
         programStringGetPatchEntropy = replaceFirst(programStringGetPatchEntropy, "$WIDTH$", "" + w);
@@ -591,6 +603,51 @@ public class PatchRed_ implements PlugIn {
         clEntropyMap.release();
         programGetPatchEntropy.release();
 
+        // ---- HAUSDORFF ----
+        String programStringGetPatchHausdorff = getResourceAsString(PatchRed_.class, "kernelGetPatchHausdorff.cl");
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$WIDTH$", "" + w);
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$HEIGHT$", "" + h);
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$CENTER_X$", "" + centerX);
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$CENTER_Y$", "" + centerY);
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$BRW$", "" + bRW);
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$BRH$", "" + bRH);
+        programStringGetPatchHausdorff = replaceFirst(programStringGetPatchHausdorff, "$EPSILON$", "" + EPSILON);
+        programGetPatchHausdorff = context.createProgram(programStringGetPatchHausdorff).build();
+
+        // Fill buffers
+        float[] hausdorffMap = new float[wh];
+        clHausdorffMap = context.createFloatBuffer(wh, READ_WRITE);
+        fillBufferWithFloatArray(clHausdorffMap, hausdorffMap);
+
+        // Create kernel and set args
+        kernelGetPatchHausdorff = programGetPatchHausdorff.createCLKernel("kernelGetPatchHausdorff");
+
+        argn = 0;
+        kernelGetPatchHausdorff.setArg(argn++, clRefPixels);
+        kernelGetPatchHausdorff.setArg(argn++, clLocalMeans);
+        kernelGetPatchHausdorff.setArg(argn++, clLocalStds);
+        kernelGetPatchHausdorff.setArg(argn++, clHausdorffMap);
+        kernelGetPatchHausdorff.setArg(argn++, clGaussianKernel);
+
+        // Calculate entropy map
+        queue.putWriteBuffer(clHausdorffMap, false);
+        queue.put2DRangeKernel(kernelGetPatchHausdorff, 0, 0, w, h, 0, 0);
+        queue.finish();
+
+        // Read the entropy map back from the GPU
+        queue.putReadBuffer(clHausdorffMap, true);
+        for (int y=0; y<h; y++) {
+            for (int x=0; x<w; x++) {
+                hausdorffMap[y*w+x] = clHausdorffMap.getBuffer().get(y*w+x);
+                queue.finish();
+            }
+        }
+
+        kernelGetPatchHausdorff.release();
+        clHausdorffMap.release();
+        programGetPatchHausdorff.release();
+
         IJ.log("Done!");
         IJ.log("--------");
 
@@ -599,9 +656,16 @@ public class PatchRed_ implements PlugIn {
         context.release();
         IJ.log("Done!");
         IJ.log("--------");
-
+*/
         // ---- Display results ----
         IJ.log("Preparing results for display...");
+
+        // Local means
+        float[] meansMinMax = findMinMax(localMeans, w, h, bRW, bRH);
+        float[] meansMapNorm = normalize(localMeans, w, h, bRW, bRH, meansMinMax, 0, 0);
+        FloatProcessor fpX = new FloatProcessor(w, h, meansMapNorm);
+        ImagePlus impX = new ImagePlus("Local means", fpX);
+        impX.show();
 
         // Pearson's map (normalized to [0,1])
         float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
@@ -609,7 +673,7 @@ public class PatchRed_ implements PlugIn {
         FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
-
+/*
         // NRMSE map (normalized to [0,1])
         float[] nrmseMinMax = findMinMax(nrmseMap, w, h, bRW, bRH);
         float[] nrmseMapNorm = normalize(nrmseMap, w, h, bRW, bRH, nrmseMinMax, 0, 0);
@@ -649,6 +713,11 @@ public class PatchRed_ implements PlugIn {
         FloatProcessor fp7 = new FloatProcessor(w, h, entropyMap);
         ImagePlus imp7 = new ImagePlus("Entropy Map", fp7);
         imp7.show();
+
+        // Hausdorff map (normalized to [0,1])
+        FloatProcessor fp8 = new FloatProcessor(w, h, hausdorffMap);
+        ImagePlus imp8 = new ImagePlus("Hausdorff Map", fp8);
+        imp8.show();
 /*
         // Phase map (normalized to [0,1])
         float[] phaseMinMax = findMinMax(phaseCorrelationMap, w, h, bRW, bRH);
@@ -656,12 +725,12 @@ public class PatchRed_ implements PlugIn {
         FloatProcessor fp8 = new FloatProcessor(w, h, phaseMapNorm);
         ImagePlus imp8 = new ImagePlus("Phase Map", fp8);
         imp8.show();
-*/
+
         // STDS TODO: FINISH THIS
         FloatProcessor fp9 = new FloatProcessor(w, h, localStds);
         ImagePlus imp9 = new ImagePlus("Local Stds", fp9);
         imp9.show();
-
+*/
         // ---- Stop timer ----
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
@@ -832,6 +901,7 @@ public class PatchRed_ implements PlugIn {
 
         for(int i=0; i<size*size; i++){
             kernel[i] = kernel[i] / sumTotal;
+            System.out.println(kernel[i]);
         }
 
         return kernel;

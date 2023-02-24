@@ -10,6 +10,7 @@
 #define EPSILON $EPSILON$
 #define nUnique $NUNIQUE$
 #define speedUp $SPEEDUP$
+#define gaussWind $GAUSSWIND$
 float getExpDecayWeight(float ref, float comp);
 float getGaussianWeight(float ref, float comp, float h2);
 
@@ -75,7 +76,7 @@ kernel void kernelGetPearsonMap(
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = (ref_pixels[j0*w+i0]) - ref_mean;
+            ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean) * gaussian_kernel[ref_counter];
             //ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - min_x) / (max_x - min_x + EPSILON); // Normalize patch to [0,1]
             ref_counter++;
         }
@@ -112,7 +113,7 @@ kernel void kernelGetPearsonMap(
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1]) - comp_mean;
+                    comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean) * gaussian_kernel[comp_counter];
                     //comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - min_y) / (max_y - min_y + EPSILON); // Normalize patch to [0,1]
                     covar += ref_patch[comp_counter] * comp_patch[comp_counter];
                     comp_counter++;
@@ -127,11 +128,12 @@ kernel void kernelGetPearsonMap(
             weight_sum[y0*w+x0] += weight;
 
             // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-            if(std_x == 0.0f && std_y == 0.0f){
-                pearson_map[y0*w+x0] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same, so 1-PEarson = 1-1 = 0)
-            }else{
-                pearson_map[y0*w+x0] += (float) ((float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON)))) * weight; // Pearson distance, truncate anti-correlations to zero
-            }
+            pearson_map[y0*w+x0] += fabs(std_x - std_y);
+            //if(std_x == 0.0f && std_y == 0.0f){
+            //    pearson_map[y0*w+x0] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same, so 1-PEarson = 1-1 = 0)
+            //}else{
+            //    pearson_map[y0*w+x0] += (float) ((float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON)))) * weight; // Pearson distance, truncate anti-correlations to zero
+            //}
         }
     }
 }

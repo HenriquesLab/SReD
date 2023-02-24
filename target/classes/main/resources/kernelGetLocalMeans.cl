@@ -23,7 +23,6 @@ kernel void kernelGetLocalMeans(
     }
 
     // Get patch and calculate local mean
-    //float gauss_kernel[patch_size] = {0.011f, 0.084f, 0.011f, 0.084f, 0.619f, 0.084f, 0.011f, 0.084f, 0.011f};
 
     double value = 0.0f;
     double sum = 0.0f;
