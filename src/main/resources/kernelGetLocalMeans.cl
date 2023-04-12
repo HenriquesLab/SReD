@@ -6,12 +6,12 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define circle $CIRCLE$
 
 kernel void kernelGetLocalMeans(
     global float* ref_pixels,
     global float* local_means,
-    global float* local_stds,
-    global float* gaussian_kernel
+    global float* local_stds
 ){
 
     int gx = get_global_id(0);
@@ -23,18 +23,30 @@ kernel void kernelGetLocalMeans(
     }
 
     // Get patch and calculate local mean
-
     double value = 0.0f;
     double sum = 0.0f;
     double sq_sum = 0.0f;
 
-    for(int j=gy-bRH; j<=gy+bRH; j++){
-        for(int i=gx-bRW; i<=gx+bRW; i++){
-            //value = ref_pixels[j*w+i] * gaussian_kernel[(j-gy)*patch_size+(i-gx)];
-            value = ref_pixels[j*w+i];
-
-            sum += value;
-            sq_sum += value * value;
+    if(circle==0){
+        for(int j=gy-bRH; j<=gy+bRH; j++){
+            for(int i=gx-bRW; i<=gx+bRW; i++){
+                value = ref_pixels[j*w+i];
+                sum += value;
+                sq_sum += value * value;
+           }
+        }
+    }else{
+        float r2 = bRW*bRW;
+        for(int j=gy-bRH; j<=gy+bRH; j++){
+            for(int i=gx-bRW; i<=gx+bRW; i++){
+                float dx = (float)(i-gx);
+                float dy = (float)(j-gy);
+                if(dx*dx+dy*dy <= r2){
+                    value = ref_pixels[j*w+i];
+                    sum += value;
+                    sq_sum += value * value;
+                }
+            }
         }
     }
 

@@ -36,6 +36,7 @@ public class RedundancyMap_ implements PlugIn {
         gd.addNumericField("Box length in pixels: ", 3, 2);
         gd.addCheckbox("Stabilise variance?", false);
         gd.addCheckbox("Use Gaussian windows?", false);
+        gd.addCheckbox("Use circular patches?", false);
         gd.addNumericField("Sigma: ", 0.5f);
         gd.showDialog();
         if (gd.wasCanceled()) return;
@@ -55,8 +56,12 @@ public class RedundancyMap_ implements PlugIn {
         if(gd.getNextBoolean() == true){
             gaussWind = 1;
         }
-
         float gaussSigma = (float) gd.getNextNumber();
+
+        int circle = 0;
+        if(gd.getNextBoolean() == true){
+            circle = 1;
+        }
 
         float EPSILON = 0.0000001f;
 
@@ -150,11 +155,11 @@ public class RedundancyMap_ implements PlugIn {
 
             // Calculate redundancy maps
             GlobalRedundancy red025 = new GlobalRedundancy(refPixels025, w025, h025, bW, bH, EPSILON, context, queue,
-                    speedUp, useGAT, gaussWind, gaussSigma);
+                    speedUp, useGAT, gaussWind, gaussSigma, circle);
             red025.run();
         }else{
             GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp,
-                    useGAT, gaussWind, gaussSigma);
+                    useGAT, gaussWind, gaussSigma, circle);
             red0.run();
         }
 

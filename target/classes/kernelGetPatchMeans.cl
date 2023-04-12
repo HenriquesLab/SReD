@@ -5,13 +5,11 @@
 #define bRW $BRW$
 #define bRH $BRH$
 #define circle $CIRCLE$
-#define n_pixels $NPIXELS$
 
 kernel void kernelGetPatchMeans(
 global float* ref_pixels,
 global float* local_means,
-global float* local_stds,
-global float* gaussian_kernel
+global float* local_stds
 ){
 
     int gx = get_global_id(0);
@@ -28,7 +26,7 @@ global float* gaussian_kernel
     if(circle==0){
         for(int j=gy-bRH; j<=gy+bRH; j++){
             for(int i=gx-bRW; i<=gx+bRW; i++){
-                mean += ref_pixels[j*w+i];// * gaussian_kernel[(j-gy)*w+(i-gx)];
+                mean += ref_pixels[j*w+i];
             }
         }
         local_means[gy*w+gx] = mean/patch_size;
@@ -39,11 +37,11 @@ global float* gaussian_kernel
                 float dx = (float)(i-gx);
                 float dy = (float)(j-gy);
                 if(dx*dx + dy*dy <= r2){
-                    mean += ref_pixels[j*w+i];// * gaussian_kernel[(j-gy)*w+(i-gx)];
+                    mean += ref_pixels[j*w+i];
                 }
             }
         }
-        local_means[gy*w+gx] = mean/(float)n_pixels;
+        local_means[gy*w+gx] = mean/(float)patch_size;
     }
 
     // Calculate standard deviation
@@ -67,6 +65,6 @@ global float* gaussian_kernel
                 }
             }
         }
-        local_stds[gy*w+gx] = sqrt(std/n_pixels);
+        local_stds[gy*w+gx] = sqrt(std/patch_size);
     }
 }

@@ -50,7 +50,7 @@ public class ClassifyRedundancy_ implements PlugIn {
         int k = (int) gd.getNextNumber();
         int maxK = (int) gd.getNextNumber();
 
-        // Get feature vectors (adjust array's second dimension acording to number of features)
+        // Get feature vectors (adjust array's second dimension according to number of features)
         int wWOBorder = w-2*border;
         int hWOBorder = h-2*border;
         int whWOBorder = wWOBorder*hWOBorder;
@@ -61,6 +61,9 @@ public class ClassifyRedundancy_ implements PlugIn {
         for(int y=border; y<h-border; y++){
             for(int x=border; x<w-border; x++){
                 featureVectors[counter][0] = redMap[y*w+x];
+                //featureVectors[counter][1] = x/(w+0.000000001f);
+                //featureVectors[counter][2] = y/(h+0.000000001f);
+
                 counter++;
             }
         }

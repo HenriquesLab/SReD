@@ -42,8 +42,6 @@ kernel void kernelGetEntropyMap(
         return;
     }
 
-    float gauss_kernel[patch_size] = {0.011f, 0.084f, 0.011f, 0.084f, 0.619f, 0.084f, 0.011f, 0.084f, 0.011f};
-
     // Get mean-subtracted reference patch
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[y0*w+x0];

@@ -8,15 +8,13 @@
 #define bRH $BRH$
 #define EPSILON $EPSILON$
 #define circle $CIRCLE$
-#define n_pixels $NPIXELS$
 float getExpDecayWeight(float ref, float comp);
 
 kernel void kernelGetPatchPearson(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
-    global float* pearson_map,
-    global float* gaussian_kernel
+    global float* pearson_map
 ){
 
     int gx = get_global_id(0);
@@ -37,7 +35,7 @@ kernel void kernelGetPatchPearson(
     if(circle==0){
         for(int j=center_y-bRH; j<=center_y+bRH; j++){
                 for(int i=center_x-bRW; i<=center_x+bRW; i++){
-                    ref_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter]  - ref_mean;
+                    ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
                     counter++;
             }
         }
@@ -48,7 +46,7 @@ kernel void kernelGetPatchPearson(
                 float dx = (float)(i-gx);
                 float dy = (float)(j-gy);
                 if(dx*dx + dy*dy <= r2){
-                    ref_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter]  - ref_mean;
+                    ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
                     counter++;
                 }
             }
@@ -65,7 +63,7 @@ kernel void kernelGetPatchPearson(
     if(circle==0){
         for(int j=gy-bRH; j<=gy+bRH; j++){
             for(int i=gx-bRW; i<=gx+bRW; i++){
-                comp_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter] - comp_mean;
+                comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
                 counter++;
             }
         }
@@ -76,7 +74,7 @@ kernel void kernelGetPatchPearson(
                 float dx = (float)(i-gx);
                 float dy = (float)(j-gy);
                 if(dx*dx+dy*dy <= r2){
-                    comp_patch[counter] = ref_pixels[j*w+i]*gaussian_kernel[counter] - comp_mean;
+                    comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
                     counter++;
                 }
             }
@@ -95,7 +93,7 @@ kernel void kernelGetPatchPearson(
     weight = getExpDecayWeight(ref_std, comp_std);
 
     // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-    pearson_map[gy*w+gx] = fabs(ref_std - comp_std);
+    pearson_map[gy*w+gx] = fabs(ref_std - comp_std) * weight;
     //if(ref_std == 0.0f && comp_std == 0.0f){
     //    pearson_map[gy*w+gx] = 0.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
     //}else{

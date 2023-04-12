@@ -34,28 +34,34 @@ public class GlobalRedundancy implements UserFunction {
 
     private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clNrmseMap, clMaeMap, clPsnrMap,
             clSsimMap, clLuminanceMap, clContrastMap, clStructureMap, clHuMap, clEntropyMap, clPhaseCorrelationMap,
-            clGaussianKernel, clWeightSum, clHausdorffMap;
+            clWeightSum, clHausdorffMap;
 
     private CLBuffer<IntBuffer> clUniqueStdCoords;
 
     // Image parameters
     public float[] refPixels, localMeans, localStds, pearsonMap, nrmseMap, maeMap, psnrMap, ssimMap, luminanceMap,
             contrastMap, structureMap, huMap, entropyMap, phaseCorrelationMap, weightSum, hausdorffMap;
-    public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, speedUp, useGAT, gaussWind;
+    public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, speedUp, useGAT, gaussWind, circle;
     public float gaussSigma, EPSILON;
 
     public GlobalRedundancy(float[] refPixels, int w, int h, int bW, int bH, float EPSILON, CLContext context,
-                            CLCommandQueue queue, int speedUp, int useGAT, int gaussWind, float gaussSigma){
+                            CLCommandQueue queue, int speedUp, int useGAT, int gaussWind, float gaussSigma, int circle){
         this.refPixels = refPixels;
         this.w = w;
         this.h = h;
         wh = w * h;
         this.bW = bW;
         this.bH = bH;
-        patchSize = bW * bH;
         bRW = bW/2;
         bRH = bH/2;
         sizeWithoutBorders = (w - bRW * 2) * (h - bRH * 2);
+
+        if(circle==0){
+            patchSize = bW * bH;
+        }else{
+            patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW));
+        }
+
         this.EPSILON = EPSILON;
         this.context = context;
         this.queue = queue;
@@ -63,6 +69,7 @@ public class GlobalRedundancy implements UserFunction {
         this.useGAT = useGAT;
         this.gaussWind = gaussWind;
         this.gaussSigma = gaussSigma;
+        this.circle = circle;
         localMeans = new float[wh];
         weightSum = new float[wh];
         localStds = new float[wh];
@@ -116,21 +123,9 @@ public class GlobalRedundancy implements UserFunction {
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$PATCH_SIZE$", "" + patchSize);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BRW$", "" + bRW);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BRH$", "" + bRH);
+        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$CIRCLE$", "" + circle);
+
         programGetLocalMeans = context.createProgram(programStringGetLocalMeans).build();
-
-        // Create, fill and write buffers
-        float[] gaussianKernel = new float[patchSize];
-        if(gaussWind == 1) {
-            gaussianKernel = makeGaussianKernel(bW, gaussSigma);
-        }else{
-            for(int i=0; i<patchSize;i++){
-                gaussianKernel[i] = 1.0f;
-            }
-        }
-
-        clGaussianKernel = context.createFloatBuffer(patchSize, READ_ONLY);
-        fillBufferWithFloatArray(clGaussianKernel, gaussianKernel);
-        queue.putWriteBuffer(clGaussianKernel, false);
 
         clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clLocalMeans, localMeans);
@@ -147,7 +142,6 @@ public class GlobalRedundancy implements UserFunction {
         kernelGetLocalMeans.setArg(argn++, clRefPixels);
         kernelGetLocalMeans.setArg(argn++, clLocalMeans);
         kernelGetLocalMeans.setArg(argn++, clLocalStds);
-        kernelGetLocalMeans.setArg(argn++, clGaussianKernel);
 
         // Calculate
         int nXBlocks = w/64 + ((w%64==0)?0:1);
@@ -214,6 +208,7 @@ public class GlobalRedundancy implements UserFunction {
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$NUNIQUE$", "" + nUnique);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$SPEEDUP$", "" + speedUp);
         programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$GAUSSWIND$", "" + gaussWind);
+        programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$CIRCLE$", "" + circle);
 
         programGetPearsonMap = context.createProgram(programStringGetPearsonMap).build();
 
@@ -235,7 +230,6 @@ public class GlobalRedundancy implements UserFunction {
         kernelGetPearsonMap.setArg(argn++, clLocalStds);
         kernelGetPearsonMap.setArg(argn++, clUniqueStdCoords);
         kernelGetPearsonMap.setArg(argn++, clPearsonMap);
-        kernelGetPearsonMap.setArg(argn++, clGaussianKernel);
         kernelGetPearsonMap.setArg(argn++, clWeightSum);
 
         // Calculate
@@ -320,7 +314,6 @@ public class GlobalRedundancy implements UserFunction {
         kernelGetNrmseMap.setArg(argn++, clNrmseMap);
         kernelGetNrmseMap.setArg(argn++, clMaeMap);
         kernelGetNrmseMap.setArg(argn++, clPsnrMap);
-        kernelGetNrmseMap.setArg(argn++, clGaussianKernel);
 
         // Calculate
         for(int nYB=0; nYB<nYBlocks; nYB++) {
@@ -372,6 +365,8 @@ public class GlobalRedundancy implements UserFunction {
             psnrMap = remapPixels(psnrMap, w, h, localStds, stdUnique, stdUniqueCoords, nUnique, bRW, bRH);
         }
 
+
+ */
         // ---- Calculate weighted mean SSIM map ----
         // Create OpenCL program
         String programStringGetSsimMap = getResourceAsString(RedundancyMap_.class, "kernelGetSsimMap.cl");
@@ -470,7 +465,7 @@ public class GlobalRedundancy implements UserFunction {
         if(speedUp == 1) {
             ssimMap = remapPixels(ssimMap, w, h, localStds, stdUnique, stdUniqueCoords, nUnique, bRW, bRH);
         }
-
+/*
         // ---- Calculate Hu map ----
         // Create OpenCL program
         String programStringGetHuMap = getResourceAsString(RedundancyMap_.class, "kernelGetHuMap.cl");
@@ -681,7 +676,6 @@ public class GlobalRedundancy implements UserFunction {
         kernelGetHausdorffMap.setArg(argn++, clLocalStds);
         kernelGetHausdorffMap.setArg(argn++, clUniqueStdCoords);
         kernelGetHausdorffMap.setArg(argn++, clHausdorffMap);
-        kernelGetHausdorffMap.setArg(argn++, clGaussianKernel);
         kernelGetHausdorffMap.setArg(argn++, clWeightSum);
 
         // Calculate
@@ -746,6 +740,8 @@ public class GlobalRedundancy implements UserFunction {
         float[] psnrMapNorm = normalize(psnrMap, w, h, bRW, bRH, psnrMinMax, 0, 0);
         FloatProcessor fp4 = new FloatProcessor(w, h, psnrMapNorm);
 
+*/
+/*
         // SSIM map (normalized to [0,1])
         float[] ssimMinMax = findMinMax(ssimMap, w, h, bRW, bRH);
         float[] ssimMapNorm = normalize(ssimMap, w, h, bRW, bRH, ssimMinMax, 0, 0);
@@ -762,7 +758,8 @@ public class GlobalRedundancy implements UserFunction {
         float[] structureMinMax = findMinMax(structureMap, w, h, bRW, bRH);
         float[] structureMapNorm = normalize(structureMap, w, h, bRW, bRH, structureMinMax, 0, 0);
         FloatProcessor fp13 = new FloatProcessor(w, h, structureMapNorm);
-
+        */
+/*
         // Hu map (normalized to [0,1])
         float[] huMinMax = findMinMax(huMap, w, h, bRW, bRH);
         float[] huMapNorm = normalize(huMap, w, h, bRW, bRH, huMinMax, 0, 0);
@@ -779,7 +776,7 @@ public class GlobalRedundancy implements UserFunction {
         //FloatProcessor fp8 = new FloatProcessor(w, h, phaseMapNorm);
 
 
-        // Pearson's map (normalized to [0,1])
+        // Hausdorff map (normalized to [0,1])
         float[] hausdorffMinMax = findMinMax(hausdorffMap, w, h, bRW, bRH);
         float[] hausdorffMapNorm = normalize(hausdorffMap, w, h, bRW, bRH, hausdorffMinMax, 0, 0);
         FloatProcessor fp14 = new FloatProcessor(w, h, hausdorffMapNorm);
@@ -802,7 +799,7 @@ public class GlobalRedundancy implements UserFunction {
         //ims.addSlice("Entropy", fp7);
 
         FloatProcessor fp9 = new FloatProcessor(w, h, localStds);
-        //ims.addSlice("Local stds", fp9);
+        ims.addSlice("Local stds", fp9);
 
         //FloatProcessor fp10 = new FloatProcessor(w, h, weightSum);
         //ims.addSlice("Weight sum", fp10);
@@ -968,30 +965,6 @@ public class GlobalRedundancy implements UserFunction {
         }
 
         return image;
-    }
-
-    public float[] makeGaussianKernel(int size, float sigma){
-        float[] kernel = new float[size*size];
-        float sumTotal = 0;
-
-        int radius = size/2;
-        float distance = 0;
-
-        float euler = (float) (1.0f / (2.0 * Math.PI * (sigma*sigma)));
-
-        for(int j=-radius; j<=radius; j++){
-            for(int i=-radius; i<=radius; i++){
-                distance = ((i*i)+(j*j)) / (2 * (sigma*sigma));
-                kernel[(j+radius)*size+(i+radius)] = (float) (euler * Math.exp(-distance));
-                sumTotal += kernel[(j+radius)*size+(i+radius)];
-            }
-        }
-
-        for(int i=0; i<size*size; i++){
-            kernel[i] = kernel[i] / sumTotal;
-        }
-
-        return kernel;
     }
 
     public float[] linspace(float start, float stop, int n){

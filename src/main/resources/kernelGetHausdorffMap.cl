@@ -20,7 +20,6 @@ kernel void kernelGetHausdorffMap(
     global float* local_stds,
     global int* uniqueStdCoords,
     global float* hausdorff_map,
-    global float* gaussian_kernel,
     global float* weight_sum
 ){
 
