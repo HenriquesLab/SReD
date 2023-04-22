@@ -18,8 +18,7 @@ kernel void kernelGetNrmseMap(
     global int* uniqueStdCoords,
     global float* nrmse_map,
     global float* mae_map,
-    global float* psnr_map,
-    global float* gaussian_kernel
+    global float* psnr_map
 ){
 
     int x0 = get_global_id(0);

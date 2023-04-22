@@ -14,8 +14,7 @@ kernel void kernelGetPatchHausdorff(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
-    global float* hausdorff_map,
-    global float* gaussian_kernel
+    global float* hausdorff_map
 ){
 
     int gx = get_global_id(0);

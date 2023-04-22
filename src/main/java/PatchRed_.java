@@ -40,7 +40,7 @@ public class PatchRed_ implements PlugIn {
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPatch, clRefPatchMeanSub, clRefPixels, clLocalMeans, clLocalStds, clPearsonMap,
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap,
             clNrmseMap, clMaeMap, clPsnrMap,clSsimMap, clHuMap, clEntropyMap, clPhaseCorrelationMap, clHausdorffMap;
 
     private CLBuffer<DoubleBuffer> clRefPatchDftReal, clRefPatchDftImag;
@@ -62,7 +62,6 @@ public class PatchRed_ implements PlugIn {
         ImageProcessor ip0 = imp0.getProcessor();
         FloatProcessor fp0 = ip0.convertToFloatProcessor();
         float[] refPixels = (float[]) fp0.getPixels();
-        float[] refPixelsRaw = (float[]) fp0.getPixels();
         int w = fp0.getWidth();
         int h = fp0.getHeight();
         int wh = w * h;
@@ -83,17 +82,10 @@ public class PatchRed_ implements PlugIn {
         int bRW = bW/2; // Patch radius (x-axis)
         int bRH = bH/2; // Patch radius (y-axis)
         int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
-        int circle = 1; // Circular patches
+        int patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW)); // Number of pixels in a circular patch
 
-        int patchSize = 0;
-        if(circle==0){
-            patchSize = bW * bH; // Patch area
-        }else{
-            patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW));
-        }
-
-        int centerX = bx + bRW; // Patch center (x-axis)
-        int centerY = by + bRH; // Patch center (y-axis)
+        int centerX = bx + bRW; // Reference patch center (x-axis)
+        int centerY = by + bRH; // Reference patch center (y-axis)
 
         // Verify that selected patch dimensions are odd
         if (bW % 2 == 0 || bH % 2 == 0) {
@@ -113,40 +105,8 @@ public class PatchRed_ implements PlugIn {
         float minMax[] = findMinMax(refPixels, w, h, 0, 0);
         refPixels = normalize(refPixels, w, h, 0, 0, minMax, 1, 2);
 
-        // Get patch values
-        float[] refPatch = new float[patchSize];
-        int counter = 0;
-
-        if(circle==0) {
-            for(int y=centerY-bRH; y<=centerY+bRH; y++) {
-                for (int x=centerX-bRW; x<=centerX+bRW; x++) {
-                    refPatch[counter] = refPixels[y*w+x];
-                    counter++;
-                }
-            }
-        }else{
-            float r2 = bRW*bRW;
-            for(int y=centerY-bRH; y<=centerY+bRH; y++) {
-                for (int x=centerX-bRW; x<=centerX+bRW; x++) {
-                    if(x*x+y*y <= r2){
-                        refPatch[counter] = refPixels[y * w + x];
-                        counter++;
-                    }
-                }
-            }
-        }
-
-        // Get patch statistics
-        float patchStats[] = meanVarStd(refPatch);
-        float mean = patchStats[0];
-        float var = patchStats[1];
-        float std = patchStats[2];
-
-        // Get mean subtracted patch
-        float[] refPatchMeanSub = new float[patchSize];
-        for(int i=0; i<patchSize; i++) {
-            refPatchMeanSub[i] = refPatch[i] - mean;
-        }
+        //float var = patchStats[1];
+        //float std = patchStats[2];
 
         /*
         // Get patch DFT (not using built-in function just to keep the same function as in the OpenCl kernel
@@ -240,8 +200,6 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRW$", "" + bRW);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRH$", "" + bRH);
-        programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$CIRCLE$", "" + circle);
-
         programGetPatchMeans = context.createProgram(programStringGetPatchMeans).build();
 
         // Fill buffers
@@ -262,8 +220,9 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchMeans.setArg(argn++, clLocalStds);
 
         // Calculate
-        queue.putWriteBuffer(clRefPixels, false);
-        queue.putWriteBuffer(clLocalMeans, false);
+        queue.putWriteBuffer(clRefPixels, true);
+        queue.putWriteBuffer(clLocalMeans, true);
+        queue.putWriteBuffer(clLocalStds, true);
 
         showStatus("Calculating local means...");
 
@@ -292,11 +251,6 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchMeans.release();
         programGetPatchMeans.release();
 
-        // ---- Create buffers ----
-        clRefPatch = context.createFloatBuffer(patchSize, READ_ONLY);
-        clRefPatchMeanSub = context.createFloatBuffer(patchSize, READ_ONLY);
-
-
         // ---- Pearson correlation ----
         String programStringGetPatchPearson = getResourceAsString(PatchRed_.class, "kernelGetPatchPearson.cl");
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$WIDTH$", "" + w);
@@ -307,13 +261,7 @@ public class PatchRed_ implements PlugIn {
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRW$", "" + bRW);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRH$", "" + bRH);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$EPSILON$", "" + EPSILON);
-        programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$CIRCLE$", "" + circle);
-
         programGetPatchPearson = context.createProgram(programStringGetPatchPearson).build();
-
-        // Fill buffers
-        fillBufferWithFloatArray(clRefPatch, refPatch);
-        fillBufferWithFloatArray(clRefPatchMeanSub, refPatchMeanSub);
 
         float[] pearsonMap = new float[wh];
         clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
@@ -329,7 +277,7 @@ public class PatchRed_ implements PlugIn {
         kernelGetPatchPearson.setArg(argn++, clPearsonMap);
 
         // Calculate Pearson's correlation coefficient ----
-        queue.putWriteBuffer(clPearsonMap, false);
+        queue.putWriteBuffer(clPearsonMap, true);
         queue.put2DRangeKernel(kernelGetPatchPearson, 0, 0, w, h, 0, 0);
         queue.finish();
 
@@ -341,6 +289,7 @@ public class PatchRed_ implements PlugIn {
                 queue.finish();
             }
         }
+        queue.finish();
 
         // Release memory
         kernelGetPatchPearson.release();
@@ -674,19 +623,21 @@ public class PatchRed_ implements PlugIn {
         IJ.log("Preparing results for display...");
 
         // Local means
+        /*
         float[] meansMinMax = findMinMax(localMeans, w, h, bRW, bRH);
         float[] meansMapNorm = normalize(localMeans, w, h, bRW, bRH, meansMinMax, 0, 0);
         FloatProcessor fpX = new FloatProcessor(w, h, meansMapNorm);
         ImagePlus impX = new ImagePlus("Local means", fpX);
         impX.show();
-
+*/
         // Pearson's map (normalized to [0,1])
         float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
         float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
         FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
         ImagePlus imp1 = new ImagePlus("Pearson's Map", fp1);
         imp1.show();
-/*
+
+        /*
         // NRMSE map (normalized to [0,1])
         float[] nrmseMinMax = findMinMax(nrmseMap, w, h, bRW, bRH);
         float[] nrmseMapNorm = normalize(nrmseMap, w, h, bRW, bRH, nrmseMinMax, 0, 0);
@@ -740,12 +691,14 @@ public class PatchRed_ implements PlugIn {
         FloatProcessor fp8 = new FloatProcessor(w, h, phaseMapNorm);
         ImagePlus imp8 = new ImagePlus("Phase Map", fp8);
         imp8.show();
+/*
 
+ */
         // STDS TODO: FINISH THIS
         FloatProcessor fp9 = new FloatProcessor(w, h, localStds);
         ImagePlus imp9 = new ImagePlus("Local Stds", fp9);
         imp9.show();
-*/
+
         // ---- Stop timer ----
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;

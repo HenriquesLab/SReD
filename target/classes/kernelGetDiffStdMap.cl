@@ -12,15 +12,13 @@
 #define speedUp $SPEEDUP$
 float getExpDecayWeight(float ref, float comp);
 float getGaussianWeight(float ref, float comp, float h2);
-float getHausdorffDistance(float* ref_patch, float* comp_patch, int bL, int width);
 
-kernel void kernelGetHausdorffMap(
+kernel void kernelGetDiffStdMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
     global int* uniqueStdCoords,
-    global float* hausdorff_map,
-    global float* weight_sum
+    global float* diff_std_map
 ){
 
     int x0 = get_global_id(0);
@@ -47,43 +45,52 @@ kernel void kernelGetHausdorffMap(
     }
 
     // ---- Reference patch ----
-    // Get array of patch coordinates
+    // Get mean-subtracted patch
     float ref_patch[patch_size] = {0.0f};
+    float ref_mean = local_means[y0*w+x0];
 
     int ref_counter = 0;
+    float r2 = bRW*bRW;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            ref_patch[ref_counter] = j0*w+i0;
-            ref_counter++;
+            float dx = (float)(i0-x0);
+            float dy = (float)(j0-y0);
+            if(dx*dx+dy*dy <= r2){
+                ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean);
+                ref_counter++;
+            }
         }
     }
 
     // For each comparison pixel...
-    float weight = 0.0f;
-
     for(int y1=bRH; y1<h-bRH; y1++){
         for(int x1=bRW; x1<w-bRW; x1++){
-
-            weight = 0.0f;
-
-            // Get values, subtract the mean, and get local standard deviation
+            // Get mean-subtracted patch and local standard deviation
             float comp_patch[patch_size] = {0.0f};
+            float comp_mean = local_means[y1*w+x1];
+            float covar = 0.0f;
+
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    comp_patch[comp_counter] = j1*w+i1;
-                    comp_counter++;
+                    float dx = (float)(i1-x1);
+                    float dy = (float)(j1-y1);
+                    if(dx*dx+dy*dy <= r2){
+                        comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
+                        covar += ref_patch[comp_counter] * comp_patch[comp_counter];
+                        comp_counter++;
+                    }
                 }
             }
 
-            // Calculate weight
-            float ref_std = local_stds[y0*w+x0];
-            float comp_std = local_stds[y1*w+x1];
-            weight = getGaussianWeight(ref_std, comp_std, filter_param);
-            weight_sum[y0*w+x0] += weight;
+            covar /= patch_size;
 
-            // Calculate Hausdorff distance and add it to the sum
-            hausdorff_map[y0*w+x0] += getHausdorffDistance(ref_patch, comp_patch, bRW, w) * weight;
+            // Calculate absolute difference of standard deviations add it to the sum at X (avoiding division by zero)
+            float std_x = local_stds[y0*w+x0];
+            float std_y = local_stds[y1*w+x1];
+            float weight = 1.0f - getGaussianWeight(std_x, std_y, filter_param);
+
+            diff_std_map[y0*w+x0] += ((fabs(std_x - std_y)) * weight);
         }
     }
 }
@@ -102,34 +109,6 @@ float getExpDecayWeight(float ref, float comp){
 float getGaussianWeight(float ref, float comp, float h2){
     float weight = (-1) * (((fabs(comp-ref)) * (fabs(comp-ref))) / (h2 + EPSILON));
     weight = exp(weight);
+    weight = fmax(weight, 0.0f);
     return weight;
-}
-
-float getHausdorffDistance(float* ref_patch, float* comp_patch, int bL, int width){
-    float max_distance = 0.0f;
-    for(int j=0; j<bL; j++){
-        for(int i=0; i<bL; i++){
-            float min_distance = FLT_MAX;
-            for(int jj=0; jj<bL; jj++){
-                for(int ii=0; ii<bL; ii++){
-                    int ref_patch_id = j*bL+i;
-                    int comp_patch_id = jj*bL+ii;
-
-                    int ref_patch_x = (int) ref_patch[ref_patch_id] % width;
-                    int ref_patch_y = (int) ref_patch[ref_patch_id] / width;
-
-                    int comp_patch_x = (int) comp_patch[comp_patch_id] % width;
-                    int comp_patch_y = (int) comp_patch[comp_patch_id] / width;
-
-                    float distance = (float) sqrt((((float)ref_patch_x-(float)comp_patch_x)*((float)ref_patch_x-(float)comp_patch_x)) + (((float)ref_patch_y-(float)comp_patch_y)*((float)ref_patch_y-(float)comp_patch_y)));
-                    min_distance = min(min_distance, distance);
-                }
-            }
-            max_distance = fmax(max_distance, min_distance)+EPSILON;
-            max_distance = 1.0f / max_distance;
-            max_distance = fmin(max_distance, 1.0f);
-            //max_distance = fmax(1.0f/(fmax(max_distance, min_distance)+EPSILON), 1.0f);
-        }
-    }
-    return max_distance;
 }

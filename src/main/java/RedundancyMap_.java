@@ -1,17 +1,21 @@
 /**
- * OPENCL INITIALIZATION (CONTEXT, DEVICE, QUEUE) IS BEING HANDLED IN THIS CLASS, WHILE BUFFERS ARE HANDLED IN THE REDUNDANCY CLASS
+ * OPENCL INITIALIZATION (CONTEXT, DEVICE, QUEUE) IS BEING HANDLED IN THIS CLASS, WHILE BUFFERS ARE HANDLED IN THE
+ * REDUNDANCY CLASS. This is so that we can create the OpenCL context and devices once and calculate redundancy multiple
+ * times. Buffers, programs, kernels, etc, resources are managed in the "GlobalRedundancy" class.
  * TODO: Implement progress tracking
  * TODO: check kernels for division by zero
  **/
 
 import com.jogamp.opencl.*;
-import distance.Euclidean;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
+import ij.measure.UserFunction;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
+import ij.process.ImageProcessor;
+import jdk.nashorn.internal.objects.Global;
 import org.apache.commons.math3.ml.clustering.CentroidCluster;
 import org.apache.commons.math3.ml.clustering.KMeansPlusPlusClusterer;
 import org.apache.commons.math3.ml.distance.EuclideanDistance;
@@ -20,6 +24,8 @@ import org.apache.commons.math3.ml.clustering.DoublePoint;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class RedundancyMap_ implements PlugIn {
 
@@ -31,44 +37,53 @@ public class RedundancyMap_ implements PlugIn {
     @Override
     public void run(String s) {
 
-        // ---- Dialog box ----
+        float EPSILON = 0.0000001f;
+
+        // -------------------- //
+        // ---- Dialog box ---- //
+        // -------------------- //
+
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Redundancy map");
         gd.addNumericField("Box length in pixels: ", 3, 2);
         gd.addCheckbox("Stabilise variance?", false);
-        gd.addCheckbox("Use Gaussian windows?", false);
-        gd.addCheckbox("Use circular patches?", false);
-        gd.addNumericField("Sigma: ", 0.5f);
+        gd.addCheckbox("Rotation invariant?", false);
+        gd.addCheckbox("Multi-scale?", false);
         gd.showDialog();
         if (gd.wasCanceled()) return;
 
-        // ---- Patch parameters ----
+        // Get dialog parameters
         int bW = (int) gd.getNextNumber(); // Patch width
         int bH = bW; // Patch height
-        int downScale = 0; // Downscale factor
-        int speedUp = 0; // Speed up factor (0 = no speed up)
 
-        int useGAT = 0; // Use GAT (0 = no GAT)
+        int useGAT = 0; // Use GAT? (0 = no GAT)
         if(gd.getNextBoolean() == true) {
             useGAT = 1;
         }
 
-        int gaussWind = 0;
-        if(gd.getNextBoolean() == true){
-            gaussWind = 1;
-        }
-        float gaussSigma = (float) gd.getNextNumber();
-
-        int circle = 0;
-        if(gd.getNextBoolean() == true){
-            circle = 1;
+        int rotInv = 0; // Rotation invariant analysis?
+        if(gd.getNextBoolean() == true) {
+            rotInv = 1;
         }
 
-        float EPSILON = 0.0000001f;
+        int multiScale = 0; // Multi-scale anlysis?
+        if(gd.getNextBoolean() == true){
+            multiScale = 1;
+        }
 
-        // ---- Start timer ----
+        int downScale = 0; // Downscale factor
+        int speedUp = 0; // Speed up factor (0 = no speed up)
+
+
+        // --------------------- //
+        // ---- Start timer ---- //
+        // --------------------- //
         long start = System.currentTimeMillis();
 
-        // ---- Initialize OpenCL ----
+
+        // --------------------------- //
+        // ---- Initialize OpenCL ---- //
+        // --------------------------- //
+
         CLPlatform[] allPlatforms = CLPlatform.listCLPlatforms();
 
         try {
@@ -125,7 +140,11 @@ public class RedundancyMap_ implements PlugIn {
         // Create command queue
         queue = chosenDevice.createCommandQueue();
 
-        // ---- Get reference image and some parameters ----
+
+        // ------------------------------------------------- //
+        // ---- Get reference image and some parameters ---- //
+        // ------------------------------------------------- //
+
         ImagePlus imp0 = WindowManager.getCurrentImage();
         if (imp0 == null) {
             IJ.error("No image found. Please open an image and try again.");
@@ -141,53 +160,84 @@ public class RedundancyMap_ implements PlugIn {
         //int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         //int globalWorkSize = roundUp(localWorkSize, elementCount);
 
-        // ---- FIRST ROUND OF REDUNDANCY USING 0.25x IMAGE----
-        // Get downscaled image
-        if(downScale == 1) {
-            // Downscale image
-            int w025 = w0 / 2;
-            //int w025 = w0;
-            int h025 = h0 / 2;
-            //int h025 = h0;
-            ImagePlus imp025 = imp0.resize(w025, h025, "bicubic");
-            FloatProcessor fp025 = imp025.getProcessor().convertToFloatProcessor();
-            float[] refPixels025 = (float[]) fp025.getPixels();
 
-            // Calculate redundancy maps
-            GlobalRedundancy red025 = new GlobalRedundancy(refPixels025, w025, h025, bW, bH, EPSILON, context, queue,
-                    speedUp, useGAT, gaussWind, gaussSigma, circle);
-            red025.run();
-        }else{
+        // ---------------------------------- //
+        // ---- Calculate Redundancy Map ---- //
+        // ---------------------------------- //
+
+        IJ.log("Calculating redundancy...please wait...");
+
+        int rounds = 5; // How many scale levels should be analyzed
+        if(multiScale == 0){
             GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp,
-                    useGAT, gaussWind, gaussSigma, circle);
+                    useGAT, rotInv, 1, w0, h0);
             red0.run();
-        }
+        }else{
+            int scaleFactor = 1;
+            for(int i=0; i<rounds; i++){
+                // Downscale input image
+                int w1 = w0 / scaleFactor; // Width of the downscaled image
+                int h1 = h0 / scaleFactor; // Height of the downscaled image
+                ImagePlus temp = new ImagePlus("temp", fp0); // Clone original image
+                FloatProcessor fp1 = imp0.getProcessor().convertToFloatProcessor(); // Get blurred image processor
 
+                if(scaleFactor>1) {
+                    // Sequential blur and downscale until reaching the desired dimensions
+                    for(int j=0; j<i; j++) {
+                        IJ.run(temp, "Gaussian Blur...", "sigma=1"); // Apply gaussian blur (sigma is 1 px for every time we half the dimensions after)
+                        fp1 = temp.getProcessor().convertToFloatProcessor(); // Get blurred image processor
+                        fp1 = fp1.resize(w1, h1, true).convertToFloatProcessor(); // Downscale blurred image
+                        temp = new ImagePlus("temp", fp1);
+                    }
+                }
+
+                float[] refPixels1 = (float[]) fp1.getPixels(); // Get blurred and downscale pixel array
+
+                // Calculate redundancy map
+                GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, speedUp,
+                        useGAT, rotInv, i+1, w0, h0);
+                Thread thread = new Thread(red);
+                thread.start();
+                try {
+                    thread.join(); // Make sure previous thread is finished before starting a new one (avoids overload)
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                scaleFactor *= 2;
+            }
+
+        }
 
         // ---- Find sets of coordinates representing each unique redundancy value
         //float[] pearsonUnique = getUniqueValues(red025.pearsonMap, red025.w, red025.h, red025.bRW, red025.bRH);
         //int[] pearsonUniqueCoords = getUniqueValueCoordinates(pearsonUnique, red025.pearsonMap, red025.w, red025.h, red025.bRW, red025.bRH);
 
 
+        // ------------------------------- //
+        // ---- Cleanup GPU resources ---- //
+        // ------------------------------- //
 
-
-
-
-        // ---- Cleanup all resources associated with this context ----
         IJ.log("Cleaning up resources...");
         context.release();
         IJ.log("Done!");
         IJ.log("--------");
 
-        // ---- Stop timer ----
+
+        // -------------------- //
+        // ---- Stop timer ---- //
+        // -------------------- //
+
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
-        IJ.log("Elapsed time: " + elapsedTime + " ms");
+        IJ.log("Elapsed time: " + elapsedTime/1000 + " s");
         IJ.log("--------");
 
     }
 
-    // ---- USER FUNCTIONS ----
+    // ------------------------ //
+    // ---- USER FUNCTIONS ---- //
+    // ------------------------ //
+
     public static float[] getUniqueValues(float[] inArr, int w, int h, int offsetX, int offsetY){
         // Sort input array
         Arrays.sort(inArr);
@@ -267,5 +317,66 @@ public class RedundancyMap_ implements PlugIn {
         return optimalK;
     }
 
+    public static float[] applyGaussianBlur(float[] input, int width, int height, float sigma) {
+        // Create a Gaussian kernel
+        int size = (int) Math.ceil(sigma * 3) * 2 + 1;
+        float[] kernel = new float[size];
+        float sum = 0;
+        for (int i = 0; i < size; i++) {
+            float x = (float) (i - (size - 1) / 2.0);
+            kernel[i] = (float) Math.exp(-x * x / (2 * sigma * sigma));
+            sum += kernel[i];
+        }
+        for (int i = 0; i < size; i++) {
+            kernel[i] /= sum;
+        }
+
+        // Create a temporary array for the blurred image
+        float[] temp = new float[input.length];
+
+        // Blur each row
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                float sum1 = 0;
+                float sum2 = 0;
+                for (int i = 0; i < size; i++) {
+                    int x1 = x + i - (size - 1) / 2;
+                    if(x1 < 0 || x1 >= width) {
+                        continue;
+                    }
+                    int index = y*width+x1;
+                    float value = input[index];
+                    float weight = kernel[i];
+                    sum1 += value * weight;
+                    sum2 += weight;
+                }
+                int index = y * width + x;
+                temp[index] = sum1 / sum2;
+            }
+        }
+
+        // Blur each column
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                float sum1 = 0;
+                float sum2 = 0;
+                for (int i = 0; i < size; i++) {
+                    int y1 = y + i - (size - 1) / 2;
+                    if (y1 < 0 || y1 >= height) {
+                        continue;
+                    }
+                    int index = y1 * width + x;
+                    float value = temp[index];
+                    float weight = kernel[i];
+                    sum1 += value * weight;
+                    sum2 += weight;
+                }
+                int index = y * width + x;
+                input[index] = sum1 / sum2;
+            }
+        }
+
+        return input;
+    }
     // ADD FUNCTIONS HERE
 }

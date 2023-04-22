@@ -28,7 +28,10 @@ import static nanoj.core2.NanoJCL.replaceFirst;
 
 public class PatchRedTime_ implements PlugIn {
 
-    // OpenCL formats
+    // ------------------------ //
+    // ---- OpenCL formats ---- //
+    // ------------------------ //
+
     static private CLContext context;
 
     static private CLProgram programGetPatchMeans, programGetPatchPearson;
@@ -46,10 +49,18 @@ public class PatchRedTime_ implements PlugIn {
 
         float EPSILON = 0.0000001f;
 
-        // ---- Start timer ----
+
+        // --------------------- //
+        // ---- Start timer ---- //
+        // --------------------- //
+
         long start = System.currentTimeMillis();
 
-        // ---- Get reference image and some parameters ----
+
+        // ------------------------------------------------- //
+        // ---- Get reference image and some parameters ---- //
+        // ------------------------------------------------- //
+
         ImagePlus imp0 = WindowManager.getCurrentImage();
         if (imp0 == null) {
             IJ.error("No image found. Please open an image and try again.");
@@ -62,7 +73,6 @@ public class PatchRedTime_ implements PlugIn {
             return;
         }
 
-        ImageStack ims0 = imp0.getStack();
         ImageProcessor ipRef = imp0.getProcessor();
         FloatProcessor fpRef = ipRef.convertToFloatProcessor();
         float[] refFrame = (float[]) fpRef.getPixels();
@@ -87,27 +97,22 @@ public class PatchRedTime_ implements PlugIn {
         int bRW = bW/2; // Patch radius (x-axis)
         int bRH = bH/2; // Patch radius (y-axis)
         int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
-        int circle = 1; // Circular patches
-
-        int patchSize = 0;
-        if(circle==0){
-            patchSize = bW * bH; // Patch area
-        }else{
-            patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW));
-        }
-
+        int patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW));
         int centerX = bx + bRW; // Patch center (x-axis)
         int centerY = by + bRH; // Patch center (y-axis)
+        System.out.println("Center X: " + centerX + ", Center Y: " + centerY);
 
         // Verify that selected patch dimensions are odd
-        System.out.println(bW);
-        System.out.println(bH);
         if (bW % 2 == 0 || bH % 2 == 0) {
             IJ.error("Patch dimensions must be odd (e.g., 3x3 or 5x5). Please try again.");
             return;
         }
 
-        // ---- Stabilize noise variance using the Generalized Anscombe's transform ----
+
+        // ----------------------------------------------------------------------------- //
+        // ---- Stabilize noise variance using the Generalized Anscombe's transform ---- //
+        // ----------------------------------------------------------------------------- //
+
         // Run minimizer to find optimal gain, sigma and offset that minimize the error from a noise variance of 1
         GATMinimizer minimizer = new GATMinimizer(refFrame, w, h, 0, 100, 0);
         minimizer.run();
@@ -115,46 +120,53 @@ public class PatchRedTime_ implements PlugIn {
         // Get gain, sigma and offset from minimizer and transform pixel values
         refFrame = TransformImageByVST_.getGAT(refFrame, minimizer.gain, minimizer.sigma, minimizer.offset);
 
-        // ---- Normalize input image ----
-        float minMax[] = findMinMax(refFrame, w, h, 0, 0);
-        refFrame = normalize(refFrame, w, h, 0, 0, minMax, 1, 2);
 
-        // ---- Get patch ----
+        // ------------------------------- //
+        // ---- Normalize input image ---- //
+        // ------------------------------- //
+
+        float minMax[] = findMinMax(refFrame, w, h, 0, 0);
+        refFrame = normalize(refFrame, w, h, 0, 0, minMax, 0, 0);
+
+
+        // ------------------------------------------------- //
+        // ---- Get reference patch and some statistics ---- //
+        // ------------------------------------------------- //
+
+        // Get reference patch
         float[] refPatch = new float[patchSize];
         int counter = 0;
-
-        if(circle==0) {
-            for(int y=centerY-bRH; y<=centerY+bRH; y++) {
-                for (int x=centerX-bRW; x<=centerX+bRW; x++) {
+        float r2 = bRW*bRW;
+        for(int y=centerY-bRH; y<=centerY+bRH; y++) {
+            for (int x=centerX-bRW; x<=centerX+bRW; x++) {
+                //float dx = (float) (x - centerX);
+                //float dy = (float) (y - centerY);
+                if(x*x+y*y <= r2){
                     refPatch[counter] = refFrame[y*w+x];
+                    System.out.println("counter: "+counter);
                     counter++;
-                }
-            }
-        }else{
-            float r2 = bRW*bRW;
-            for(int y=centerY-bRH; y<=centerY+bRH; y++) {
-                for (int x=centerX-bRW; x<=centerX+bRW; x++) {
-                    if(x*x+y*y <= r2){
-                        refPatch[counter] = refFrame[y * w + x];
-                        counter++;
-                    }
                 }
             }
         }
 
-        // Get patch statistics
+        // Get reference patch statistics
         float patchStats[] = meanVarStd(refPatch);
         float mean = patchStats[0];
-        float var = patchStats[1];
-        float std = patchStats[2];
+        //float var = patchStats[1];
+        //float std = patchStats[2];
 
-        // Get mean subtracted patch
+        // Get mean-subtracted  reference patch
         float[] refPatchMeanSub = new float[patchSize];
         for(int i=0; i<patchSize; i++) {
             refPatchMeanSub[i] = refPatch[i] - mean;
         }
 
-        // ---- Check devices ----
+
+        // --------------------------- //
+        // ---- Initialise OpenCL ---- //
+        // --------------------------- //
+
+        // Check OpenCL devices
         CLPlatform[] allPlatforms = CLPlatform.listCLPlatforms();
 
         try {
@@ -184,11 +196,10 @@ public class PatchRedTime_ implements PlugIn {
         }
         IJ.log("--------");
 
-        // ---- Create context ----
+        // Create context
         context = CLContext.create(clPlatformMaxFlop);
 
-        // Choose the best device (i.e., Filter out CPUs if GPUs are available (FLOPS calculation was giving
-        // higher ratings to CPU vs. GPU))
+        // Choose the best device (i.e., Filter out CPUs if GPUs are available (FLOPS calculation was giving higher ratings to CPU vs. GPU))
         //TODO: Rate devices on Mandelbrot and chooose the best, GPU will perform better
         CLDevice[] allDevices = context.getDevices();
 
@@ -208,29 +219,31 @@ public class PatchRedTime_ implements PlugIn {
         IJ.log("Chosen device: " + chosenDevice.getName());
         IJ.log("--------");
 
-        // ---- Create command queue ----
+        // Create command queue
         queue = chosenDevice.createCommandQueue();
         int elementCount = w*h;
         int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
-        // ---- Local Means ----
-        // Create buffers
+        // ------------------------------- //
+        // ---- Calculate local means ---- //
+        // ------------------------------- //
+
+        // Create OpenCL buffers
         clRefPixels = context.createFloatBuffer(wh, READ_ONLY);
         clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
 
-        // Create program
+        // Create OpenCL program
         String programStringGetPatchMeans = getResourceAsString(PatchRed_.class, "kernelGetPatchMeans.cl");
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRW$", "" + bRW);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRH$", "" + bRH);
-        programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$CIRCLE$", "" + circle);
         programGetPatchMeans = context.createProgram(programStringGetPatchMeans).build();
 
-        // Create kernel and set args
+        // Create OpenCL kernel and set args
         kernelGetPatchMeans = programGetPatchMeans.createCLKernel("kernelGetPatchMeans");
 
         int argn = 0;
@@ -238,13 +251,17 @@ public class PatchRedTime_ implements PlugIn {
         kernelGetPatchMeans.setArg(argn++, clLocalMeans);
         kernelGetPatchMeans.setArg(argn++, clLocalStds);
 
-        // ---- PEARSON ----
-        // ---- Create buffers ----
+
+        // ------------------------------------------ //
+        // ---- Calculate Pearson's correlations ---- //
+        // ------------------------------------------ //
+
+        // Create OpenCL buffers
         clRefPatch = context.createFloatBuffer(patchSize, READ_ONLY);
         clRefPatchMeanSub = context.createFloatBuffer(patchSize, READ_ONLY);
         clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
 
-        // ---- Pearson correlation ----
+        // Create OpenCL program
         String programStringGetPatchPearson = getResourceAsString(PatchRed_.class, "kernelGetPatchPearson.cl");
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$WIDTH$", "" + w);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$HEIGHT$", "" + h);
@@ -254,10 +271,9 @@ public class PatchRedTime_ implements PlugIn {
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRW$", "" + bRW);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRH$", "" + bRH);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$EPSILON$", "" + EPSILON);
-        programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$CIRCLE$", "" + circle);
         programGetPatchPearson = context.createProgram(programStringGetPatchPearson).build();
 
-        // Create kernel and set args
+        // Create OpenCL kernel and set args
         kernelGetPatchPearson = programGetPatchPearson.createCLKernel("kernelGetPatchPearson");
 
         argn = 0;
@@ -266,11 +282,11 @@ public class PatchRedTime_ implements PlugIn {
         kernelGetPatchPearson.setArg(argn++, clLocalStds);
         kernelGetPatchPearson.setArg(argn++, clPearsonMap);
 
-        // Fill buffers
+        // Fill OpenCL buffers
         fillBufferWithFloatArray(clRefPatch, refPatch);
         fillBufferWithFloatArray(clRefPatchMeanSub, refPatchMeanSub);
 
-        // CALCULATE
+        // Calculate
         float[] refPixels;
         float[] localMeans = new float[wh];
         float[] localStds = new float[wh];
@@ -280,10 +296,11 @@ public class PatchRedTime_ implements PlugIn {
         float[][] finalLocalStds = new float[nFrames][wh];
         float[][] finalPearsonMap = new float[nFrames][wh];
 
+        ImageStack ims0 = imp0.getStack();
         for(int i=1; i<=nFrames; i++) {
             IJ.log("Calculating redundancy " + i + "/" + nFrames);
-            IJ.showStatus("Calculating redundancy" + i + "/" + nFrames);
-            // ---- Stabilize noise variance using the Generalized Anscombe's transform ----
+            IJ.showStatus("Calculating redundancy " + i + "/" + nFrames);
+            // Stabilize noise variance using the Generalized Anscombe's transform
             // Run minimizer to find optimal gain, sigma and offset that minimize the error from a noise variance of 1
             ipRef = ims0.getProcessor(i).convertToFloatProcessor();
             fpRef = ipRef.convertToFloatProcessor();
@@ -295,16 +312,16 @@ public class PatchRedTime_ implements PlugIn {
             // Get gain, sigma and offset from minimizer and transform pixel values
             refPixels = TransformImageByVST_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
 
-            // ---- Normalize input image ----
+            // Normalize input image
             minMax = findMinMax(refPixels, w, h, 0, 0);
-            refPixels = normalize(refPixels, w, h, 0, 0, minMax, 1, 2);
+            refPixels = normalize(refPixels, w, h, 0, 0, minMax, 0, 0);
 
-            // ---- Fill buffers ----
+            // Fill OpenCL buffers
             fillBufferWithFloatArray(clRefPixels, refPixels);
             fillBufferWithFloatArray(clLocalMeans, localMeans);
             fillBufferWithFloatArray(clLocalStds, localStds);
 
-            // ---- Calculate local means and StdDevs ----
+            // Calculate local means and StdDevs
             queue.putWriteBuffer(clRefPixels, false);
             queue.putWriteBuffer(clLocalMeans, false);
             queue.putWriteBuffer(clLocalStds, false);
@@ -312,7 +329,7 @@ public class PatchRedTime_ implements PlugIn {
             queue.put2DRangeKernel(kernelGetPatchMeans, 0, 0, w, h, 0, 0);
             queue.finish();
 
-            // ---- Read the local means map back from the GPU ----
+            // Read the local means map back from the GPU
             queue.putReadBuffer(clLocalMeans, true);
             for (int y=0; y<h; y++) {
                 for(int x=0; x<w; x++) {
@@ -321,7 +338,7 @@ public class PatchRedTime_ implements PlugIn {
             }
             queue.finish();
 
-            // ---- Read the local stds map back from the GPU ----
+            // Read the local stds map back from the GPU
             queue.putReadBuffer(clLocalStds, true);
             for (int y=0; y<h; y++) {
                 for (int x=0; x<w; x++) {
@@ -330,15 +347,14 @@ public class PatchRedTime_ implements PlugIn {
             }
             queue.finish();
 
-            // ---- PEARSON ----
+            // Calculate Pearson's correlations
             fillBufferWithFloatArray(clPearsonMap, pearsonMap);
 
-            // Calculate Pearson's correlation coefficient ----
             queue.putWriteBuffer(clPearsonMap, false);
             queue.put2DRangeKernel(kernelGetPatchPearson, 0, 0, w, h, 0, 0);
             queue.finish();
 
-            // Read Pearson's coefficients back from the GPU
+            // Read Pearson's correlations back from the GPU
             queue.putReadBuffer(clPearsonMap, true);
             for (int y = 0; y<h; y++) {
                 for(int x=0; x<w; x++) {
@@ -352,13 +368,21 @@ public class PatchRedTime_ implements PlugIn {
         IJ.log("Done!");
         IJ.log("--------");
 
-        // ---- Cleanup all resources associated with this context ----
+
+        // ------------------------------- //
+        // ---- Cleanup GPU resources ---- //
+        // ------------------------------- //
+
         IJ.log("Cleaning up resources...");
         context.release();
         IJ.log("Done!");
         IJ.log("--------");
 
-        // ---- Display results ----
+
+        // ------------------------- //
+        // ---- Display results ---- //
+        // ------------------------- //
+
         IJ.log("Preparing results for display...");
 
         // Pearson map (stack)
@@ -366,21 +390,27 @@ public class PatchRedTime_ implements PlugIn {
         for(int i=1; i<=nFrames; i++){
             float[] pearsonMinMax = findMinMax(finalPearsonMap[i-1], w, h, bRW, bRH);
             float[] pearsonMapNorm = normalize(finalPearsonMap[i-1], w, h, bRW, bRH, pearsonMinMax, 0, 0);
-            FloatProcessor fp = new FloatProcessor(w, h, pearsonMapNorm);
             imsPearson.setPixels(pearsonMapNorm, i);
         }
 
         ImagePlus imp1 = new ImagePlus("Pearson's Map", imsPearson);
         imp1.show();
 
-        // ---- Stop timer ----
+
+        // -------------------- //
+        // ---- Stop timer ---- //
+        // -------------------- //
+
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
         IJ.log("--------");
     }
 
-    // ---- USER FUNCTIONS ----
+    // ------------------------ //
+    // ---- USER FUNCTIONS ---- //
+    // ------------------------ //
+
     private float[] meanVarStd (float a[]){
         int n = a.length;
         if (n == 0) return new float[]{0, 0, 0};
@@ -400,28 +430,9 @@ public class PatchRedTime_ implements PlugIn {
 
     }
 
-    public static void fillBufferWithFloat(CLBuffer<FloatBuffer> clBuffer, float pixel) {
-        FloatBuffer buffer = clBuffer.getBuffer();
-        buffer.put(pixel);
-    }
-
     public static void fillBufferWithFloatArray(CLBuffer<FloatBuffer> clBuffer, float[] pixels) {
         FloatBuffer buffer = clBuffer.getBuffer();
         for(int n=0; n<pixels.length; n++) {
-            buffer.put(n, pixels[n]);
-        }
-    }
-
-    public static void fillBufferWithDoubleArray(CLBuffer<DoubleBuffer> clBuffer, double[] pixels) {
-        DoubleBuffer buffer = clBuffer.getBuffer();
-        for(int n=0; n< pixels.length; n++) {
-            buffer.put(n, pixels[n]);
-        }
-    }
-
-    public static void fillBufferWithShortArray(CLBuffer<ShortBuffer> clBuffer, short[] pixels) {
-        ShortBuffer buffer = clBuffer.getBuffer();
-        for(int n=0; n< pixels.length; n++) {
             buffer.put(n, pixels[n]);
         }
     }
@@ -494,59 +505,6 @@ public class PatchRedTime_ implements PlugIn {
             }
         }
         return normalizedPixels;
-    }
-
-    public static double getInvariant(float[] patch, int w, int h, int p, int q){
-        // Get centroid x and y
-        double moment_10 = 0.0f;
-        double moment_01 = 0.0f;
-        double moment_00 = 0.0f;
-        for(int j=0; j<h; j++){
-            for(int i=0; i<w; i++){
-                moment_10 += patch[j*w+i] * i;
-                moment_01 += patch[j*w+i] * j;
-                moment_00 += patch[j*w+i];
-            }
-        }
-
-        double centroid_x = moment_10 / (moment_00 + 0.000001f);
-        double centroid_y = moment_01 / (moment_00 + 0.000001f);
-
-        // Get mu_pq
-        double mu_pq = 0.0f;
-        for(int j=0; j<h; j++){
-            for(int i=0; i<w; i++){
-                mu_pq += patch[j*w+i] + pow(i+1-centroid_x, p) * pow(j+1-centroid_y, q);
-            }
-        }
-
-        float invariant = (float) (mu_pq / pow(moment_00, (1+(p+q/2))));
-        return invariant;
-    }
-
-    public float[] makeGaussianKernel(int size, float sigma){
-        float[] kernel = new float[size*size];
-        float sumTotal = 0;
-
-        int radius = size/2;
-        float distance = 0;
-
-        float euler = (float) (1.0f / (2.0 * Math.PI * (sigma*sigma)));
-
-        for(int j=-radius; j<=radius; j++){
-            for(int i=-radius; i<=radius; i++){
-                distance = ((i*i)+(j*j)) / (2 * (sigma*sigma));
-                kernel[(j+radius)*size+(i+radius)] = (float) (euler * Math.exp(-distance));
-                sumTotal += kernel[(j+radius)*size+(i+radius)];
-            }
-        }
-
-        for(int i=0; i<size*size; i++){
-            kernel[i] = kernel[i] / sumTotal;
-            System.out.println(kernel[i]);
-        }
-
-        return kernel;
     }
 }
 
