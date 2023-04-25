@@ -169,8 +169,9 @@ public class RedundancyMap_ implements PlugIn {
 
         int rounds = 5; // How many scale levels should be analyzed
         if(multiScale == 0){
+            int scaleFactor = 1;
             GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp,
-                    useGAT, rotInv, 1, w0, h0);
+                    useGAT, rotInv, scaleFactor, 1, w0, h0);
             red0.run();
         }else{
             int scaleFactor = 1;
@@ -182,7 +183,7 @@ public class RedundancyMap_ implements PlugIn {
                 FloatProcessor fp1 = imp0.getProcessor().convertToFloatProcessor(); // Get blurred image processor
 
                 if(scaleFactor>1) {
-                    // Sequential blur and downscale until reaching the desired dimensions
+                    // Sequential blur and downscale until reaching the desired dimensions (skip first iteration)
                     for(int j=0; j<i; j++) {
                         IJ.run(temp, "Gaussian Blur...", "sigma=1"); // Apply gaussian blur (sigma is 1 px for every time we half the dimensions after)
                         fp1 = temp.getProcessor().convertToFloatProcessor(); // Get blurred image processor
@@ -195,7 +196,7 @@ public class RedundancyMap_ implements PlugIn {
 
                 // Calculate redundancy map
                 GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, speedUp,
-                        useGAT, rotInv, i+1, w0, h0);
+                        useGAT, rotInv, scaleFactor, i+1, w0, h0);
                 Thread thread = new Thread(red);
                 thread.start();
                 try {

@@ -49,11 +49,11 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
     public float[] refPixels, localMeans, localStds, pearsonMap, diffStdMap, nrmseMap, maeMap, psnrMap, ssimMap, luminanceMap,
             contrastMap, structureMap, huMap, entropyMap, phaseCorrelationMap, hausdorffMap;
-    public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, speedUp, useGAT, rotInv, level, w0, h0;
+    public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, speedUp, useGAT, rotInv, scaleFactor, level, w0, h0;
     public float EPSILON;
 
     public GlobalRedundancy(float[] refPixels, int w, int h, int bW, int bH, float EPSILON, CLContext context,
-                            CLCommandQueue queue, int speedUp, int useGAT, int rotInv, int level, int w0, int h0){
+                            CLCommandQueue queue, int speedUp, int useGAT, int rotInv, int scaleFactor, int level, int w0, int h0){
         this.refPixels = refPixels;
         this.w = w;
         this.h = h;
@@ -71,6 +71,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         this.speedUp = speedUp;
         this.useGAT = useGAT;
         this.rotInv = rotInv;
+        this.scaleFactor = scaleFactor;
         this.level = level;
         this.w0 = w0;
         this.h0 = h0;
@@ -283,14 +284,15 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                     diffStdMap[j*w+i] = 1.0f - diffStdMap[j*w+i];
                 }
             }
+            diffStdMap = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
 
             // Filter out regions with low noise variance
             float[] localVars = new float[wh];
             float noiseMeanVar = 0.0f;
             int counter = 0;
             float value = 0.0f;
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
+            for(int j=0; j<h; j++){
+                for(int i=0; i<w; i++){
                     value = localStds[j*w+i]*localStds[j*w+i];
                     localVars[j*w+i] = value;
                     noiseMeanVar += value;
@@ -299,8 +301,8 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             }
             noiseMeanVar /= counter;
 
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
+            for(int j=0; j<h; j++){
+                for(int i=0; i<w; i++){
                     if(localVars[j*w+i]<noiseMeanVar){
                         diffStdMap[j*w+i] = 0.0f;
                     }
@@ -372,7 +374,6 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             clPearsonMap.release();
 
             // Filter out regions with low noise variance
-            // Invert values (because so far we have inverse frequencies)
             float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
             pearsonMap = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
 
@@ -380,18 +381,21 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             float noiseMeanVar = 0.0f;
             int counter = 0;
             float value;
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
+            for(int j=0; j<h; j++){
+                for(int i=0; i<w; i++){
                     value = localStds[j*w+i]*localStds[j*w+i];
                     localVars[j*w+i] = value;
+                    if(i<bRW || i>=w-bRW || j<bRH || j>=h-bRH){
+                        continue;
+                    }
                     noiseMeanVar += value;
                     counter++;
                 }
             }
             noiseMeanVar /= counter;
 
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
+            for(int j=0; j<h; j++){
+                for(int i=0; i<w; i++){
                     if(localVars[j*w+i]<noiseMeanVar){
                         pearsonMap[j*w+i] = 0.0f;
                     }
@@ -931,33 +935,45 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         ims.addSlice("Absolute Difference of StdDevs", fp1);
         ims.addSlice("Pearson", fp2);
 
-        //ims.addSlice("NRMSE", fp2);
-        //ims.addSlice("MAE", fp3);
-        //ims.addSlice("PSNR", fp4);
-        //ims.addSlice("SSIM", fp5);
-        //ims.addSlice("Luminance", fp11);
-        //ims.addSlice("Contrast", fp12);
-        //ims.addSlice("Structure", fp13);
-        //ims.addSlice("Hausdorff", fp14);
-        //ims.addSlice("Hu", fp6);
-        //ims.addSlice("Entropy", fp7);
 
-        FloatProcessor fp9 = new FloatProcessor(w, h, localStds);
+        FloatProcessor fp3 = new FloatProcessor(w, h, localStds);
         //fp9 = fp9.resize(w0, h0, true).convertToFloatProcessor();
-        ims.addSlice("Local stds", fp9);
+        ims.addSlice("Local stds", fp3);
 
         //FloatProcessor fp10 = new FloatProcessor(w, h, weightSum);
         //ims.addSlice("Weight sum", fp10);
 
-        // Scale back to original dimensions (with bicubic interpolation) (TODO: CHANGE THIS FOR SINGLE IMAGE INSTEAD OF STACK WHEN STACK ISNT NEEDED ANYMORE)
+
+        // ------------------------------------------- //
+        // ---- Scale back to original dimensions ---- // (TODO: CHANGE THIS FOR SINGLE IMAGE INSTEAD OF STACK WHEN STACK ISNT NEEDED ANYMORE)
+        // ------------------------------------------- //
+
+        // Resize
         int nSlices = ims.getSize();
         ImageStack imsFinal = new ImageStack(w0, h0, nSlices);
+        int newBRW = bRW * scaleFactor;
+        int newBRH = bRH * scaleFactor;
 
-        for(int i=1; i<=nSlices;i++){
-            ImageProcessor ip = ims.getProcessor(i);
-            ip.setInterpolationMethod(ImageProcessor.BICUBIC);
-            ip = ip.resize(w0, h0);
-            imsFinal.setProcessor(ip, i);
+        for(int i=1; i<=nSlices;i++) {
+            // Get downscaled image without border (so that later we don't interpolate edges)
+            FloatProcessor fpDowscaled = ims.getProcessor(i).convertToFloatProcessor();
+            fpDowscaled.setRoi(bRW, bRH, w-2*bRW, h-2*bRH);
+            FloatProcessor fpCropped = fpDowscaled.crop().convertToFloatProcessor();
+
+            // Upscale crop
+            fpCropped.setInterpolationMethod(ImageProcessor.BICUBIC);
+            FloatProcessor fpUpscaled = fpCropped.resize(w0-2*newBRW, h0-2*newBRH, true).convertToFloatProcessor();
+
+            // Map upscaled crop to upscaled image with borders
+            FloatProcessor fpFinal = new FloatProcessor(w0, h0);
+            fpFinal.insert(fpUpscaled, newBRW, newBRH);
+
+            // Normalize while avoiding borders (TODO: OVERIMPOSE BORDERS IN ALL SCALES)
+            float[] tempImg = (float[]) fpFinal.getPixels();
+            float[] tempMinMax = findMinMax(tempImg, w0, h0, newBRW, newBRH);
+            tempImg = normalize(tempImg, w0, h0, newBRW, newBRH, tempMinMax, 0, 0);
+            fpFinal = new FloatProcessor(w0, h0, tempImg);
+            imsFinal.setProcessor(fpFinal, i);
         }
 
         ImagePlus impFinal = new ImagePlus("Redundancy Maps (level = " + level + ")", imsFinal);
