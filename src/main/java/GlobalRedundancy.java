@@ -290,7 +290,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             float[] localVars = new float[wh];
             float noiseMeanVar = 0.0f;
             int counter = 0;
-            float value = 0.0f;
+            float value;
             for(int j=0; j<h; j++){
                 for(int i=0; i<w; i++){
                     value = localStds[j*w+i]*localStds[j*w+i];
@@ -376,7 +376,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             // Filter out regions with low noise variance
             float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
             pearsonMap = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
-
+/*
             float[] localVars = new float[wh];
             float noiseMeanVar = 0.0f;
             int counter = 0;
@@ -401,6 +401,8 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                     }
                 }
             }
+
+ */
         }
 
 
@@ -975,6 +977,35 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             fpFinal = new FloatProcessor(w0, h0, tempImg);
             imsFinal.setProcessor(fpFinal, i);
         }
+
+        // Filter out regions with low variance
+        float[] upscaledVars = (float[]) imsFinal.getProcessor(3).convertToFloatProcessor().getPixels();
+        float noiseMeanVar = 0.0f;
+        int counter = 0;
+        float value;
+        for(int j=0; j<h0; j++){
+            for(int i=0; i<w0; i++){
+                if(i<newBRW || i>=w0-newBRW || j<newBRH || j>=h0-newBRH){
+                    continue;
+                }
+                value = upscaledVars[j*w0+i]*upscaledVars[j*w0+i];
+                upscaledVars[j*w0+i] = value;
+                noiseMeanVar += value;
+                counter++;
+            }
+        }
+        noiseMeanVar /= counter;
+
+        for(int n=1; n<nSlices; n++) {
+            for (int j=0; j<h0; j++) {
+                for (int i=0; i<w0; i++) {
+                    if (upscaledVars[j*w0+i] < noiseMeanVar) {
+                        imsFinal.getProcessor(n).setf(j*w0+i, 0.0f);
+                    }
+                }
+            }
+        }
+
 
         ImagePlus impFinal = new ImagePlus("Redundancy Maps (level = " + level + ")", imsFinal);
         impFinal.show();
