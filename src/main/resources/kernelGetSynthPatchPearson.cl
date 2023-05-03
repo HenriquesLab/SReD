@@ -1,14 +1,16 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
-#define center_x $CENTER_X$
-#define center_y $CENTER_Y$
 #define patch_size $PATCH_SIZE$
+#define bW $BW$
+#define bH $BH$
 #define bRW $BRW$
 #define bRH $BRH$
+#define ref_std $PATCH_STD$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetPatchPearson(
+kernel void kernelGetSynthPatchPearson(
+    global float* patch_pixels,
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
@@ -23,20 +25,17 @@ kernel void kernelGetPatchPearson(
         return;
     }
 
-    // Get mean_subtracted reference patch
+    // Get mean_subtracted reference patch from buffer
     __local float ref_patch[patch_size];
-
-    float ref_mean = local_means[center_y*w+center_x];
-    float ref_std = local_stds[center_y*w+center_x];
 
     int counter = 0;
     float r2 = bRW*bRW;
-    for(int j=center_y-bRH; j<=center_y+bRH; j++){
-        for(int i=center_x-bRW; i<=center_x+bRW; i++){
-            float dx = (float)(i-center_x);
-            float dy = (float)(j-center_y);
+    for(int j=0; j<bH; j++){
+        for(int i=0; i<bW; i++){
+            float dx = (float)(i-bRW);
+            float dy = (float)(j-bRW);
             if(dx*dx + dy*dy <= r2){
-                ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
+                ref_patch[counter] = patch_pixels[j*bW+i];
                 counter++;
             }
         }

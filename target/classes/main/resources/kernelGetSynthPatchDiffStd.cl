@@ -1,18 +1,20 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
-#define center_x $CENTER_X$
-#define center_y $CENTER_Y$
 #define patch_size $PATCH_SIZE$
+#define bW $BW$
+#define bH $BH$
 #define bRW $BRW$
 #define bRH $BRH$
+#define ref_std $PATCH_STD$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetPatchPearson(
+kernel void kernelGetSynthPatchDiffStd(
+    global float* patch_pixels,
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
-    global float* pearson_map
+    global float* diff_std_map
 ){
 
     int gx = get_global_id(0);
@@ -23,20 +25,17 @@ kernel void kernelGetPatchPearson(
         return;
     }
 
-    // Get mean_subtracted reference patch
+    // Get mean_subtracted reference patch from buffer
     __local float ref_patch[patch_size];
-
-    float ref_mean = local_means[center_y*w+center_x];
-    float ref_std = local_stds[center_y*w+center_x];
 
     int counter = 0;
     float r2 = bRW*bRW;
-    for(int j=center_y-bRH; j<=center_y+bRH; j++){
-        for(int i=center_x-bRW; i<=center_x+bRW; i++){
-            float dx = (float)(i-center_x);
-            float dy = (float)(j-center_y);
+    for(int j=0; j<bH; j++){
+        for(int i=0; i<bW; i++){
+            float dx = (float)(i-bRW);
+            float dy = (float)(j-bRH);
             if(dx*dx + dy*dy <= r2){
-                ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
+                ref_patch[counter] = ref_pixels[j*bW+i];
                 counter++;
             }
         }
@@ -49,24 +48,17 @@ kernel void kernelGetPatchPearson(
     float comp_std = local_stds[gy*w+gx];
 
     counter = 0;
-    float covar = 0.0f;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
             float dx = (float)(i-gx);
             float dy = (float)(j-gy);
             if(dx*dx+dy*dy <= r2){
                 comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
-                covar += ref_patch[counter] * comp_patch[counter];
                 counter++;
             }
         }
     }
-    covar /= patch_size;
 
-    // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-    if(ref_std == 0.0f && comp_std == 0.0f){
-        pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
-    }else{
-        pearson_map[gy*w+gx] = (float) fmax(0.0f, (float)(covar / ((ref_std * comp_std) + EPSILON))); // Pearson distance, Truncate anti-correlations
-    }
+    // Calculate absolute difference of standard deviations
+    diff_std_map[gy*w+gx] = fabs(ref_std - comp_std);
 }

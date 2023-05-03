@@ -68,8 +68,6 @@ kernel void kernelGetDiffStdMap(
             // Get mean-subtracted patch and local standard deviation
             float comp_patch[patch_size] = {0.0f};
             float comp_mean = local_means[y1*w+x1];
-            float covar = 0.0f;
-
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
@@ -77,19 +75,15 @@ kernel void kernelGetDiffStdMap(
                     float dy = (float)(j1-y1);
                     if(dx*dx+dy*dy <= r2){
                         comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
-                        covar += ref_patch[comp_counter] * comp_patch[comp_counter];
                         comp_counter++;
                     }
                 }
             }
 
-            covar /= patch_size;
-
             // Calculate absolute difference of standard deviations add it to the sum at X (avoiding division by zero)
             float std_x = local_stds[y0*w+x0];
             float std_y = local_stds[y1*w+x1];
             float weight = 1.0f - getGaussianWeight(std_x, std_y, filter_param);
-
             diff_std_map[y0*w+x0] += ((fabs(std_x - std_y)) * weight);
         }
     }

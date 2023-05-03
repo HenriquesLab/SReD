@@ -970,7 +970,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             FloatProcessor fpFinal = new FloatProcessor(w0, h0);
             fpFinal.insert(fpUpscaled, newBRW, newBRH);
 
-            // Normalize while avoiding borders (TODO: OVERIMPOSE BORDERS IN ALL SCALES)
+            // Normalize while avoiding borders (TODO: OVERIMPOSE BORDERS IN ALL SCALES, BASICALLY OVERIMPOSE BORDER OF LAST LEVEL)
             float[] tempImg = (float[]) fpFinal.getPixels();
             float[] tempMinMax = findMinMax(tempImg, w0, h0, newBRW, newBRH);
             tempImg = normalize(tempImg, w0, h0, newBRW, newBRH, tempMinMax, 0, 0);

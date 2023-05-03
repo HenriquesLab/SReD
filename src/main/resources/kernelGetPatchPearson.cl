@@ -64,10 +64,9 @@ kernel void kernelGetPatchPearson(
     covar /= patch_size;
 
     // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-    pearson_map[gy*w+gx] = fabs(ref_std - comp_std);
-    //if(ref_std == 0.0f && comp_std == 0.0f){
-    //    pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
-    //}else{
-    //    pearson_map[gy*w+gx] = (float) fmax(0.0f, (float)(covar / ((ref_std * comp_std) + EPSILON))); // Pearson distance, Truncate anti-correlations
-    //}
+    if(ref_std == 0.0f && comp_std == 0.0f){
+        pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
+    }else{
+        pearson_map[gy*w+gx] = (float) fmax(0.0f, (float)(covar / ((ref_std * comp_std) + EPSILON))); // Pearson distance, Truncate anti-correlations
+    }
 }

@@ -11,25 +11,22 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
-import ij.measure.UserFunction;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
-import jdk.nashorn.internal.objects.Global;
 import org.apache.commons.math3.ml.clustering.CentroidCluster;
 import org.apache.commons.math3.ml.clustering.KMeansPlusPlusClusterer;
 import org.apache.commons.math3.ml.distance.EuclideanDistance;
 import org.apache.commons.math3.ml.clustering.DoublePoint;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class RedundancyMap_ implements PlugIn {
 
-    // OpenCL formats
+    // --------------------------- //
+    // ---- Initialize OpenCL ---- //
+    // --------------------------- //
+
     static private CLContext context;
     static private CLPlatform clPlatformMaxFlop;
     static private CLCommandQueue queue;
@@ -38,6 +35,7 @@ public class RedundancyMap_ implements PlugIn {
     public void run(String s) {
 
         float EPSILON = 0.0000001f;
+
 
         // -------------------- //
         // ---- Dialog box ---- //
