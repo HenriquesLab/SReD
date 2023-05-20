@@ -6,6 +6,7 @@
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define weights_sum $WEIGHTS_SUM$
 #define EPSILON $EPSILON$
 
 kernel void kernelGetPatchDiffStd(

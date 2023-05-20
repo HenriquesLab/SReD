@@ -3,23 +3,25 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
-import ij.gui.Roi;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
-import java.awt.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
+import java.nio.ShortBuffer;
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
+import static ij.WindowManager.getIDList;
+import static ij.WindowManager.getImageCount;
 import static java.lang.Math.*;
 import static nanoj.core2.NanoJCL.replaceFirst;
 
 
-public class PatchRed_ implements PlugIn {
+public class ArtificialBlockRedundancy_ implements PlugIn {
 
     // ------------------------ //
     // ---- OpenCL formats ---- //
@@ -27,15 +29,15 @@ public class PatchRed_ implements PlugIn {
 
     static private CLContext context;
 
-    static private CLProgram programGetPatchMeans, programGetPatchDiffStd, programGetPatchPearson;
+    static private CLProgram programGetPatchMeans, programGetSynthPatchDiffStd, programGetSynthPatchPearson;
 
-    static private CLKernel kernelGetPatchMeans, kernelGetPatchDiffStd, kernelGetPatchPearson;
+    static private CLKernel kernelGetPatchMeans, kernelGetSynthPatchDiffStd, kernelGetSynthPatchPearson;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clDiffStdMap, clPearsonMap;
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPatchPixels, clDiffStdMap, clPearsonMap;
 
     @Override
     public void run(String s) {
@@ -47,9 +49,20 @@ public class PatchRed_ implements PlugIn {
         // ---- Dialog box ---- //
         // -------------------- //
 
+        // Get all open image titles
+        int  nImages = getImageCount();
+        int[] ids = getIDList();
+        String[] titles = new String[nImages];
+        for(int i=0; i<nImages; i++){
+            titles[i] = WindowManager.getImage(ids[i]).getTitle();
+        }
+
         // Initialize dialog box
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Block Redundancy");
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Artificial Block Redundancy");
         gd.addCheckbox("Rotation invariant?", false);
+        gd.addChoice("Patch:", titles, titles[0]);
+        gd.addChoice("Image:", titles, titles[1]);
+        gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
         gd.showDialog();
         if (gd.wasCanceled()) return;
 
@@ -58,6 +71,24 @@ public class PatchRed_ implements PlugIn {
         if(gd.getNextBoolean() == true) {
             rotInv = 1;
         }
+
+        String patchTitle = gd.getNextChoice();
+        int patchID = 0;
+        for(int i=0; i<nImages; i++){
+            if(titles[i] == patchTitle){
+                patchID = ids[i];
+            }
+        }
+
+        String imgTitle = gd.getNextChoice();
+        int imgID = 0;
+        for(int i=0; i<nImages; i++){
+            if(titles[i] == imgTitle){
+                imgID = ids[i];
+            }
+        }
+
+        float filterConstant = (float) gd.getNextNumber();
 
 
         // --------------------- //
@@ -68,12 +99,36 @@ public class PatchRed_ implements PlugIn {
 
 
         // ------------------------------------------------- //
+        // ---- Get reference patch and some parameters ---- //
+        // ------------------------------------------------- //
+        ImagePlus imp = WindowManager.getImage(patchID);
+        if (imp == null) {
+            IJ.error("Patch image not found. Try again.");
+            return;
+        }
+        ImageProcessor ip = imp.getProcessor();
+        FloatProcessor fp = ip.convertToFloatProcessor();
+        float[] patchPixels = (float[]) fp.getPixels();
+        int bW = fp.getWidth(); // Patch width
+        int bH = fp.getHeight(); // Patch height
+        int bRW = bW/2; // Patch radius (x-axis)
+        int bRH = bH/2; // Patch radius (y-axis)
+        int patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW)); // Number of pixels in a circular patch
+
+        // Check if patch dimensions are odd
+        if (bW % 2 == 0 || bH % 2 == 0) {
+            IJ.error("Patch dimensions must be odd (e.g., 3x3 or 5x5). Please try again.");
+            return;
+        }
+
+
+        // ------------------------------------------------- //
         // ---- Get reference image and some parameters ---- //
         // ------------------------------------------------- //
 
-        ImagePlus imp0 = WindowManager.getCurrentImage();
+        ImagePlus imp0 = WindowManager.getImage(imgID);
         if (imp0 == null) {
-            IJ.error("No image found. Please open an image and try again.");
+            IJ.error("Image not found. Try again.");
             return;
         }
         ImageProcessor ip0 = imp0.getProcessor();
@@ -81,53 +136,42 @@ public class PatchRed_ implements PlugIn {
         float[] refPixels = (float[]) fp0.getPixels();
         int w = fp0.getWidth();
         int h = fp0.getHeight();
-        int wh = w * h;
-
-        // Check if patch is selected
-        Roi roi = imp0.getRoi();
-        if (roi == null) {
-            IJ.error("No ROI selected. Please draw a rectangle and try again.");
-            return;
-        }
-
-        // Check if patch dimensions are odd and get patch parameters
-        Rectangle rect = ip0.getRoi(); // Getting ROI from float processor is not working correctly
-        int bx = rect.x; // x-coordinate of the top left corner of the rectangle
-        int by = rect.y; // y-coordinate of the top left corner of the rectangle
-        int bW = rect.width; // Patch width
-        int bH = rect.height; // Patch height
-        int bRW = bW/2; // Patch radius (x-axis)
-        int bRH = bH/2; // Patch radius (y-axis)
+        int wh = w*h;
         int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
-        int patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW)); // Number of pixels in a circular patch
-        int centerX = bx + bRW; // Reference patch center (x-axis)
-        int centerY = by + bRH; // Reference patch center (y-axis)
-
-        // Verify that selected patch dimensions are odd
-        if (bW % 2 == 0 || bH % 2 == 0) {
-            IJ.error("Patch dimensions must be odd (e.g., 3x3 or 5x5). Please try again.");
-            return;
-        }
 
 
         // ---------------------------------- //
         // ---- Stabilize noise variance ---- //
         // ---------------------------------- //
 
-        // Run minimizer to find optimal gain, sigma and offset that minimize the error from a noise variance of 1
-        GATMinimizer minimizer = new GATMinimizer(refPixels, w, h, 0, 100, 0);
+        // Patch
+        GATMinimizer minimizer = new GATMinimizer(patchPixels, bW, bH, 0, 100, 0);
         minimizer.run();
+        patchPixels = TransformImageByVST_.getGAT(patchPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
 
-        // Get gain, sigma and offset from minimizer and transform pixel values
+        // Image
+        minimizer = new GATMinimizer(refPixels, w, h, 0, 100, 0);
+        minimizer.run();
         refPixels = TransformImageByVST_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
-        // ------------------------------- //
-        // ---- Normalize input image ---- //
-        // ------------------------------- //
+        // ----------------------------------- //
+        // ---- Normalize patch and image ---- //
+        // ----------------------------------- //
+        float patchMinMax[] = findMinMax(patchPixels, bW, bH, 0, 0);
+        patchPixels = normalize(patchPixels, bW, bH, 0, 0, patchMinMax, 0, 1);
 
-        float minMax[] = findMinMax(refPixels, w, h, 0, 0);
-        refPixels = normalize(refPixels, w, h, 0, 0, minMax, 0, 1);
+        float imgMinMax[] = findMinMax(refPixels, w, h, 0, 0);
+        refPixels = normalize(refPixels, w, h, 0, 0, imgMinMax, 0, 1);
+
+
+        // ----------------------------------- //
+        // ---- Get mean-subtracted patch ---- //
+        // ----------------------------------- //
+        float[] patchMeanVarStd = meanVarStd(patchPixels);
+        for(int i=0; i<patchSize; i++){
+            patchPixels[i] = patchPixels[i] - patchMeanVarStd[0];
+        }
 
 
         // --------------------------- //
@@ -207,7 +251,7 @@ public class PatchRed_ implements PlugIn {
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
 
         // Create OpenCL program
-        String programStringGetPatchMeans = getResourceAsString(PatchRed_.class, "kernelGetPatchMeans.cl");
+        String programStringGetPatchMeans = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetPatchMeans.cl");
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
@@ -218,10 +262,10 @@ public class PatchRed_ implements PlugIn {
         // Fill OpenCL buffers
         fillBufferWithFloatArray(clRefPixels, refPixels);
 
-        float[] localMeans = new float[w * h];
+        float[] localMeans = new float[wh];
         fillBufferWithFloatArray(clLocalMeans, localMeans);
 
-        float[] localStds = new float[w*h];
+        float[] localStds = new float[wh];
         fillBufferWithFloatArray(clLocalStds, localStds);
 
         // Create OpenCL kernel and set args
@@ -265,45 +309,46 @@ public class PatchRed_ implements PlugIn {
         programGetPatchMeans.release();
 
 
-        // ------------------------------ //
-        // ---- Calculate redundancy ---- //
-        // ------------------------------ //
+        // -------------------------------------------------------------- //
+        // ---- Calculate absolute difference of standard deviations ---- //
+        // -------------------------------------------------------------- //
 
         if(rotInv == 1) {
-
-            // -------------------------------------------------------------- //
-            // ---- Calculate absolute difference of standard deviations ---- //
-            // -------------------------------------------------------------- //
-
             // Create OpenCL program
-            String programStringGetPatchDiffStd = getResourceAsString(PatchRed_.class, "kernelGetPatchDiffStd.cl");
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$WIDTH$", "" + w);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$HEIGHT$", "" + h);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$CENTER_X$", "" + centerX);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$CENTER_Y$", "" + centerY);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRW$", "" + bRW);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRH$", "" + bRH);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$EPSILON$", "" + EPSILON);
-            programGetPatchDiffStd = context.createProgram(programStringGetPatchDiffStd).build();
+            String programStringGetSynthPatchDiffStd = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchDiffStd.cl");
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$WIDTH$", "" + w);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$HEIGHT$", "" + h);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BW$", "" + bW);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BH$", "" + bH);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BRW$", "" + bRW);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BRH$", "" + bRH);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$PATCH_STD$", "" + patchMeanVarStd[2]);
+            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$EPSILON$", "" + EPSILON);
+            programGetSynthPatchDiffStd = context.createProgram(programStringGetSynthPatchDiffStd).build();
 
             // Fill OpenCL buffers
+            clPatchPixels = context.createFloatBuffer(bW*bH, READ_ONLY);
+            fillBufferWithFloatArray(clPatchPixels, patchPixels);
+
             float[] diffStdMap = new float[wh];
             clDiffStdMap = context.createFloatBuffer(wh, READ_WRITE);
             fillBufferWithFloatArray(clDiffStdMap, diffStdMap);
 
             // Create OpenCL kernel and set args
-            kernelGetPatchDiffStd = programGetPatchDiffStd.createCLKernel("kernelGetPatchDiffStd");
+            kernelGetSynthPatchDiffStd = programGetSynthPatchDiffStd.createCLKernel("kernelGetSynthPatchDiffStd");
 
             argn = 0;
-            kernelGetPatchDiffStd.setArg(argn++, clRefPixels);
-            kernelGetPatchDiffStd.setArg(argn++, clLocalMeans);
-            kernelGetPatchDiffStd.setArg(argn++, clLocalStds);
-            kernelGetPatchDiffStd.setArg(argn++, clDiffStdMap);
+            kernelGetSynthPatchDiffStd.setArg(argn++, clPatchPixels);
+            kernelGetSynthPatchDiffStd.setArg(argn++, clRefPixels);
+            kernelGetSynthPatchDiffStd.setArg(argn++, clLocalMeans);
+            kernelGetSynthPatchDiffStd.setArg(argn++, clLocalStds);
+            kernelGetSynthPatchDiffStd.setArg(argn++, clDiffStdMap);
 
             // Calculate
+            queue.putWriteBuffer(clPatchPixels, true);
             queue.putWriteBuffer(clDiffStdMap, true);
-            queue.put2DRangeKernel(kernelGetPatchDiffStd, 0, 0, w, h, 0, 0);
+            queue.put2DRangeKernel(kernelGetSynthPatchDiffStd, 0, 0, w, h, 0, 0);
             queue.finish();
 
             // Read results back from the device
@@ -316,6 +361,23 @@ public class PatchRed_ implements PlugIn {
             }
             queue.finish();
 
+            // Release memory
+            kernelGetSynthPatchDiffStd.release();
+            clPatchPixels.release();
+            clDiffStdMap.release();
+            programGetSynthPatchDiffStd.release();
+
+
+            // Invert values (because so far we have inverse frequencies)
+            float[] diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
+            diffStdMap = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
+            for(int j=bRH; j<h-bRH; j++){
+                for(int i=bRW; i<w-bRW; i++){
+                    diffStdMap[j*w+i] = 1.0f - diffStdMap[j*w+i];
+                }
+            }
+            diffStdMap = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
+
             // Filter out flat regions
             float[] localVars = new float[wh];
             float noiseMeanVar = 0.0f;
@@ -333,19 +395,14 @@ public class PatchRed_ implements PlugIn {
 
             for(int j=0; j<h; j++){
                 for(int i=0; i<w; i++){
-                    if(localVars[j*w+i]<noiseMeanVar){
+                    if(localVars[j*w+i]<noiseMeanVar*filterConstant){
                         diffStdMap[j*w+i] = 0.0f;
                     }
                 }
             }
 
-            // Release memory
-            kernelGetPatchDiffStd.release();
-            clDiffStdMap.release();
-            programGetPatchDiffStd.release();
-
             // Display results
-            float[] diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
+            diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
             float[] diffStdMapNorm = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
             FloatProcessor fp1 = new FloatProcessor(w, h, diffStdMapNorm);
             ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
@@ -353,43 +410,45 @@ public class PatchRed_ implements PlugIn {
         }
 
         if(rotInv == 0) {
-
-            // ------------------------------------------ //
-            // ---- Calculate Pearson's correlations ---- //
-            // ------------------------------------------ //
-
-            // Create OpenCL program
-            String programStringGetPatchPearson = getResourceAsString(PatchRed_.class, "kernelGetPatchPearson.cl");
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$WIDTH$", "" + w);
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$HEIGHT$", "" + h);
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$CENTER_X$", "" + centerX);
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$CENTER_Y$", "" + centerY);
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRW$", "" + bRW);
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRH$", "" + bRH);
-            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$EPSILON$", "" + EPSILON);
-            programGetPatchPearson = context.createProgram(programStringGetPatchPearson).build();
+            // ----
+            // ---- Pearson correlation ----
+            String programStringGetSynthPatchPearson = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchPearson.cl");
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$WIDTH$", "" + w);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$HEIGHT$", "" + h);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BW$", "" + bW);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BH$", "" + bH);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRW$", "" + bRW);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRH$", "" + bRH);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_STD$", "" + patchMeanVarStd[2]);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$EPSILON$", "" + EPSILON);
+            programGetSynthPatchPearson = context.createProgram(programStringGetSynthPatchPearson).build();
 
             // Fill OpenCL buffers
+            clPatchPixels = context.createFloatBuffer(bW*bH, READ_ONLY);
+            fillBufferWithFloatArray(clPatchPixels, patchPixels);
+
             float[] pearsonMap = new float[wh];
             clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
             fillBufferWithFloatArray(clPearsonMap, pearsonMap);
 
             // Create kernel and set args
-            kernelGetPatchPearson = programGetPatchPearson.createCLKernel("kernelGetPatchPearson");
+            kernelGetSynthPatchPearson = programGetSynthPatchPearson.createCLKernel("kernelGetSynthPatchPearson");
 
             argn = 0;
-            kernelGetPatchPearson.setArg(argn++, clRefPixels);
-            kernelGetPatchPearson.setArg(argn++, clLocalMeans);
-            kernelGetPatchPearson.setArg(argn++, clLocalStds);
-            kernelGetPatchPearson.setArg(argn++, clPearsonMap);
+            kernelGetSynthPatchPearson.setArg(argn++, clPatchPixels);
+            kernelGetSynthPatchPearson.setArg(argn++, clRefPixels);
+            kernelGetSynthPatchPearson.setArg(argn++, clLocalMeans);
+            kernelGetSynthPatchPearson.setArg(argn++, clLocalStds);
+            kernelGetSynthPatchPearson.setArg(argn++, clPearsonMap);
 
-            // Calculate Pearson's coefficients
+            // Calculate Pearson's correlation coefficient ----
+            queue.putWriteBuffer(clPatchPixels, true);
             queue.putWriteBuffer(clPearsonMap, true);
-            queue.put2DRangeKernel(kernelGetPatchPearson, 0, 0, w, h, 0, 0);
+            queue.put2DRangeKernel(kernelGetSynthPatchPearson, 0, 0, w, h, 0, 0);
             queue.finish();
 
-            // Read Pearson's coefficients back from the device
+            // Read Pearson's coefficients back from the GPU
             queue.putReadBuffer(clPearsonMap, true);
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
@@ -399,10 +458,11 @@ public class PatchRed_ implements PlugIn {
             }
             queue.finish();
 
-            // Release OpenCL resources
-            kernelGetPatchPearson.release();
+            // Release GPU resources
+            kernelGetSynthPatchPearson.release();
+            clPatchPixels.release();
             clPearsonMap.release();
-            programGetPatchPearson.release();
+            programGetSynthPatchPearson.release();
 
             // Filter out flat regions
             float[] localVars = new float[wh];
@@ -421,7 +481,7 @@ public class PatchRed_ implements PlugIn {
 
             for(int j=0; j<h; j++){
                 for(int i=0; i<w; i++){
-                    if(localVars[j*w+i]<noiseMeanVar){
+                    if(localVars[j*w+i]<noiseMeanVar*filterConstant){
                         pearsonMap[j*w+i] = 0.0f;
                     }
                 }
@@ -436,20 +496,14 @@ public class PatchRed_ implements PlugIn {
         }
 
 
-        // -------------------- //
-        // ---- Stop timer ---- //
-        // -------------------- //
-
+        // ---- Stop timer ----
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
         IJ.log("--------");
     }
 
-    // ------------------------ //
-    // ---- USER FUNCTIONS ---- //
-    // ------------------------ //
-
+    // ---- USER FUNCTIONS ----
     private float[] meanVarStd (float a[]){
         int n = a.length;
         if (n == 0) return new float[]{0, 0, 0};
@@ -469,9 +523,28 @@ public class PatchRed_ implements PlugIn {
 
     }
 
+    public static void fillBufferWithFloat(CLBuffer<FloatBuffer> clBuffer, float pixel) {
+        FloatBuffer buffer = clBuffer.getBuffer();
+        buffer.put(pixel);
+    }
+
     public static void fillBufferWithFloatArray(CLBuffer<FloatBuffer> clBuffer, float[] pixels) {
         FloatBuffer buffer = clBuffer.getBuffer();
         for(int n=0; n<pixels.length; n++) {
+            buffer.put(n, pixels[n]);
+        }
+    }
+
+    public static void fillBufferWithDoubleArray(CLBuffer<DoubleBuffer> clBuffer, double[] pixels) {
+        DoubleBuffer buffer = clBuffer.getBuffer();
+        for(int n=0; n< pixels.length; n++) {
+            buffer.put(n, pixels[n]);
+        }
+    }
+
+    public static void fillBufferWithShortArray(CLBuffer<ShortBuffer> clBuffer, short[] pixels) {
+        ShortBuffer buffer = clBuffer.getBuffer();
+        for(int n=0; n< pixels.length; n++) {
             buffer.put(n, pixels[n]);
         }
     }
@@ -544,6 +617,34 @@ public class PatchRed_ implements PlugIn {
             }
         }
         return normalizedPixels;
+    }
+
+    public static double getInvariant(float[] patch, int w, int h, int p, int q){
+        // Get centroid x and y
+        double moment_10 = 0.0f;
+        double moment_01 = 0.0f;
+        double moment_00 = 0.0f;
+        for(int j=0; j<h; j++){
+            for(int i=0; i<w; i++){
+                moment_10 += patch[j*w+i] * i;
+                moment_01 += patch[j*w+i] * j;
+                moment_00 += patch[j*w+i];
+            }
+        }
+
+        double centroid_x = moment_10 / (moment_00 + 0.000001f);
+        double centroid_y = moment_01 / (moment_00 + 0.000001f);
+
+        // Get mu_pq
+        double mu_pq = 0.0f;
+        for(int j=0; j<h; j++){
+            for(int i=0; i<w; i++){
+                mu_pq += patch[j*w+i] + pow(i+1-centroid_x, p) * pow(j+1-centroid_y, q);
+            }
+        }
+
+        float invariant = (float) (mu_pq / pow(moment_00, (1+(p+q/2))));
+        return invariant;
     }
 }
 

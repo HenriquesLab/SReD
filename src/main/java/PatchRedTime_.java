@@ -14,10 +14,7 @@ import java.awt.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
-import java.nio.ShortBuffer;
-import java.util.Arrays;
 
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
@@ -235,7 +232,7 @@ public class PatchRedTime_ implements PlugIn {
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
 
         // Create OpenCL program
-        String programStringGetPatchMeans = getResourceAsString(PatchRed_.class, "kernelGetPatchMeans.cl");
+        String programStringGetPatchMeans = getResourceAsString(EmpiricalBlockRedundancy_.class, "kernelGetPatchMeans.cl");
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
@@ -262,7 +259,7 @@ public class PatchRedTime_ implements PlugIn {
         clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
 
         // Create OpenCL program
-        String programStringGetPatchPearson = getResourceAsString(PatchRed_.class, "kernelGetPatchPearson.cl");
+        String programStringGetPatchPearson = getResourceAsString(EmpiricalBlockRedundancy_.class, "kernelGetPatchPearson.cl");
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$WIDTH$", "" + w);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$HEIGHT$", "" + h);
         programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$CENTER_X$", "" + centerX);

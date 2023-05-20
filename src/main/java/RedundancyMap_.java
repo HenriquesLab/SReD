@@ -41,11 +41,12 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Dialog box ---- //
         // -------------------- //
 
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Redundancy map");
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Global Redundancy");
         gd.addNumericField("Box length in pixels: ", 3, 2);
         gd.addCheckbox("Stabilise variance?", false);
         gd.addCheckbox("Rotation invariant?", false);
         gd.addCheckbox("Multi-scale?", false);
+        gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
         gd.showDialog();
         if (gd.wasCanceled()) return;
 
@@ -63,12 +64,13 @@ public class RedundancyMap_ implements PlugIn {
             rotInv = 1;
         }
 
-        int multiScale = 0; // Multi-scale anlysis?
+        int multiScale = 0; // Multi-scale analysis?
         if(gd.getNextBoolean() == true){
             multiScale = 1;
         }
 
-        int downScale = 0; // Downscale factor
+        float filterConstant = (float) gd.getNextNumber();
+
         int speedUp = 0; // Speed up factor (0 = no speed up)
 
 
@@ -169,7 +171,7 @@ public class RedundancyMap_ implements PlugIn {
         if(multiScale == 0){
             int scaleFactor = 1;
             GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp,
-                    useGAT, rotInv, scaleFactor, 1, w0, h0);
+                    useGAT, rotInv, scaleFactor, filterConstant, 1, w0, h0);
             red0.run();
         }else{
             int scaleFactor = 1;
@@ -194,7 +196,7 @@ public class RedundancyMap_ implements PlugIn {
 
                 // Calculate redundancy map
                 GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, speedUp,
-                        useGAT, rotInv, scaleFactor, i+1, w0, h0);
+                        useGAT, rotInv, scaleFactor, filterConstant, i+1, w0, h0);
                 Thread thread = new Thread(red);
                 thread.start();
                 try {

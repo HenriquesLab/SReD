@@ -29,7 +29,8 @@ kernel void kernelGetWeightsSumMap(
             float comp_std = local_stds[y*w+x];
 
             // Calculate weight
-            weights_sum_map[gy*w+gx] += 1.0f - getGaussianWeight(ref_std, comp_std, filter_param);
+            //weights_sum_map[gy*w+gx] += getGaussianWeight(ref_std, comp_std);
+            weights_sum_map[gy*w+gx] += exp((-1.0f)*((fabs(ref_std - comp_std)*fabs(ref_std-comp_std))/(10.0f*filter_param+EPSILON)));
         }
     }
 }

@@ -18,6 +18,7 @@ kernel void kernelGetDiffStdMap(
     global float* local_means,
     global float* local_stds,
     global int* uniqueStdCoords,
+    global float* weights_sum_map,
     global float* diff_std_map
 ){
 
@@ -83,8 +84,10 @@ kernel void kernelGetDiffStdMap(
             // Calculate absolute difference of standard deviations add it to the sum at X (avoiding division by zero)
             float std_x = local_stds[y0*w+x0];
             float std_y = local_stds[y1*w+x1];
-            float weight = 1.0f - getGaussianWeight(std_x, std_y, filter_param);
-            diff_std_map[y0*w+x0] += ((fabs(std_x - std_y)) * weight);
+            //float weight = 1.0f - getGaussianWeight(std_x, std_y, filter_param);
+            //diff_std_map[y0*w+x0] += ((fabs(std_x - std_y)) * weight);
+            float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param))) / weights_sum_map[y0*w+x0];
+            diff_std_map[y0*w+x0] += std_y * weight;
         }
     }
 }
