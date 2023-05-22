@@ -25,8 +25,8 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
     static private CLContext context;
     static private CLCommandQueue queue;
-    static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetDiffStdMap, programGetWeightsSumMap;
-    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetDiffStdMap, kernelGetWeightsSumMap;
+    static private CLProgram programGetLocalMeans, programGetPearsonMap, programGetDiffStdMap;
+    static private CLKernel kernelGetLocalMeans, kernelGetPearsonMap, kernelGetDiffStdMap;
 
     private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clDiffStdMap, clWeightsSumMap;
 
@@ -37,7 +37,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
     // ---- Image parameters ---- //
     // -------------------------- //
 
-    public float[] refPixels, localMeans, localStds, pearsonMap, diffStdMap, nrmseMap, maeMap, psnrMap, ssimMap, luminanceMap,
+    public float[] refPixels, localMeans, localStds, pearsonMap, diffStdMap, weightsSumMap, nrmseMap, maeMap, psnrMap, ssimMap, luminanceMap,
             contrastMap, structureMap, huMap, entropyMap, phaseCorrelationMap, hausdorffMap;
     public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, speedUp, useGAT, rotInv, scaleFactor, level, w0, h0;
     public float filterConstant, EPSILON;
@@ -70,6 +70,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         localStds = new float[wh];
         pearsonMap = new float[wh];
         diffStdMap = new float[wh];
+        weightsSumMap = new float[wh];
         nrmseMap = new float[wh];
         maeMap = new float[wh];
         psnrMap = new float[wh];
@@ -115,7 +116,8 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         // ------------------------------------------------------------------------- //
 
         float noiseVar = estimateNoiseVar(refPixels, w, h) + EPSILON;
-        System.out.println(noiseVar);
+
+
         // -------------------------------------------------------- //
         // ---- Write input image (variance-stabilized) to GPU ---- //
         // -------------------------------------------------------- //
@@ -206,62 +208,6 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         queue.putWriteBuffer(clUniqueStdCoords, false);
 
 
-        // ----------------------------------- //
-        // ---- Calculate weights sum map ---- //
-        // ----------------------------------- //
-
-        // Create OpenCL program
-        String programStringGetWeightsSumMap = getResourceAsString(RedundancyMap_.class, "kernelGetWeightsSumMap.cl");
-        programStringGetWeightsSumMap = replaceFirst(programStringGetWeightsSumMap, "$WIDTH$", "" + w);
-        programStringGetWeightsSumMap = replaceFirst(programStringGetWeightsSumMap, "$HEIGHT$", "" + h);
-        programStringGetWeightsSumMap = replaceFirst(programStringGetWeightsSumMap, "$BRW$", "" + bRW);
-        programStringGetWeightsSumMap = replaceFirst(programStringGetWeightsSumMap, "$BRH$", "" + bRH);
-        programStringGetWeightsSumMap = replaceFirst(programStringGetWeightsSumMap, "$FILTERPARAM$", "" + noiseVar);
-        programStringGetWeightsSumMap = replaceFirst(programStringGetWeightsSumMap, "$EPSILON$", "" + EPSILON);
-        programGetWeightsSumMap = context.createProgram(programStringGetWeightsSumMap).build();
-
-        // Create, fill and write OpenCL buffers
-        float[] weightsSumMap = new float[wh];
-        clWeightsSumMap = context.createFloatBuffer(wh, READ_WRITE);
-        fillBufferWithFloatArray(clWeightsSumMap, weightsSumMap);
-        queue.putWriteBuffer(clWeightsSumMap, true);
-
-        // Create OpenCL kernel and set kernel args
-        kernelGetWeightsSumMap = programGetWeightsSumMap.createCLKernel("kernelGetWeightsSumMap");
-
-        argn = 0;
-        kernelGetWeightsSumMap.setArg(argn++, clLocalStds);
-        kernelGetWeightsSumMap.setArg(argn++, clWeightsSumMap);
-
-        // Calculate weights sum map
-        for (int nYB = 0; nYB < nYBlocks; nYB++) {
-            int yWorkSize = min(64, h - nYB * 64);
-            for (int nXB = 0; nXB < nXBlocks; nXB++) {
-                int xWorkSize = min(64, w - nXB * 64);
-                showStatus("Calculating weights... blockX=" + nXB + "/" + nXBlocks + " blockY=" + nYB + "/" + nYBlocks);
-                queue.put2DRangeKernel(kernelGetWeightsSumMap, nXB * 64, nYB * 64, xWorkSize, yWorkSize, 0, 0);
-                queue.finish();
-            }
-        }
-
-        // Read the weights sum map back from the device
-        queue.putReadBuffer(clWeightsSumMap, true);
-        for (int y=0; y<h; y++) {
-            for (int x=0; x<w; x++) {
-                weightsSumMap[y*w+x] = clWeightsSumMap.getBuffer().get(y*w+x);
-                queue.finish();
-            }
-        }
-
-        // Release GPU resources
-        kernelGetWeightsSumMap.release();
-        programGetWeightsSumMap.release();
-        //clDiffStdMap.release();
-
-        // -------------------------------------------------------------------- //
-        // ---- Calculate weighted mean absolute difference of StdDevs map ---- //
-        // -------------------------------------------------------------------- //
-
         if(rotInv == 1){
 
             // Create OpenCL program
@@ -283,6 +229,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             clDiffStdMap = context.createFloatBuffer(wh, READ_WRITE);
             fillBufferWithFloatArray(clDiffStdMap, diffStdMap);
             queue.putWriteBuffer(clDiffStdMap, false);
+
+            clWeightsSumMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clWeightsSumMap, weightsSumMap);
+            queue.putWriteBuffer(clWeightsSumMap, true);
 
             // Create OpenCL kernel and set kernel args
             kernelGetDiffStdMap = programGetDiffStdMap.createCLKernel("kernelGetDiffStdMap");
@@ -308,9 +258,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
             // Read the weighted mean absolute difference of standard deviations map back from the GPU (and finish the mean calculation simultaneously)
             queue.putReadBuffer(clDiffStdMap, true);
+            queue.putReadBuffer(clWeightsSumMap, true);
             for (int y=0; y<h; y++) {
                 for (int x=0; x<w; x++) {
-                    diffStdMap[y*w+x] = clDiffStdMap.getBuffer().get(y*w+x) / sizeWithoutBorders;
+                    diffStdMap[y*w+x] = clDiffStdMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*sizeWithoutBorders+EPSILON);
                     queue.finish();
                 }
             }
@@ -319,6 +270,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             kernelGetDiffStdMap.release();
             programGetDiffStdMap.release();
             clDiffStdMap.release();
+            clWeightsSumMap.release();
 
             // Invert values (because so far we have inverse frequencies)
             float[] diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
@@ -383,6 +335,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             fillBufferWithFloatArray(clPearsonMap, pearsonMap);
             queue.putWriteBuffer(clPearsonMap, false);
 
+            clWeightsSumMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clWeightsSumMap, weightsSumMap);
+            queue.putWriteBuffer(clWeightsSumMap, true);
+
             // Create OpenCL kernel and set kernel args
             kernelGetPearsonMap = programGetPearsonMap.createCLKernel("kernelGetPearsonMap");
 
@@ -407,9 +363,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
             // Read the weighted mean  Pearson's map back from the GPU (and finish the mean calculation simultaneously)
             queue.putReadBuffer(clPearsonMap, true);
+            queue.putReadBuffer(clWeightsSumMap, true);
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
-                    pearsonMap[y * w + x] = clPearsonMap.getBuffer().get(y * w + x) / sizeWithoutBorders;
+                    pearsonMap[y * w + x] = clPearsonMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*sizeWithoutBorders+EPSILON);
                     queue.finish();
                 }
             }
@@ -418,6 +375,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             kernelGetPearsonMap.release();
             programGetPearsonMap.release();
             clPearsonMap.release();
+            clWeightsSumMap.release();
 
             // Filter out regions with low noise variance
             float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
@@ -472,11 +430,6 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
         FloatProcessor fp2 = new FloatProcessor(w, h, pearsonMapNorm);
 
-        // weights sum
-        //float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
-        //float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
-        //FloatProcessor fp3 = new FloatProcessor(w, h, weightsSumMap);
-
         // Create image stack holding the redundancy maps and display it
         ImageStack ims = new ImageStack(w, h);
         //FloatProcessor inputImage = new FloatProcessor(w, h, refPixels);
@@ -488,7 +441,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         //fp9 = fp9.resize(w0, h0, true).convertToFloatProcessor();
         ims.addSlice("Local stds", fp3);
 
-        //FloatProcessor fp10 = new FloatProcessor(w, h, weightSum);
+        //FloatProcessor fp10 = new FloatProcessor(w, h, weightsSumMap);
         //ims.addSlice("Weight sum", fp10);
 
 

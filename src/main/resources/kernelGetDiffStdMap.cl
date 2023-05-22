@@ -86,8 +86,9 @@ kernel void kernelGetDiffStdMap(
             float std_y = local_stds[y1*w+x1];
             //float weight = 1.0f - getGaussianWeight(std_x, std_y, filter_param);
             //diff_std_map[y0*w+x0] += ((fabs(std_x - std_y)) * weight);
-            float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param))) / weights_sum_map[y0*w+x0];
+            float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param+EPSILON)));
             diff_std_map[y0*w+x0] += std_y * weight;
+            weights_sum_map[y0*w+x0] += weight;
         }
     }
 }

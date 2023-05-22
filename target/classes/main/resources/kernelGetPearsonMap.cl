@@ -91,8 +91,8 @@ kernel void kernelGetPearsonMap(
             float std_y = local_stds[y1*w+x1];
             //float weight = getGaussianWeight(std_x, std_y, filter_param); // doesn't work very well here
             //float weight = getExpDecayWeight(std_x, std_y);
-            float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param))) / weights_sum_map[y0*w+x0];
-
+            float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param+EPSILON)));
+            weights_sum_map[y0*w+x0] += weight;
 
             if(std_x == 0.0f && std_y == 0.0f){
                 pearson_map[y0*w+x0] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same)
