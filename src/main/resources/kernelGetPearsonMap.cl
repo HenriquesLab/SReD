@@ -54,9 +54,9 @@ kernel void kernelGetPearsonMap(
     float r2 = bRW*bRW;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            float dx = (float)(i0-x0);
-            float dy = (float)(j0-y0);
-            if(dx*dx+dy*dy <= r2){
+            float dx = (float)((i0-x0)/bRW);
+            float dy = (float)((j0-y0)/bRH);
+            if(dx*dx+dy*dy <= 1.0f){
                 ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean);
                 ref_counter++;
             }
@@ -74,9 +74,9 @@ kernel void kernelGetPearsonMap(
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    float dx = (float)(i1-x1);
-                    float dy = (float)(j1-y1);
-                    if(dx*dx+dy*dy <= r2){
+                    float dx = (float)((i1-x1)/bRW);
+                    float dy = (float)((j1-y1)/bRH);
+                    if(dx*dx+dy*dy <= 1.0f){
                         comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
                         covar += ref_patch[comp_counter] * comp_patch[comp_counter];
                         comp_counter++;

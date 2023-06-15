@@ -29,12 +29,11 @@ kernel void kernelGetSynthPatchPearson(
     __local float ref_patch[patch_size];
 
     int counter = 0;
-    float r2 = bRW*bRW;
     for(int j=0; j<bH; j++){
         for(int i=0; i<bW; i++){
-            float dx = (float)(i-bRW);
-            float dy = (float)(j-bRW);
-            if(dx*dx + dy*dy <= r2){
+            float dx = (float)((i-bRW)/bRW);
+            float dy = (float)((j-bRH)/bRH);
+            if(dx*dx + dy*dy <= 1.0f){
                 ref_patch[counter] = patch_pixels[j*bW+i];
                 counter++;
             }
@@ -51,9 +50,9 @@ kernel void kernelGetSynthPatchPearson(
     float covar = 0.0f;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            float dx = (float)(i-gx);
-            float dy = (float)(j-gy);
-            if(dx*dx+dy*dy <= r2){
+            float dx = (float)((i-gx)/bRW);
+            float dy = (float)((j-gy)/bRH);
+            if(dx*dx+dy*dy <= 1.0f){
                 comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
                 covar += ref_patch[counter] * comp_patch[counter];
                 counter++;

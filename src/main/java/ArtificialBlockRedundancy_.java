@@ -75,7 +75,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         String patchTitle = gd.getNextChoice();
         int patchID = 0;
         for(int i=0; i<nImages; i++){
-            if(titles[i] == patchTitle){
+            if(titles[i].equals(patchTitle)){ // .equals() instead of "==" required to run from macro
                 patchID = ids[i];
             }
         }
@@ -83,7 +83,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         String imgTitle = gd.getNextChoice();
         int imgID = 0;
         for(int i=0; i<nImages; i++){
-            if(titles[i] == imgTitle){
+            if(titles[i].equals(imgTitle)){ // .equals() instead of "==" required to run from macro
                 imgID = ids[i];
             }
         }
@@ -95,6 +95,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         // ---- Start timer ---- //
         // --------------------- //
 
+        IJ.log("SReD has started, please wait.");
         long start = System.currentTimeMillis();
 
 
@@ -113,7 +114,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         int bH = fp.getHeight(); // Patch height
         int bRW = bW/2; // Patch radius (x-axis)
         int bRH = bH/2; // Patch radius (y-axis)
-        int patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW)); // Number of pixels in a circular patch
+        int patchSize = (2*bRW+1) * (2*bRH+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRH)); // Number of pixels in a circular patch
 
         // Check if patch dimensions are odd
         if (bW % 2 == 0 || bH % 2 == 0) {
@@ -238,7 +239,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
-        IJ.log("Calculating redundancy...please wait...");
+        IJ.log("Calculating redundancy...");
 
 
         // ------------------------------- //
@@ -489,8 +490,10 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
 
             // Display results
             float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
-            float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
-            FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
+            //float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
+            //FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
+            FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMap);
+
             ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
             imp1.show();
         }
