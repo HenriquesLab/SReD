@@ -9,6 +9,7 @@
 import com.jogamp.opencl.*;
 import ij.IJ;
 import ij.ImagePlus;
+import ij.ImageStack;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
 import ij.plugin.PlugIn;
@@ -43,7 +44,7 @@ public class RedundancyMap_ implements PlugIn {
 
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Global Redundancy");
         gd.addNumericField("Box length in pixels: ", 3, 2);
-        gd.addCheckbox("Stabilise variance?", false);
+        gd.addCheckbox("Time-lapse?", false);
         gd.addCheckbox("Rotation invariant?", false);
         gd.addCheckbox("Multi-scale?", false);
         gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
@@ -54,9 +55,9 @@ public class RedundancyMap_ implements PlugIn {
         int bW = (int) gd.getNextNumber(); // Patch width
         int bH = bW; // Patch height
 
-        int useGAT = 0; // Use GAT? (0 = no GAT)
+        int useTime = 0;
         if(gd.getNextBoolean() == true) {
-            useGAT = 1;
+            useTime = 1;
         }
 
         int rotInv = 0; // Rotation invariant analysis?
@@ -67,6 +68,12 @@ public class RedundancyMap_ implements PlugIn {
         int multiScale = 0; // Multi-scale analysis?
         if(gd.getNextBoolean() == true){
             multiScale = 1;
+        }
+
+        //TODO: SOLVE THIS
+        if(useTime == 1 && multiScale == 1) {
+            IJ.error("Multi-scale analysis in timelapse data is not yet supported.");
+            return;
         }
 
         float filterConstant = (float) gd.getNextNumber();
@@ -156,6 +163,7 @@ public class RedundancyMap_ implements PlugIn {
         int w0 = fp0.getWidth();
         int h0 = fp0.getHeight();
 
+
         //int elementCount = w*h;
         //int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         //int globalWorkSize = roundUp(localWorkSize, elementCount);
@@ -170,17 +178,136 @@ public class RedundancyMap_ implements PlugIn {
         int rounds = 5; // How many scale levels should be analyzed
         if(multiScale == 0){
             int scaleFactor = 1;
-            GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp,
-                    useGAT, rotInv, scaleFactor, filterConstant, 1, w0, h0);
-            red0.run();
+
+            if(useTime == 0){
+
+                // --------------------------------------------------------------------------- //
+                // ---- Stabilize noise variance using the Generalized Anscombe transform ---- //
+                // --------------------------------------------------------------------------- //
+                GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
+                minimizer.run();
+
+                refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
+
+
+                // ------------------------- //
+                // ---- Normalize image ---- //
+                // ------------------------- //
+
+                float minMax[] = findMinMax(refPixels0, w0, h0, 0, 0);
+                refPixels0 = normalize(refPixels0, w0, h0, 0, 0, minMax, 0, 0);
+
+
+                // ---------------------- //
+                // ---- Run analysis ---- //
+                // ---------------------- //
+
+                GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp, rotInv, scaleFactor, filterConstant, 1, w0, h0);
+                red0.run();
+            }else{
+                int nFrames = imp0.getNFrames();
+                ImageStack finalStack = new ImageStack(w0, h0, nFrames);
+
+                if(nFrames == 1){
+                    IJ.error("No time dimension found. Make sure Image is a stack and Z/T/C dimensions are not swapped");
+                    return;
+                }
+
+
+                // -------------------------------- //
+                // ---- Convert image to stack ---- //
+                // -------------------------------- //
+
+                ImageStack ims = imp0.getStack();
+
+
+                // ---------------------------- //
+                // ---- Get GAT parameters ---- //
+                // ---------------------------- //
+
+                refPixels0 = (float[]) ims.getProcessor(1).convertToFloatProcessor().getPixels();
+
+                GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
+                minimizer.run();
+
+                double minimizerGain = minimizer.gain;
+                double minimizerSigma = minimizer.sigma;
+                double minimizerOffset = minimizer.offset;
+
+                for(int frame=1; frame<=nFrames; frame++){
+
+                    IJ.log("Processing frame "+frame+"/"+nFrames);
+
+                    // --------------------------------------------------------------------- //
+                    // ---- Stabilise variance using the Generalized Anscombe transform ---- //
+                    // --------------------------------------------------------------------- //
+
+                    refPixels0 = (float[]) ims.getProcessor(frame).convertToFloatProcessor().getPixels();
+                    refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizerGain, minimizerSigma, minimizerOffset);
+
+
+                    // ------------------------- //
+                    // ---- Normalize image ---- //
+                    // ------------------------- //
+
+                    float minMax[] = findMinMax(refPixels0, w0, h0, 0, 0);
+                    refPixels0 = normalize(refPixels0, w0, h0, 0, 0, minMax, 0, 0);
+
+
+                    // ---------------------- //
+                    // ---- Run analysis ---- //
+                    // ---------------------- //
+
+                    GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp, rotInv, scaleFactor, filterConstant, 1, w0, h0);
+                    red0.run();
+
+
+                    // ------------------------------------------- //
+                    // ---- Get output and add to final stack ---- //
+                    // ------------------------------------------- //
+
+                    ImagePlus impTemp = WindowManager.getImage("Redundancy Maps (level = 1)");
+                    FloatProcessor fpTemp = impTemp.getProcessor().convertToFloatProcessor();
+
+                    finalStack.setProcessor(fpTemp, frame);
+
+                    impTemp.close();
+
+                }
+
+                ImagePlus impFinal = new ImagePlus("Redundancy Maps", finalStack);
+                impFinal.show();
+            }
+
         }else{
             int scaleFactor = 1;
+
+            // --------------------------------------------------------------------------- //
+            // ---- Stabilize noise variance using the Generalized Anscombe transform ---- //
+            // --------------------------------------------------------------------------- //
+
+            GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
+            minimizer.run();
+
+            refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
+
+
+            // ------------------------- //
+            // ---- Normalize image ---- //
+            // ------------------------- //
+
+            float minMax[] = findMinMax(refPixels0, w0, h0, 0, 0);
+            refPixels0 = normalize(refPixels0, w0, h0, 0, 0, minMax, 0, 0);
+
+            fp0 = new FloatProcessor(w0, h0, refPixels0);
+
             for(int i=0; i<rounds; i++){
+
                 // Downscale input image
                 int w1 = w0 / scaleFactor; // Width of the downscaled image
                 int h1 = h0 / scaleFactor; // Height of the downscaled image
                 ImagePlus temp = new ImagePlus("temp", fp0); // Clone original image
-                FloatProcessor fp1 = imp0.getProcessor().convertToFloatProcessor(); // Get blurred image processor
+                FloatProcessor fp1 = temp.getProcessor().convertToFloatProcessor();
 
                 if(scaleFactor>1) {
                     // Sequential blur and downscale until reaching the desired dimensions (skip first iteration)
@@ -195,8 +322,7 @@ public class RedundancyMap_ implements PlugIn {
                 float[] refPixels1 = (float[]) fp1.getPixels(); // Get blurred and downscale pixel array
 
                 // Calculate redundancy map
-                GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, speedUp,
-                        useGAT, rotInv, scaleFactor, filterConstant, i+1, w0, h0);
+                GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, speedUp, rotInv, scaleFactor, filterConstant, i+1, w0, h0);
                 Thread thread = new Thread(red);
                 thread.start();
                 try {
@@ -208,11 +334,6 @@ public class RedundancyMap_ implements PlugIn {
             }
 
         }
-
-        // ---- Find sets of coordinates representing each unique redundancy value
-        //float[] pearsonUnique = getUniqueValues(red025.pearsonMap, red025.w, red025.h, red025.bRW, red025.bRH);
-        //int[] pearsonUniqueCoords = getUniqueValueCoordinates(pearsonUnique, red025.pearsonMap, red025.w, red025.h, red025.bRW, red025.bRH);
-
 
         // ------------------------------- //
         // ---- Cleanup GPU resources ---- //
@@ -378,6 +499,43 @@ public class RedundancyMap_ implements PlugIn {
         }
 
         return input;
+    }
+
+    public static float[] findMinMax(float[] inputArray, int w, int h, int offsetX, int offsetY){
+        float[] minMax = {inputArray[offsetY*w+offsetX], inputArray[offsetY*w+offsetX]};
+
+        for(int j=offsetY+1; j<h-offsetY; j++){
+            for(int i=offsetX+1; i<w-offsetX; i++){
+                if(inputArray[j*w+i] < minMax[0]){
+                    minMax[0] = inputArray[j*w+i];
+                }
+                if(inputArray[j*w+i] > minMax[1]){
+                    minMax[1] = inputArray[j*w+i];
+                }
+            }
+        }
+        return minMax;
+    }
+
+    public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax, float tMin, float tMax){
+        float rMin = minMax[0];
+        float rMax = minMax[1];
+        float denominator = rMax - rMin + 0.000001f;
+        float factor;
+
+        if(tMax == 0 && tMin == 0){
+            factor = 1; // So that the users can say they don't want an artificial range by choosing tMax and tMin = 0
+        }else {
+            factor = tMax - tMin;
+        }
+        float[] normalizedPixels = new float[w*h];
+
+        for(int j=offsetY; j<h-offsetY; j++) {
+            for (int i=offsetX; i<w-offsetX; i++) {
+                normalizedPixels[j*w+i] = (rawPixels[j*w+i]-rMin)/denominator * factor + tMin;
+            }
+        }
+        return normalizedPixels;
     }
     // ADD FUNCTIONS HERE
 }

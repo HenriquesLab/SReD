@@ -8,7 +8,6 @@
 #define bRH $BRH$
 #define filter_param $FILTERPARAM$
 #define EPSILON $EPSILON$
-#define nUnique $NUNIQUE$
 #define speedUp $SPEEDUP$
 float getExpDecayWeight(float ref, float comp);
 float getGaussianWeight(float ref, float comp, float h2);
@@ -17,27 +16,17 @@ kernel void kernelGetDiffStdMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
-    global int* uniqueStdCoords,
     global float* weights_sum_map,
-    global float* diff_std_map
+    global float* diff_std_map,
+    global float* vars_mask
 ){
 
     int x0 = get_global_id(0);
     int y0 = get_global_id(1);
 
     // Check if reference pixel belongs to the unique list, and if not, kill the thread
-    if(speedUp == 1){
-        int isUnique = 0;
-        for(int i=0; i<nUnique; i++){
-            if(y0*w+x0 == uniqueStdCoords[i]){
-                isUnique = 1;
-                break;
-            }
-        }
-
-        if(isUnique == 0){
-            return;
-        }
+    if(vars_mask[y0*w+x0] == 0){
+        return;
     }
 
     // Bound check to avoids borders dynamically based on patch dimensions
@@ -51,7 +40,6 @@ kernel void kernelGetDiffStdMap(
     float ref_mean = local_means[y0*w+x0];
 
     int ref_counter = 0;
-    float r2 = bRW*bRW;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
             float dx = (float)((i0-x0)/bRW);

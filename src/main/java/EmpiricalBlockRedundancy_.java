@@ -103,7 +103,7 @@ public class EmpiricalBlockRedundancy_ implements PlugIn {
         int bRW = bW/2; // Patch radius (x-axis)
         int bRH = bH/2; // Patch radius (y-axis)
         int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
-        int patchSize = (2*bRW+1) * (2*bRW+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRW)); // Number of pixels in a circular patch
+        int patchSize = (2*bRW+1) * (2*bRH+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRH)); // Number of pixels in a circular patch
         int centerX = bx + bRW; // Reference patch center (x-axis)
         int centerY = by + bRH; // Reference patch center (y-axis)
 
@@ -407,7 +407,7 @@ public class EmpiricalBlockRedundancy_ implements PlugIn {
             queue.putReadBuffer(clPearsonMap, true);
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
-                    pearsonMap[y * w + x] = clPearsonMap.getBuffer().get(y * w + x);
+                    pearsonMap[y * w + x] = clPearsonMap.getBuffer().get(y * w + x)*clPearsonMap.getBuffer().get(y * w + x);
                     queue.finish();
                 }
             }

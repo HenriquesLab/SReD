@@ -114,7 +114,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         int bH = fp.getHeight(); // Patch height
         int bRW = bW/2; // Patch radius (x-axis)
         int bRH = bH/2; // Patch radius (y-axis)
-        int patchSize = (2*bRW+1) * (2*bRH+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRH)); // Number of pixels in a circular patch
+        int patchSize = (2*bRW+1) * (2*bRH+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRH)); // Number of pixels in a circular/elliptical patch
 
         // Check if patch dimensions are odd
         if (bW % 2 == 0 || bH % 2 == 0) {
