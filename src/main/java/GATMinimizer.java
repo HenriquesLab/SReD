@@ -37,7 +37,7 @@ public class GATMinimizer implements UserFunction {
 
         Minimizer minimizer = new Minimizer();
         minimizer.setFunction(this, 3);
-        minimizer.setMaxError(0); // RH: lets figure out why? AM: This allows the minimizer to run until the relative error of the function is 0, in contrast with the default 1e-10.
+        minimizer.setMaxError(0); // Allows the minimizer to run until the relative error of the function is 0, in contrast with the default 1e-10.
         if (showProgress) minimizer.setStatusAndEsc("Estimating gain, sigma & offset: Iteration ", true);
         minimizer.minimize(initialParameters, initialParametersVariation);
 

@@ -43,7 +43,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
     public float filterConstant, EPSILON;
 
     public GlobalRedundancy(float[] refPixels, int w, int h, int bW, int bH, float EPSILON, CLContext context,
-                            CLCommandQueue queue, int speedUp, int rotInv, int scaleFactor, float filterConstant, int level, int w0, int h0){
+                            CLCommandQueue queue, int rotInv, int scaleFactor, float filterConstant, int level, int w0, int h0){
         this.refPixels = refPixels;
         this.w = w;
         this.h = h;
@@ -173,9 +173,9 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         programGetLocalMeans.release();
 
 
-        // ---------------------------------------------- //
-        // ---- Calculate noise variance filter mask ---- //
-        // ---------------------------------------------- //
+        // ---------------------------------------------------------------------- //
+        // ---- Calculate noise variance filter mask (a.k.a. relevance mask) ---- //
+        // ---------------------------------------------------------------------- //
 
         // Get local variances map and mean variance
         float[] vars = new float[wh];
@@ -443,9 +443,9 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         ims.addSlice("Absolute Difference of StdDevs", fp1);
         ims.addSlice("Pearson", fp2);
 
-        //FloatProcessor fp3 = new FloatProcessor(w, h, localStds);
-        //fp9 = fp9.resize(w0, h0, true).convertToFloatProcessor();
-        //ims.addSlice("Local stds", fp3);
+        FloatProcessor fp3 = new FloatProcessor(w, h, varsMask);
+        ImagePlus poop = new ImagePlus("Mask", fp3);
+        poop.show();
 
         //FloatProcessor fp10 = new FloatProcessor(w, h, weightsSumMap);
         //ims.addSlice("Weight sum", fp10);

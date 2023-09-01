@@ -251,6 +251,7 @@ public class MapNoise_ implements PlugIn {
             }
         }
         System.out.println(error);
+
         // ---- Display results ----
         IJ.log("Preparing results for display...");
         ImageStack ims = new ImageStack(w, h);

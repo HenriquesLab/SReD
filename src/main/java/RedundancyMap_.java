@@ -78,12 +78,11 @@ public class RedundancyMap_ implements PlugIn {
 
         float filterConstant = (float) gd.getNextNumber();
 
-        int speedUp = 0; // Speed up factor (0 = no speed up)
-
 
         // --------------------- //
         // ---- Start timer ---- //
         // --------------------- //
+
         long start = System.currentTimeMillis();
 
 
@@ -202,14 +201,14 @@ public class RedundancyMap_ implements PlugIn {
                 // ---- Run analysis ---- //
                 // ---------------------- //
 
-                GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp, rotInv, scaleFactor, filterConstant, 1, w0, h0);
+                GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, rotInv, scaleFactor, filterConstant, 1, w0, h0);
                 red0.run();
             }else{
                 int nFrames = imp0.getNFrames();
                 ImageStack finalStack = new ImageStack(w0, h0, nFrames);
 
                 if(nFrames == 1){
-                    IJ.error("No time dimension found. Make sure Image is a stack and Z/T/C dimensions are not swapped");
+                    IJ.error("No time dimension found. Make sure the image is a stack and Z/T dimensions are not swapped");
                     return;
                 }
 
@@ -220,30 +219,25 @@ public class RedundancyMap_ implements PlugIn {
 
                 ImageStack ims = imp0.getStack();
 
-
-                // ---------------------------- //
-                // ---- Get GAT parameters ---- //
-                // ---------------------------- //
-
-                refPixels0 = (float[]) ims.getProcessor(1).convertToFloatProcessor().getPixels();
-
-                GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
-                minimizer.run();
-
-                double minimizerGain = minimizer.gain;
-                double minimizerSigma = minimizer.sigma;
-                double minimizerOffset = minimizer.offset;
-
+                // ----------------- //
+                // ---- Analyze ---- //
+                // ----------------- //
                 for(int frame=1; frame<=nFrames; frame++){
 
                     IJ.log("Processing frame "+frame+"/"+nFrames);
+
 
                     // --------------------------------------------------------------------- //
                     // ---- Stabilise variance using the Generalized Anscombe transform ---- //
                     // --------------------------------------------------------------------- //
 
                     refPixels0 = (float[]) ims.getProcessor(frame).convertToFloatProcessor().getPixels();
-                    refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizerGain, minimizerSigma, minimizerOffset);
+
+                    GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
+                    minimizer.run();
+
+                    refPixels0 = (float[]) ims.getProcessor(frame).convertToFloatProcessor().getPixels();
+                    refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
                     // ------------------------- //
@@ -258,7 +252,7 @@ public class RedundancyMap_ implements PlugIn {
                     // ---- Run analysis ---- //
                     // ---------------------- //
 
-                    GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, speedUp, rotInv, scaleFactor, filterConstant, 1, w0, h0);
+                    GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, rotInv, scaleFactor, filterConstant, 1, w0, h0);
                     red0.run();
 
 
@@ -322,7 +316,7 @@ public class RedundancyMap_ implements PlugIn {
                 float[] refPixels1 = (float[]) fp1.getPixels(); // Get blurred and downscale pixel array
 
                 // Calculate redundancy map
-                GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, speedUp, rotInv, scaleFactor, filterConstant, i+1, w0, h0);
+                GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, rotInv, scaleFactor, filterConstant, i+1, w0, h0);
                 Thread thread = new Thread(red);
                 thread.start();
                 try {
