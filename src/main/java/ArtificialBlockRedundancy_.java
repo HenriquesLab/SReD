@@ -29,15 +29,18 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
 
     static private CLContext context;
 
-    static private CLProgram programGetPatchMeans, programGetSynthPatchDiffStd, programGetSynthPatchPearson;
+    static private CLProgram programGetPatchMeans, programGetSynthPatchDiffStd, programGetSynthPatchPearson,
+            programGetSynthPatchHu, programGetRelevanceMap;
 
-    static private CLKernel kernelGetPatchMeans, kernelGetSynthPatchDiffStd, kernelGetSynthPatchPearson;
+    static private CLKernel kernelGetPatchMeans, kernelGetSynthPatchDiffStd, kernelGetSynthPatchPearson,
+            kernelGetSynthPatchHu, kernelGetRelevanceMap;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPatchPixels, clDiffStdMap, clPearsonMap;
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPatchPixels, clDiffStdMap, clPearsonMap,
+            clHuMap, clRelevanceMap;
 
     @Override
     public void run(String s) {
@@ -51,27 +54,33 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
 
         // Get all open image titles
         int  nImages = getImageCount();
+        if (nImages < 2) {
+            IJ.error("Not enough images found. You need at least two.");
+            return;
+        }
+
         int[] ids = getIDList();
         String[] titles = new String[nImages];
         for(int i=0; i<nImages; i++){
             titles[i] = WindowManager.getImage(ids[i]).getTitle();
         }
 
+        // Define metric possibilities
+        String[] metrics = new String[3];
+        metrics[0] = "Pearson's R";
+        metrics[1] = "Abs. Diff. of StdDevs";
+        metrics[2] = "Hu moments";
+
         // Initialize dialog box
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Artificial Block Redundancy");
-        gd.addCheckbox("Rotation invariant?", false);
         gd.addChoice("Patch:", titles, titles[0]);
         gd.addChoice("Image:", titles, titles[1]);
         gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
+        gd.addChoice("Metric:", metrics, metrics[0]);
         gd.showDialog();
         if (gd.wasCanceled()) return;
 
-        // Get parameters
-        int rotInv = 0; // Rotation invariant analysis?
-        if(gd.getNextBoolean() == true) {
-            rotInv = 1;
-        }
-
+        // Get parameters from dialog box
         String patchTitle = gd.getNextChoice();
         int patchID = 0;
         for(int i=0; i<nImages; i++){
@@ -89,6 +98,8 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         }
 
         float filterConstant = (float) gd.getNextNumber();
+
+        String metric = gd.getNextChoice();
 
 
         // --------------------- //
@@ -112,15 +123,15 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         float[] patchPixels = (float[]) fp.getPixels();
         int bW = fp.getWidth(); // Patch width
         int bH = fp.getHeight(); // Patch height
-        int bRW = bW/2; // Patch radius (x-axis)
-        int bRH = bH/2; // Patch radius (y-axis)
-        int patchSize = (2*bRW+1) * (2*bRH+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRH)); // Number of pixels in a circular/elliptical patch
 
-        // Check if patch dimensions are odd
+        // Check if patch dimensions are odd, otherwise kill program
         if (bW % 2 == 0 || bH % 2 == 0) {
             IJ.error("Patch dimensions must be odd (e.g., 3x3 or 5x5). Please try again.");
             return;
         }
+
+        int bRW = bW/2; // Patch radius (x-axis)
+        int bRH = bH/2; // Patch radius (y-axis)
 
 
         // ------------------------------------------------- //
@@ -138,7 +149,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         int w = fp0.getWidth();
         int h = fp0.getHeight();
         int wh = w*h;
-        int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
+        //int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
 
 
         // ---------------------------------- //
@@ -156,22 +167,111 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         refPixels = TransformImageByVST_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
-        // ----------------------------------- //
-        // ---- Normalize patch and image ---- //
-        // ----------------------------------- //
-        float patchMinMax[] = findMinMax(patchPixels, bW, bH, 0, 0);
-        patchPixels = normalize(patchPixels, bW, bH, 0, 0, patchMinMax, 0, 1);
+        // ----------------------- //
+        // ---- Process patch ---- //
+        // ----------------------- //
 
-        float imgMinMax[] = findMinMax(refPixels, w, h, 0, 0);
-        refPixels = normalize(refPixels, w, h, 0, 0, imgMinMax, 0, 1);
+        // Convert patch to "double" type, keeping only the pixels within the inbound circle/ellipse
+        double[] patchPixelsDouble = new double[bW*bH];
+        int patchSize = 0;
+        int index = 0;
+        for(int j=0; j<bH; j++){
+            for (int i=0; i<bW; i++) {
+                float dx = (float)(i-bRW);
+                float dy = (float)(j-bRH);
+                if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
+                    patchPixelsDouble[index] = (double) patchPixels[j*bW+i];
+                    index++;
+                    patchSize++;
+                }
+            }
+        }
 
+        // Find min and max
+        double patchMin = Double.MAX_VALUE; // Initialize as a very large number
+        double patchMax = -Double.MAX_VALUE; // Initialize as a very small number
+        double patchMean = 0.0;
 
-        // ----------------------------------- //
-        // ---- Get mean-subtracted patch ---- //
-        // ----------------------------------- //
-        float[] patchMeanVarStd = meanVarStd(patchPixels);
         for(int i=0; i<patchSize; i++){
-            patchPixels[i] = patchPixels[i] - patchMeanVarStd[0];
+            patchMin = min(patchMin, patchPixelsDouble[i]);
+            patchMax = max(patchMax, patchPixelsDouble[i]);
+            patchMean += patchPixelsDouble[i];
+        }
+
+
+        patchMean /= (double) patchSize;
+
+        // Normalize
+        for(int i=0; i<patchSize; i++){
+            patchPixelsDouble[i] = (patchPixelsDouble[i] - patchMin)/(patchMax - patchMin + EPSILON);
+        }
+
+        // Subtract mean
+        for(int i=0; i<patchSize; i++){
+            patchPixelsDouble[i] = patchPixelsDouble[i] - patchMean;
+        }
+
+        // Normalize again
+        patchMin = Double.MAX_VALUE; // Initialize as a very large number
+        patchMax = -Double.MAX_VALUE; // Initialize as a very small number
+        patchMean = 0.0f;
+
+        for(int i=0; i<patchSize; i++){
+            patchMin = min(patchMin, patchPixelsDouble[i]);
+            patchMax = max(patchMax, patchPixelsDouble[i]);
+            patchMean += patchPixelsDouble[i];
+        }
+        patchMean /= (double)patchSize;
+
+        for(int i=0; i<patchSize; i++){
+            patchPixelsDouble[i] = (patchPixelsDouble[+i] - patchMin)/(patchMax - patchMin + EPSILON);
+        }
+
+        // Typecast back to float
+        float[] patchPixelsNorm = new float[patchSize];
+        for(int i=0; i<patchSize; i++){
+            patchPixelsNorm[i] = (float)patchPixelsDouble[i];
+        }
+
+        // Calculate standard deviation
+        double sumSq = 0.0f;
+        for(int i=0; i<patchSize; i++){
+            sumSq += (patchPixelsDouble[i] - patchMean) * (patchPixelsDouble[i] - patchMean);
+        }
+        float patchStdDev = (float) sqrt(sumSq/(patchSize-1));
+
+
+        // ----------------------- //
+        // ---- Process image ---- //
+        // ----------------------- //
+
+        // Cast to "double" type
+        double[] refPixelsDouble = new double[wh];
+        for(int i=0; i<wh; i++){
+            refPixelsDouble[i] = (double)refPixels[i];
+        }
+
+        // Get min and max
+        double imgMin = Double.MAX_VALUE;
+        double imgMax = -Double.MAX_VALUE;
+        for(int i=0; i<wh; i++){
+            double pixelValue = refPixelsDouble[i];
+            if(pixelValue<imgMin){
+                imgMin = pixelValue;
+            }
+            if(pixelValue>imgMax){
+                imgMax = pixelValue;
+            }
+        }
+
+        // Normalize
+        for(int i=0; i<wh; i++) {
+            refPixelsDouble[i] = (refPixelsDouble[i] - imgMin) / (imgMax - imgMin + EPSILON);
+        }
+
+        // Cast back to float
+        for(int i=0; i<wh; i++){
+            refPixels[i] = (float)refPixelsDouble[i];
         }
 
 
@@ -258,6 +358,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRW$", "" + bRW);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$BRH$", "" + bRH);
+        programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$EPSILON$", "" + EPSILON);
         programGetPatchMeans = context.createProgram(programStringGetPatchMeans).build();
 
         // Fill OpenCL buffers
@@ -310,109 +411,13 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         programGetPatchMeans.release();
 
 
-        // -------------------------------------------------------------- //
-        // ---- Calculate absolute difference of standard deviations ---- //
-        // -------------------------------------------------------------- //
+        // --------------------------------------------------------------- //
+        // ---- Calculate block repetition map with the chosen metric ---- //
+        // --------------------------------------------------------------- //
 
-        if(rotInv == 1) {
-            // Create OpenCL program
-            String programStringGetSynthPatchDiffStd = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchDiffStd.cl");
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$WIDTH$", "" + w);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$HEIGHT$", "" + h);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BW$", "" + bW);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BH$", "" + bH);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BRW$", "" + bRW);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BRH$", "" + bRH);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$PATCH_STD$", "" + patchMeanVarStd[2]);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$EPSILON$", "" + EPSILON);
-            programGetSynthPatchDiffStd = context.createProgram(programStringGetSynthPatchDiffStd).build();
+        if(metric == metrics[0]) { // Pearson correlation
 
-            // Fill OpenCL buffers
-            clPatchPixels = context.createFloatBuffer(bW*bH, READ_ONLY);
-            fillBufferWithFloatArray(clPatchPixels, patchPixels);
-
-            float[] diffStdMap = new float[wh];
-            clDiffStdMap = context.createFloatBuffer(wh, READ_WRITE);
-            fillBufferWithFloatArray(clDiffStdMap, diffStdMap);
-
-            // Create OpenCL kernel and set args
-            kernelGetSynthPatchDiffStd = programGetSynthPatchDiffStd.createCLKernel("kernelGetSynthPatchDiffStd");
-
-            argn = 0;
-            kernelGetSynthPatchDiffStd.setArg(argn++, clPatchPixels);
-            kernelGetSynthPatchDiffStd.setArg(argn++, clRefPixels);
-            kernelGetSynthPatchDiffStd.setArg(argn++, clLocalMeans);
-            kernelGetSynthPatchDiffStd.setArg(argn++, clLocalStds);
-            kernelGetSynthPatchDiffStd.setArg(argn++, clDiffStdMap);
-
-            // Calculate
-            queue.putWriteBuffer(clPatchPixels, true);
-            queue.putWriteBuffer(clDiffStdMap, true);
-            queue.put2DRangeKernel(kernelGetSynthPatchDiffStd, 0, 0, w, h, 0, 0);
-            queue.finish();
-
-            // Read results back from the device
-            queue.putReadBuffer(clDiffStdMap, true);
-            for (int y=0; y<h; y++) {
-                for (int x=0; x<w; x++) {
-                    diffStdMap[y*w+x] = clDiffStdMap.getBuffer().get(y*w+x);
-                    queue.finish();
-                }
-            }
-            queue.finish();
-
-            // Release memory
-            kernelGetSynthPatchDiffStd.release();
-            clPatchPixels.release();
-            clDiffStdMap.release();
-            programGetSynthPatchDiffStd.release();
-
-
-            // Invert values (because so far we have inverse frequencies)
-            float[] diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
-            diffStdMap = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
-                    diffStdMap[j*w+i] = 1.0f - diffStdMap[j*w+i];
-                }
-            }
-            diffStdMap = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
-
-            // Filter out flat regions
-            float[] localVars = new float[wh];
-            float noiseMeanVar = 0.0f;
-            int counter = 0;
-            float value;
-            for(int j=0; j<h; j++){
-                for(int i=0; i<w; i++){
-                    value = localStds[j*w+i]*localStds[j*w+i];
-                    localVars[j*w+i] = value;
-                    noiseMeanVar += value;
-                    counter++;
-                }
-            }
-            noiseMeanVar /= counter;
-
-            for(int j=0; j<h; j++){
-                for(int i=0; i<w; i++){
-                    if(localVars[j*w+i]<noiseMeanVar*filterConstant){
-                        diffStdMap[j*w+i] = 0.0f;
-                    }
-                }
-            }
-
-            // Display results
-            diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
-            float[] diffStdMapNorm = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
-            FloatProcessor fp1 = new FloatProcessor(w, h, diffStdMapNorm);
-            ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
-            imp1.show();
-        }
-
-        if(rotInv == 0) {
-            // ----
-            // ---- Pearson correlation ----
+            // Build OpenCL program
             String programStringGetSynthPatchPearson = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchPearson.cl");
             programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$WIDTH$", "" + w);
             programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$HEIGHT$", "" + h);
@@ -421,7 +426,201 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BH$", "" + bH);
             programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRW$", "" + bRW);
             programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRH$", "" + bRH);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_STD$", "" + patchMeanVarStd[2]);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_MEAN$", "" + patchMean);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_STD$", "" + patchStdDev);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$EPSILON$", "" + EPSILON);
+            programGetSynthPatchPearson = context.createProgram(programStringGetSynthPatchPearson).build();
+
+            // Fill OpenCL buffers
+            clPatchPixels = context.createFloatBuffer(patchSize, READ_ONLY);
+            fillBufferWithFloatArray(clPatchPixels, patchPixelsNorm);
+
+            float[] pearsonMap = new float[wh];
+            clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clPearsonMap, pearsonMap);
+
+            // Create kernel and set args
+            kernelGetSynthPatchPearson = programGetSynthPatchPearson.createCLKernel("kernelGetSynthPatchPearson");
+
+            argn = 0;
+            kernelGetSynthPatchPearson.setArg(argn++, clPatchPixels);
+            kernelGetSynthPatchPearson.setArg(argn++, clRefPixels);
+            kernelGetSynthPatchPearson.setArg(argn++, clLocalMeans);
+            kernelGetSynthPatchPearson.setArg(argn++, clLocalStds);
+            kernelGetSynthPatchPearson.setArg(argn++, clPearsonMap);
+
+            // Calculate Pearson's correlation coefficient (reference patch vs. all)
+            queue.putWriteBuffer(clPatchPixels, true);
+            queue.putWriteBuffer(clPearsonMap, true);
+            queue.put2DRangeKernel(kernelGetSynthPatchPearson, 0, 0, w, h, 0, 0);
+            queue.finish();
+
+            // Read Pearson's coefficients back from the GPU
+            queue.putReadBuffer(clPearsonMap, true);
+            for (int y=0; y<h; y++) {
+                for (int x=0; x<w; x++) {
+                    pearsonMap[y*w+x] = clPearsonMap.getBuffer().get(y*w+x);
+                    queue.finish();
+                }
+            }
+            queue.finish();
+
+            // Release GPU resources
+            kernelGetSynthPatchPearson.release();
+            clPatchPixels.release();
+            clPearsonMap.release();
+            programGetSynthPatchPearson.release();
+
+
+            // --------------------------------------- //
+            // ---- Filter out irrelevant regions ---- //
+            // --------------------------------------- //
+            //TODO: SHOULDNT THIS BE 3% PRIME ASIA?
+            // NOTE: THIS KERNEL IS THE SAME AS THE LOCAL STDS BUT WITHOUT NORMALIZING THE PATCHES. WE CAN USE THE SAME BUFFERS
+            float[] pearsonMapNorm = new float[wh];
+
+            if(filterConstant>0.0f) {
+                showStatus("Calculating relevance map...");
+
+                // Create OpenCL program
+                String programStringGetRelevanceMap = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetRelevanceMap.cl");
+                programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$WIDTH$", "" + w);
+                programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$HEIGHT$", "" + h);
+                programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$PATCH_SIZE$", "" + patchSize);
+                programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$BRW$", "" + bRW);
+                programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$BRH$", "" + bRH);
+                programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$EPSILON$", "" + EPSILON);
+                programGetRelevanceMap = context.createProgram(programStringGetRelevanceMap).build();
+
+                // Create and fill buffers
+                float[] relevanceMap = new float[wh];
+                clRelevanceMap = context.createFloatBuffer(wh, READ_WRITE);
+                fillBufferWithFloatArray(clRelevanceMap, relevanceMap);
+                queue.putWriteBuffer(clRelevanceMap, true);
+                queue.finish();
+
+                // Create OpenCL kernel and set args
+                kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap");
+
+                argn = 0;
+                kernelGetRelevanceMap.setArg(argn++, clRefPixels);
+                kernelGetRelevanceMap.setArg(argn++, clRelevanceMap);
+
+                // Calculate
+                queue.put2DRangeKernel(kernelGetRelevanceMap, 0, 0, w, h, 0, 0);
+                queue.finish();
+
+                // Read the relevance map back from the device
+                queue.putReadBuffer(clRelevanceMap, true);
+                for (int y=0; y<h; y++) {
+                    for (int x=0; x<w; x++) {
+                        relevanceMap[y*w+x] = clRelevanceMap.getBuffer().get(y*w+x);
+                    }
+                }
+                queue.finish();
+
+                // Calculate mean noise variance
+                float noiseMeanVar = 0.0f;
+                float n = 0.0f;
+                for (int j=bRH; j<h-bRH; j++) {
+                    for (int i=bRW; i<w-bRW; i++) {
+                        noiseMeanVar += relevanceMap[j*w+i];
+                        n += 1.0f;
+                    }
+                }
+                noiseMeanVar /= n;
+
+                // Filter out irrelevant regions
+                for(int j=bRH; j<h-bRH; j++) {
+                    for (int i=bRW; i<w-bRW; i++) {
+                        if(relevanceMap[j*w+i] <= noiseMeanVar*filterConstant) {
+                            pearsonMap[j*w+i] = 0.0f;
+                        }
+                    }
+                }
+
+                // ----------------------------------------------------------------------- //
+                // ---- Normalize output (avoiding pixels outside the relevance mask) ---- //
+                // ----------------------------------------------------------------------- //
+
+                // Find min and max within the relevance mask
+                float pearsonMin = Float.MAX_VALUE;
+                float pearsonMax = -Float.MAX_VALUE;
+
+                for (int j=bRH; j<h-bRH; j++) {
+                    for (int i=bRW; i<w-bRW; i++) {
+                        if (relevanceMap[j*w+i]>noiseMeanVar*filterConstant) {
+                            float pixelValue = pearsonMap[j*w+i];
+                            if (pixelValue > pearsonMax) {
+                                pearsonMax = pixelValue;
+                            }
+                            if (pixelValue < pearsonMin) {
+                                pearsonMin = pixelValue;
+                            }
+                        }
+                    }
+                }
+
+                // Remap pixels
+                for (int j=bRH; j<h-bRH; j++) {
+                    for (int i=bRW; i<w-bRW; i++) {
+                        if (relevanceMap[j*w+i]>noiseMeanVar*filterConstant) {
+                            pearsonMapNorm[j*w+i] = (pearsonMap[j*w+i]-pearsonMin) / (pearsonMax-pearsonMin);
+                        }
+                    }
+                }
+            }else{
+
+                // -------------------------- //
+                // ---- Normalize output ---- //
+                // -------------------------- //
+
+                // Find min and max
+                float pearsonMin = Float.MAX_VALUE;
+                float pearsonMax = -Float.MAX_VALUE;
+
+                for (int j=bRH; j<h-bRH; j++) {
+                    for (int i=bRW; i<w-bRW; i++) {
+                        float pixelValue = pearsonMap[j*w+i];
+                        if (pixelValue > pearsonMax) {
+                            pearsonMax = pixelValue;
+                        }
+                        if (pixelValue < pearsonMin) {
+                            pearsonMin = pixelValue;
+                        }
+                    }
+                }
+
+                // Remap pixels
+                for (int j=bRH; j<h-bRH; j++) {
+                    for (int i=bRW; i<w-bRW; i++) {
+                        pearsonMapNorm[j*w+i] = (pearsonMap[j * w + i] - pearsonMin) / (pearsonMax - pearsonMin);
+                    }
+                }
+            }
+
+
+            // ------------------------- //
+            // ---- Display results ---- //
+            // ------------------------- //
+
+            FloatProcessor fp1 = new FloatProcessor(w, h, pearsonMapNorm);
+            ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
+            imp1.show();
+        }
+
+        if(metric == metrics[1]) { // Absolute Difference of Standard Deviations
+
+            // Build OpenCL program
+            String programStringGetSynthPatchPearson = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchPearson.cl");
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$WIDTH$", "" + w);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$HEIGHT$", "" + h);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BW$", "" + bW);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BH$", "" + bH);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRW$", "" + bRW);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRH$", "" + bRH);
+            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_STD$", "" + patchStdDev);
             programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$EPSILON$", "" + EPSILON);
             programGetSynthPatchPearson = context.createProgram(programStringGetSynthPatchPearson).build();
 
@@ -498,6 +697,129 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             imp1.show();
         }
 
+        if(metric == metrics[2]) { // Hu moments
+            // Create OpenCL program
+            String programStringGetSynthPatchHu = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchHu.cl");
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$WIDTH$", "" + w);
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$HEIGHT$", "" + h);
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BW$", "" + bW);
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BH$", "" + bH);
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BRW$", "" + bRW);
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BRH$", "" + bRH);
+            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$EPSILON$", "" + EPSILON);
+            programGetSynthPatchHu = context.createProgram(programStringGetSynthPatchHu).build();
+
+            // Fill OpenCL buffers
+            clPatchPixels = context.createFloatBuffer(bW*bH, READ_ONLY);
+            fillBufferWithFloatArray(clPatchPixels, patchPixels);
+
+            float[] huMap = new float[wh];
+            clHuMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clHuMap, huMap);
+
+            // Create OpenCL kernel and set args
+            kernelGetSynthPatchHu = programGetSynthPatchHu.createCLKernel("kernelGetSynthPatchHu");
+
+            argn = 0;
+            kernelGetSynthPatchHu.setArg(argn++, clPatchPixels);
+            kernelGetSynthPatchHu.setArg(argn++, clRefPixels);
+            kernelGetSynthPatchHu.setArg(argn++, clLocalMeans);
+            kernelGetSynthPatchHu.setArg(argn++, clHuMap);
+
+            // Calculate
+            queue.putWriteBuffer(clPatchPixels, true);
+            queue.putWriteBuffer(clHuMap, true);
+            queue.finish();
+
+            // Enqueue kernel
+            queue.put2DRangeKernel(kernelGetSynthPatchHu, 0, 0, w, h, 0, 0);
+
+            // Read results back from the device
+            queue.putReadBuffer(clHuMap, true);
+            for (int y=0; y<h; y++) {
+                for (int x=0; x<w; x++) {
+                    huMap[y*w+x] = clHuMap.getBuffer().get(y*w+x);
+                    queue.finish();
+                }
+            }
+            queue.finish();
+
+            // Release memory
+            kernelGetSynthPatchHu.release();
+            clPatchPixels.release();
+            clHuMap.release();
+            programGetSynthPatchHu.release();
+
+
+            // --------------------------------------- //
+            // ---- Filter out irrelevant regions ---- //
+            // --------------------------------------- //
+
+            float[] localVars = new float[wh];
+            float noiseMeanVar = 0.0f;
+            int counter = 0;
+            float value;
+            for(int j=0; j<h; j++){
+                for(int i=0; i<w; i++){
+                    value = localStds[j*w+i]*localStds[j*w+i];
+                    localVars[j*w+i] = value;
+                    noiseMeanVar += value;
+                    counter++;
+                }
+            }
+            noiseMeanVar /= counter;
+
+            for(int j=0; j<h; j++){
+                for(int i=0; i<w; i++){
+                    if(localVars[j*w+i]<=noiseMeanVar*filterConstant){
+                        huMap[j*w+i] = 0.0f;
+                    }
+                }
+            }
+
+
+            // ----------------------------------------------------------------------- //
+            // ---- Normalize output (avoiding pixels outside the relevance mask) ---- //
+            // ----------------------------------------------------------------------- //
+
+            // Find min and max inside the relevance mask
+            float huMin = 0.0f;
+            float huMax = 0.0f;
+
+            for(int j=bRH; j<h-bRH; j++){
+                for(int i=bRW; i<w-bRW; i++){
+                    if(localVars[j*w+i]>noiseMeanVar*filterConstant) {
+                        float pixelValue = huMap[j * w + i];
+                        if (pixelValue > huMax) {
+                            huMax = pixelValue;
+                        }
+                        if (pixelValue < huMin) {
+                            huMin = pixelValue;
+                        }
+                    }
+                }
+            }
+
+            // Remap pixels
+            float[] huMapNorm = new float[wh];
+            for(int j=bRH; j<h-bRH; j++){
+                for(int i=bRW; i<w-bRW; i++){
+                    if(localVars[j*w+i]>noiseMeanVar*filterConstant) {
+                        huMapNorm[j*w+i] = (huMap[j*w+i] - huMin) / (huMax - huMin);
+                    }
+                }
+            }
+
+
+            // ------------------------- //
+            // ---- Display results ---- //
+            // ------------------------- //
+
+            FloatProcessor fp1 = new FloatProcessor(w, h, huMapNorm);
+            ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
+            imp1.show();
+        }
 
         // ---- Stop timer ----
         IJ.log("Finished!");
@@ -586,7 +908,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
     }
 
     public static float[] findMinMax(float[] inputArray, int w, int h, int offsetX, int offsetY){
-        float[] minMax = {inputArray[offsetY*w+offsetX], inputArray[offsetY*w+offsetX]};
+        float[] minMax = {Float.MAX_VALUE, -Float.MAX_VALUE};
 
         for(int j=offsetY; j<h-offsetY; j++){
             for(int i=offsetX; i<w-offsetX; i++){
@@ -620,6 +942,16 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             }
         }
         return normalizedPixels;
+    }
+
+    public static float[] normalize01(float[] inputArr, int w, int h, int bRW, int bRH, float min, float max, float EPSILON){
+        float[] output = new float[w*h];
+        for(int j=bRH; j<h-bRH; j++){
+            for(int i=bRW; i<w-bRW; i++){
+                output[j*w+i] = (inputArr[j*w+i]-min)/(max-min+EPSILON);
+            }
+        }
+        return output;
     }
 
     public static double getInvariant(float[] patch, int w, int h, int p, int q){

@@ -30,12 +30,11 @@ kernel void kernelGetPatchPearson(
     float ref_std = local_stds[center_y*w+center_x];
 
     int counter = 0;
-    float r2 = bRW*bRW;
     for(int j=center_y-bRH; j<=center_y+bRH; j++){
         for(int i=center_x-bRW; i<=center_x+bRW; i++){
-            float dx = (float)(i-center_x);
-            float dy = (float)(j-center_y);
-            if(dx*dx + dy*dy <= r2){
+            float dx = (float)((i-center_x)/bRW);
+            float dy = (float)((j-center_y)/bRH);
+            if(dx*dx + dy*dy <= 1.0f){
                 ref_patch[counter] = ref_pixels[j*w+i] - ref_mean;
                 counter++;
             }
@@ -52,9 +51,9 @@ kernel void kernelGetPatchPearson(
     float covar = 0.0f;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            float dx = (float)(i-gx);
-            float dy = (float)(j-gy);
-            if(dx*dx+dy*dy <= r2){
+            float dx = (float)((i-gx)/bRW);
+            float dy = (float)((j-gy)/bRH);
+            if(dx*dx+dy*dy <= 1.0f){
                 comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
                 covar += ref_patch[counter] * comp_patch[counter];
                 counter++;

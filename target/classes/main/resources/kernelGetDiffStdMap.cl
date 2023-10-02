@@ -39,17 +39,28 @@ kernel void kernelGetDiffStdMap(
     float ref_patch[patch_size] = {0.0f};
     float ref_mean = local_means[y0*w+x0];
 
+    float m00 = 0.0f;
+    float m02 = 0.0f;
+    float m20 = 0.0f;
+
     int ref_counter = 0;
     for(int j0=y0-bRH; j0<=y0+bRH; j0++){
         for(int i0=x0-bRW; i0<=x0+bRW; i0++){
             float dx = (float)((i0-x0)/bRW);
             float dy = (float)((j0-y0)/bRH);
             if(dx*dx+dy*dy <= 1.0f){
+                float pixel_value = ref_pixels[j0*w+i0];
                 ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean);
+
+                m00 += 1.0f;
+                m02 += dy*dy*pixel_value;
+                m20 += dx*dx*pixel_value;
+
                 ref_counter++;
             }
         }
     }
+    float ref_hu_1 = (m20+m02)/(m00*m00);
 
     // For each comparison pixel...
     for(int y1=bRH; y1<h-bRH; y1++){
@@ -57,26 +68,42 @@ kernel void kernelGetDiffStdMap(
             // Get mean-subtracted patch and local standard deviation
             float comp_patch[patch_size] = {0.0f};
             float comp_mean = local_means[y1*w+x1];
+
+            m00 = 0.0f;
+            m02 = 0.0f;
+            m20 = 0.0f;
+
             int comp_counter = 0;
             for(int j1=y1-bRH; j1<=y1+bRH; j1++){
                 for(int i1=x1-bRW; i1<=x1+bRW; i1++){
                     float dx = (float)((i1-x1)/bRW);
                     float dy = (float)((j1-y1)/bRH);
                     if(dx*dx+dy*dy <= 1.0f){
+                        float pixel_value = ref_pixels[j1*w+i1];
                         comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
+
+                        m00 += 1.0f;
+                        m02 += dy*dy*pixel_value;
+                        m20 += dx*dx*pixel_value;
+
                         comp_counter++;
                     }
                 }
             }
+
+            float comp_hu_1 = (m20+m02)/(m00*m00);
 
             // Calculate absolute difference of standard deviations add it to the sum at X (avoiding division by zero)
             float std_x = local_stds[y0*w+x0];
             float std_y = local_stds[y1*w+x1];
             //float weight = 1.0f - getGaussianWeight(std_x, std_y, filter_param);
             //diff_std_map[y0*w+x0] += ((fabs(std_x - std_y)) * weight);
+
             float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param+EPSILON)));
-            diff_std_map[y0*w+x0] += std_y * weight;
-            weights_sum_map[y0*w+x0] += weight;
+            //diff_std_map[y0*w+x0] += (float)fabs(std_x-std_y) * weight;
+
+            diff_std_map[y0*w+x0] += (float) fabs(ref_hu_1 - comp_hu_1) * (1.0f/(weight+EPSILON));
+            weights_sum_map[y0*w+x0] += weight+EPSILON;
         }
     }
 }

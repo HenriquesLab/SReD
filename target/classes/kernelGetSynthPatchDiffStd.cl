@@ -49,8 +49,8 @@ kernel void kernelGetSynthPatchDiffStd(
     counter = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            float dx = (float)(i-gx/(bRW));
-            float dy = (float)(j-gy/(bRH));
+            float dx = (float)((i-gx)/bRW);
+            float dy = (float)((j-gy)/bRH);
             if(dx*dx+dy*dy <= 1.0f){
                 comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
                 counter++;

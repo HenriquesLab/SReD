@@ -29,9 +29,9 @@ kernel void kernelGetLocalMeans(
     float r2 = bRW*bRW;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            float dx = (float)(i-gx);
-            float dy = (float)(j-gy);
-            if(dx*dx+dy*dy <= r2){
+            float dx = (float)((i-gx)/bRW);
+            float dy = (float)((j-gy)/bRH);
+            if(dx*dx+dy*dy <= 1.0f){
                 value = ref_pixels[j*w+i];
                 sum += value;
                 sq_sum += value * value;

@@ -83,11 +83,17 @@ kernel void kernelGetPearsonMap(
             float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param+EPSILON)));
             weights_sum_map[y0*w+x0] += weight;
 
-            if(std_x == 0.0f && std_y == 0.0f){
-                pearson_map[y0*w+x0] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same)
-            }else{
-                pearson_map[y0*w+x0] += (float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON))) * weight; // Pearson distance, truncate anti-correlations to zero
-            }
+            float c1 = (0.01f * 1.0f) * (0.01f * 1.0f);
+            float c2 = 0.0000001;
+
+            pearson_map[gy*w+gx] = ((float) fmax(0.0f, (float)(((2.0f * covar + c2)) / ((std_x*std_x+std_y*std_y+c2)))));
+
+            // PEARSON
+            //if(std_x == 0.0f && std_y == 0.0f){
+            //    pearson_map[y0*w+x0] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same)
+            //}else{
+            //    pearson_map[y0*w+x0] += (float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON))) * weight; // Pearson distance, truncate anti-correlations to zero
+            //}
 
         }
     }
