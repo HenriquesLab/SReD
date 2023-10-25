@@ -1,18 +1,11 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
-#define patch_size $PATCH_SIZE$
-#define bW $BW$
-#define bH $BH$
 #define bRW $BRW$
 #define bRH $BRH$
 #define ref_std $PATCH_STD$
 #define EPSILON $EPSILON$
-
 kernel void kernelGetSynthPatchDiffStd(
-    global float* patch_pixels,
-    global float* ref_pixels,
-    global float* local_means,
     global float* local_stds,
     global float* diff_std_map
 ){
@@ -25,39 +18,16 @@ kernel void kernelGetSynthPatchDiffStd(
         return;
     }
 
-    // Get mean_subtracted reference patch from buffer
-    __local float ref_patch[patch_size];
+    // -------------------------------------------------------------- //
+    // ---- Calculate absolute difference of standard deviations ---- //
+    // -------------------------------------------------------------- //
 
-    int counter = 0;
-    for(int j=0; j<bH; j++){
-        for(int i=0; i<bW; i++){
-            float dx = (float)((i-bRW)/bRW);
-            float dy = (float)((j-bRH)/bRH);
-            if(dx*dx + dy*dy <= 1.0f){
-                ref_patch[counter] = ref_pixels[j*bW+i];
-                counter++;
-            }
-        }
-    }
-
-    // For each comparison pixel...
-    // Get mean_subtracted comparison patch
-    float comp_patch[patch_size];
-    float comp_mean = local_means[gy*w+gx];
     float comp_std = local_stds[gy*w+gx];
 
-    counter = 0;
-    for(int j=gy-bRH; j<=gy+bRH; j++){
-        for(int i=gx-bRW; i<=gx+bRW; i++){
-            float dx = (float)((i-gx)/bRW);
-            float dy = (float)((j-gy)/bRH);
-            if(dx*dx+dy*dy <= 1.0f){
-                comp_patch[counter] = ref_pixels[j*w+i] - comp_mean;
-                counter++;
-            }
-        }
-    }
+    // We use the reciprocal to get a measure of similarity
+    // We cap the max value to Float.MAX to avoid "inf"
 
-    // Calculate absolute difference of standard deviations
-    diff_std_map[gy*w+gx] = fabs(ref_std - comp_std);
+    float similarity = 1.0f / (fabs(ref_std - comp_std)+EPSILON);
+    similarity = fmin(similarity, FLT_MAX);
+    diff_std_map[gy*w+gx] = similarity;
 }

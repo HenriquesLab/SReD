@@ -262,9 +262,9 @@ kernel void kernelGetSynthPatchHu(
     // ------------------------------------------------- //
 
     // Hu 1
-    hu_map[gy*w+gx] = (float) comp_hu1;
+    //hu_map[gy*w+gx] = (float) comp_hu1;
 
-    //hu_map[gy*w+gx] = (float) sqrt(ref_hu1*comp_hu1);
+    hu_map[gy*w+gx] = (float) sqrt(ref_hu1*comp_hu1);
 
     // Hu 2
     //hu_map[gy*w+gx] = (float) sqrt(ref_hu2*comp_hu2);

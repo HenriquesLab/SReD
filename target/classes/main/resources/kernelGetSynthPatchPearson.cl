@@ -42,7 +42,6 @@ kernel void kernelGetSynthPatchPearson(
     // ---- Get comparison patch pixels ---- //
     // ------------------------------------- //
 
-    // Get pixels
     double comp_patch[patch_size];
     int index = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
@@ -122,10 +121,13 @@ kernel void kernelGetSynthPatchPearson(
     //pearson_map[gy*w+gx] = ((float) fmax(0.0f, (float)(((2.0f * covar + c2)) / ((ref_std*ref_std+comp_std*comp_std+c2)))));
 
     // PEARSON
-    double comp_std = (double)local_stds[gy*w+gx];
-    if(ref_std == 0.0 && comp_std == 0.0){
+    double ref_std_d = (double)ref_std;
+    double comp_std_d = (double)local_stds[gy*w+gx];
+    if(ref_std_d == 0.0 && comp_std_d == 0.0){
         pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
+    }else if(ref_std_d==0.0 || comp_std_d==0.0){
+        pearson_map[gy*w+gx] = 0.0; // Special case when only one patch is flat, correlation would be NaN but we want 0
     }else{
-        pearson_map[gy*w+gx] = (float) fmax(0.0, (covar / ((ref_std * comp_std) + EPSILON))); // Truncate anti-correlations
+        pearson_map[gy*w+gx] = (float) fmax(0.0, (covar / ((ref_std_d * comp_std_d) + EPSILON))); // Truncate anti-correlations
     }
 }
