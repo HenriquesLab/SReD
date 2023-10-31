@@ -284,7 +284,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
 
         // Calculate mean and standard deviation
         float patchMeanFloat = 0.0f;
-        double patchStdDev = 0.0f;
+        double patchStdDev = 0.0;
         for(int i=0; i<patchSize; i++){
             patchMeanFloat += patchPixelsFloat[i];
             patchStdDev += (patchPixelsDouble[i] - patchMean) * (patchPixelsDouble[i] - patchMean);

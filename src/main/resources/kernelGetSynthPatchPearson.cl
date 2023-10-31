@@ -31,7 +31,7 @@ kernel void kernelGetSynthPatchPearson(
     // ---- Get mean-subtracted and normalized reference patch from buffer ---- //
     // ------------------------------------------------------------------------ //
 
-    __local double ref_patch[bW*bH]; // Make a local copy to avoid slower reads from global memory
+    __local double ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
 
     for(int i=0; i<patch_size; i++){
         ref_patch[i] = (double)patch_pixels[i];
