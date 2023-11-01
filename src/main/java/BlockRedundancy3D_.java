@@ -240,7 +240,6 @@ public class BlockRedundancy3D_ implements PlugIn {
 
         for(int n=0; n<z; n++) {
             refPixels[n] = VarianceStabilisingTransform3D_.getGAT(refPixels[n], minimizer.gain, minimizer.sigma, minimizer.offset);
-            ims0.setProcessor(new FloatProcessor(w, h, refPixels[n]), n+1);
         }
 
 

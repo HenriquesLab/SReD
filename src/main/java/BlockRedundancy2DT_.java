@@ -200,7 +200,6 @@ public class BlockRedundancy2DT_ implements PlugIn {
 
         for(int f=0; f<nFrames; f++){
             refPixels[f] = VarianceStabilisingTransform3D_.getGAT(refPixels[f], minimizer3D.gain, minimizer3D.sigma, minimizer3D.offset);
-            imsImage.setProcessor(new FloatProcessor(w, h, refPixels[f]), f+1);
         }
 
 
@@ -419,7 +418,7 @@ public class BlockRedundancy2DT_ implements PlugIn {
         for(int f=0; f<nFrames; f++){
             IJ.log("Processing frame " + (f+1) + "/" + nFrames);
             IJ.showStatus("Processing frame " + (f+1) + "/" + nFrames);
-            IJ.showProgress(f+1, nFrames);
+            IJ.showProgress(f, nFrames);
 
 
             // ------------------------------- //
@@ -451,7 +450,7 @@ public class BlockRedundancy2DT_ implements PlugIn {
             fillBufferWithFloatArray(clLocalStds, localStds);
 
             // Create OpenCL kernel and set args
-            kernelGetPatchMeans = programGetPatchMeans.createCLKernel("kernelGetPatchMeans");
+            kernelGetPatchMeans = programGetPatchMeans.createCLKernel("kernelGetPatchMeans2D");
 
             int argn = 0;
             kernelGetPatchMeans.setArg(argn++, clRefPixels);
@@ -463,7 +462,8 @@ public class BlockRedundancy2DT_ implements PlugIn {
             queue.putWriteBuffer(clLocalMeans, true);
             queue.putWriteBuffer(clLocalStds, true);
 
-            showStatus("Calculating local means...");
+            IJ.showStatus("Calculating local means... Frame " + (f+1) + "/" + nFrames);
+            IJ.showProgress(f, nFrames);
 
             queue.put2DRangeKernel(kernelGetPatchMeans, 0, 0, w, h, 0, 0);
             queue.finish();
@@ -495,7 +495,8 @@ public class BlockRedundancy2DT_ implements PlugIn {
             // --------------------------------------------------------------- //
 
             if(metric == metrics[0]) { // Pearson correlation
-                showStatus("Calculating Pearson correlations...");
+                IJ.showStatus("Calculating Pearson's correlations... Frame " + (f+1) + "/" + nFrames);
+                IJ.showProgress(f, nFrames);
 
                 // Build OpenCL program
                 String programStringGetPatchPearson = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetPatchPearson2D.cl");
@@ -559,7 +560,8 @@ public class BlockRedundancy2DT_ implements PlugIn {
                 // NOTE: THIS KERNEL IS THE SAME AS THE LOCAL STDS BUT WITHOUT NORMALIZING THE PATCHES. WE CAN USE THE SAME BUFFERS
 
                 if(filterConstant>0.0f) {
-                    showStatus("Calculating relevance map...");
+                    IJ.showStatus("Calculating relevance map... Frame " + (f+1) + "/" + nFrames);
+                    IJ.showProgress(f, nFrames);
 
                     // Create OpenCL program
                     String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetRelevanceMap2D.cl");
@@ -696,7 +698,14 @@ public class BlockRedundancy2DT_ implements PlugIn {
             }
 
         }
+
+
+        // ------------------------ //
+        // ---- Display output ---- //
+        // ------------------------ //
+
         ImagePlus impFinal = new ImagePlus("Block Redundancy Map", imsFinal);
+        impFinal.setCalibration(calibration);
         impFinal.show();
 
         IJ.log("Releasing resources...");

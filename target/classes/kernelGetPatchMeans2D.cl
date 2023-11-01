@@ -6,7 +6,7 @@
 #define bRH $BRH$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetPatchMeans(
+kernel void kernelGetPatchMeans2D(
 global float* ref_pixels,
 global float* local_means,
 global float* local_stds

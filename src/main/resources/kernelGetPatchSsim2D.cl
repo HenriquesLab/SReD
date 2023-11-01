@@ -10,7 +10,7 @@
 #define ref_std $PATCH_STD$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetSynthPatchSsim(
+kernel void kernelGetPatchSsim2D(
     global float* patch_pixels,
     global float* ref_pixels,
     global float* local_means,

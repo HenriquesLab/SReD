@@ -10,12 +10,12 @@
 #define ref_std $PATCH_STD$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetSynthPatchPearson(
+kernel void kernelGetPatchSsim2D(
     global float* patch_pixels,
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
-    global float* pearson_map
+    global float* ssim_map
 ){
 
     int gx = get_global_id(0);
@@ -55,9 +55,11 @@ kernel void kernelGetSynthPatchPearson(
         }
     }
 
+
     // ------------------------------------ //
     // ---- Normalize comparison patch ---- //
     // ------------------------------------ //
+
     double min_intensity = DBL_MAX;
     double max_intensity = -DBL_MAX;
 
@@ -77,9 +79,10 @@ kernel void kernelGetSynthPatchPearson(
     // ---- Mean-subtract comparison patch ---- //
     // ---------------------------------------- //
 
-    double comp_mean = (double)local_means[gy*w+gx];
+    double comp_mean_d = (double)local_means[gy*w+gx];
+
     for(int i=0; i<patch_size; i++){
-        comp_patch[i] = comp_patch[i] - comp_mean;
+        comp_patch[i] = comp_patch[i] - comp_mean_d;
     }
 
 
@@ -112,22 +115,41 @@ kernel void kernelGetSynthPatchPearson(
     }
     covar /= (double)(patch_size-1);
 
-    // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-    //float c1 = (0.01f * 1.0f) * (0.01f * 1.0f);
-    //float c2 = (0.03f * 1.0f) * (0.03f * 1.0f);
-    //float c2 = 0.0000001;
-    //float c3 = c2 / 2.0f;
 
-    //pearson_map[gy*w+gx] = ((float) fmax(0.0f, (float)(((2.0f * covar + c2)) / ((ref_std*ref_std+comp_std*comp_std+c2)))));
+    // ----------------------------------- //
+    // ---- Calculate (modified) SSIM ---- //
+    // ----------------------------------- //
 
-    // PEARSON
+    double c1 = (0.01 * 1.0) * (0.01 * 1.0);
+    //double c2 = (0.03 * 1.0) * (0.03 * 1.0);
+    double c2 = 0.0000001;
+    double c3 = c2/2.0;
+
+    double ref_mean_d = (double)ref_mean;
     double ref_std_d = (double)ref_std;
     double comp_std_d = (double)local_stds[gy*w+gx];
+
+    //ssim_map[gy*w+gx] = (float)fmax(0.0, (2.0 * ref_mean_d * comp_mean_d + c1)/((ref_mean_d*ref_mean_d)+(comp_mean_d*comp_mean_d)+c1)); // Luminance
+    //ssim_map[gy*w+gx] = (float)fmax(0.0, (2.0 * ref_std_d * comp_std_d + c1)/((ref_std_d*ref_std_d)+(comp_std_d*comp_std_d)+c1)); // Contrast
+
     if(ref_std_d == 0.0 && comp_std_d == 0.0){
-        pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
-    }else if(ref_std_d==0.0 || comp_std_d==0.0){
-        pearson_map[gy*w+gx] = 0.0; // Special case when only one patch is flat, correlation would be NaN but we want 0
+        ssim_map[gy*w+gx] = 1.0f; // Special case when both patches are flat, correlation is 1
+    }else if(ref_std_d == 0.0 || comp_std_d == 0.0){
+        ssim_map[gy*w+gx] = 0.0f; // Special case when one patch is flat, correlation is 0
     }else{
-        pearson_map[gy*w+gx] = (float) fmax(0.0, (covar / ((ref_std_d * comp_std_d) + EPSILON))); // Truncate anti-correlations
+        //ssim_map[gy*w+gx] = (float)fmax(0.0, (covar+c3)/(ref_std_d*comp_std_d+c3)); // Structure
+        ssim_map[gy*w+gx] = (float)fmax(0.0, (2.0*covar+c3)/((ref_std_d*ref_std_d)+(comp_std_d*comp_std_d)+c3)); // Structure
+
     }
+
+
+
+
+
+    //ssim_map[gy*w+gx] = (float)fmax(0.0, ((2.0*ref_std_d*comp_std_d+c2)/((ref_std_d*ref_std_d)+(comp_std_d*comp_std_d)+c2)));
+
+
+    //ssim_map[gy*w+gx] = (float)fmax(0.0, () * ((2.0*ref_std_d*comp_std_d+c2)/((ref_std_d*ref_std_d)+(comp_std_d*comp_std_d)+c2)) * ((covar+c3)/(ref_std_d*comp_std_d)));
+
+    //ssim_map[gy*w+gx] = (float)fmax(0.0, ((2.0*ref_std_d*comp_std_d+c2)/((ref_std_d*ref_std_d)+(comp_std_d*comp_std_d)+c2)) * ((covar+c3)/(ref_std_d*comp_std_d)));
 }

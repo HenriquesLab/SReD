@@ -8,7 +8,7 @@
 #define bRH $BRH$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetSynthPatchHu(
+kernel void kernelGetPatchHu2D(
     global float* patch_pixels,
     global float* ref_pixels,
     global float* local_means,

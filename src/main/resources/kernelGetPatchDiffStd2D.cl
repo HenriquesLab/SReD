@@ -5,7 +5,7 @@
 #define bRH $BRH$
 #define ref_std $PATCH_STD$
 #define EPSILON $EPSILON$
-kernel void kernelGetSynthPatchDiffStd(
+kernel void kernelGetPatchDiffStd2D(
     global float* local_stds,
     global float* diff_std_map
 ){
