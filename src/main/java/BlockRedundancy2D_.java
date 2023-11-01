@@ -22,7 +22,7 @@ import static java.lang.Math.*;
 import static nanoj.core2.NanoJCL.replaceFirst;
 
 
-public class ArtificialBlockRedundancy_ implements PlugIn {
+public class BlockRedundancy2D_ implements PlugIn {
 
     // ------------------------ //
     // ---- OpenCL formats ---- //
@@ -30,11 +30,11 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
 
     static private CLContext context;
 
-    static private CLProgram programGetPatchMeans, programGetSynthPatchDiffStd, programGetSynthPatchPearson,
-            programGetSynthPatchHu, programGetSynthPatchSsim, programGetRelevanceMap;
+    static private CLProgram programGetPatchMeans, programGetPatchDiffStd, programGetPatchPearson,
+            programGetPatchHu, programGetPatchSsim, programGetRelevanceMap;
 
-    static private CLKernel kernelGetPatchMeans, kernelGetSynthPatchDiffStd, kernelGetSynthPatchPearson,
-            kernelGetSynthPatchHu, kernelGetSynthPatchSsim, kernelGetRelevanceMap;
+    static private CLKernel kernelGetPatchMeans, kernelGetPatchDiffStd, kernelGetPatchPearson,
+            kernelGetPatchHu, kernelGetPatchSsim, kernelGetRelevanceMap;
 
     static private CLPlatform clPlatformMaxFlop;
 
@@ -74,7 +74,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         metrics[3] = "mSSIM";
 
         // Initialize dialog box
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Artificial Block Redundancy");
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Block Redundancy (2D)");
         gd.addChoice("Patch:", titles, titles[0]);
         gd.addChoice("Image:", titles, titles[1]);
         gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
@@ -166,15 +166,18 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         // ---------------------------------- //
 
         // Patch
-        GATMinimizer minimizer = new GATMinimizer(patchPixels, bW, bH, 0, 100, 0);
+        IJ.log("Stabilising noise variance of the patch...");
+        GATMinimizer2D minimizer = new GATMinimizer2D(patchPixels, bW, bH, 0, 100, 0);
         minimizer.run();
-        patchPixels = TransformImageByVST_.getGAT(patchPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
+        patchPixels = VarianceStabilisingTransform2D_.getGAT(patchPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
+        IJ.log("Done.");
 
         // Image
-        minimizer = new GATMinimizer(refPixels, w, h, 0, 100, 0);
+        IJ.log("Stabilising noise variance of the image...");
+        minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0);
         minimizer.run();
-        refPixels = TransformImageByVST_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
-
+        refPixels = VarianceStabilisingTransform2D_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
+        IJ.log("Done.");
 /*
         // ----------------------------------- //
         // ---- Calculate gaussian window ---- //
@@ -416,7 +419,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
 
         // Create OpenCL program
-        String programStringGetPatchMeans = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetPatchMeans.cl");
+        String programStringGetPatchMeans = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchMeans2D.cl");
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
@@ -437,7 +440,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
         fillBufferWithFloatArray(clLocalStds, localStds);
 
         // Create OpenCL kernel and set args
-        kernelGetPatchMeans = programGetPatchMeans.createCLKernel("kernelGetPatchMeans");
+        kernelGetPatchMeans = programGetPatchMeans.createCLKernel("kernelGetPatchMeans2D");
 
         int argn = 0;
         kernelGetPatchMeans.setArg(argn++, clRefPixels);
@@ -487,18 +490,18 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             showStatus("Calculating Pearson correlations...");
 
             // Build OpenCL program
-            String programStringGetSynthPatchPearson = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchPearson.cl");
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$WIDTH$", "" + w);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$HEIGHT$", "" + h);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BW$", "" + bW);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BH$", "" + bH);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRW$", "" + bRW);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$BRH$", "" + bRH);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_MEAN$", "" + patchMeanFloat);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$PATCH_STD$", "" + patchStdDev);
-            programStringGetSynthPatchPearson = replaceFirst(programStringGetSynthPatchPearson, "$EPSILON$", "" + EPSILON);
-            programGetSynthPatchPearson = context.createProgram(programStringGetSynthPatchPearson).build();
+            String programStringGetPatchPearson = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchPearson2D.cl");
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$WIDTH$", "" + w);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$HEIGHT$", "" + h);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BW$", "" + bW);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BH$", "" + bH);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRW$", "" + bRW);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$BRH$", "" + bRH);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_MEAN$", "" + patchMeanFloat);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_STD$", "" + patchStdDev);
+            programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$EPSILON$", "" + EPSILON);
+            programGetPatchPearson = context.createProgram(programStringGetPatchPearson).build();
 
             // Fill OpenCL buffers
             clPatchPixels = context.createFloatBuffer(patchSize, READ_ONLY);
@@ -509,19 +512,19 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             fillBufferWithFloatArray(clPearsonMap, pearsonMap);
 
             // Create kernel and set args
-            kernelGetSynthPatchPearson = programGetSynthPatchPearson.createCLKernel("kernelGetSynthPatchPearson");
+            kernelGetPatchPearson = programGetPatchPearson.createCLKernel("kernelGetPatchPearson2D");
 
             argn = 0;
-            kernelGetSynthPatchPearson.setArg(argn++, clPatchPixels);
-            kernelGetSynthPatchPearson.setArg(argn++, clRefPixels);
-            kernelGetSynthPatchPearson.setArg(argn++, clLocalMeans);
-            kernelGetSynthPatchPearson.setArg(argn++, clLocalStds);
-            kernelGetSynthPatchPearson.setArg(argn++, clPearsonMap);
+            kernelGetPatchPearson.setArg(argn++, clPatchPixels);
+            kernelGetPatchPearson.setArg(argn++, clRefPixels);
+            kernelGetPatchPearson.setArg(argn++, clLocalMeans);
+            kernelGetPatchPearson.setArg(argn++, clLocalStds);
+            kernelGetPatchPearson.setArg(argn++, clPearsonMap);
 
             // Calculate Pearson's correlation coefficient (reference patch vs. all)
             queue.putWriteBuffer(clPatchPixels, true);
             queue.putWriteBuffer(clPearsonMap, true);
-            queue.put2DRangeKernel(kernelGetSynthPatchPearson, 0, 0, w, h, 0, 0);
+            queue.put2DRangeKernel(kernelGetPatchPearson, 0, 0, w, h, 0, 0);
             queue.finish();
 
             // Read Pearson's coefficients back from the GPU
@@ -535,10 +538,10 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             queue.finish();
 
             // Release GPU resources
-            kernelGetSynthPatchPearson.release();
+            kernelGetPatchPearson.release();
             clPatchPixels.release();
             clPearsonMap.release();
-            programGetSynthPatchPearson.release();
+            programGetPatchPearson.release();
 
 
             // --------------------------------------- //
@@ -551,7 +554,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 showStatus("Calculating relevance map...");
 
                 // Create OpenCL program
-                String programStringGetRelevanceMap = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetRelevanceMap.cl");
+                String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2D_.class, "kernelGetRelevanceMap2D.cl");
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$WIDTH$", "" + w);
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$HEIGHT$", "" + h);
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$PATCH_SIZE$", "" + patchSize);
@@ -568,7 +571,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 queue.finish();
 
                 // Create OpenCL kernel and set args
-                kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap");
+                kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap2D");
 
                 argn = 0;
                 kernelGetRelevanceMap.setArg(argn++, clRefPixels);
@@ -586,6 +589,16 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                     }
                 }
                 queue.finish();
+
+                // Release resources
+                kernelGetRelevanceMap.release();
+                clRelevanceMap.release();
+                programGetRelevanceMap.release();
+
+                // Release resources
+                kernelGetRelevanceMap.release();
+                clRelevanceMap.release();
+                programGetRelevanceMap.release();
 
                 // Calculate mean noise variance
                 float noiseMeanVar = 0.0f;
@@ -670,6 +683,9 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 }
             }
 
+            // Release resources
+            context.release();
+
 
             // ------------------------- //
             // ---- Display results ---- //
@@ -684,14 +700,14 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             showStatus("Calculating Absolute Difference of Standard Deviations...");
 
             // Build OpenCL program
-            String programStringGetSynthPatchDiffStd = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchDiffStd.cl");
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$WIDTH$", "" + w);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$HEIGHT$", "" + h);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BRW$", "" + bRW);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$BRH$", "" + bRH);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$PATCH_STD$", "" + patchStdDev);
-            programStringGetSynthPatchDiffStd = replaceFirst(programStringGetSynthPatchDiffStd, "$EPSILON$", "" + EPSILON);
-            programGetSynthPatchDiffStd = context.createProgram(programStringGetSynthPatchDiffStd).build();
+            String programStringGetPatchDiffStd = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchDiffStd2D.cl");
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$WIDTH$", "" + w);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$HEIGHT$", "" + h);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRW$", "" + bRW);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRH$", "" + bRH);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$PATCH_STD$", "" + patchStdDev);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$EPSILON$", "" + EPSILON);
+            programGetPatchDiffStd = context.createProgram(programStringGetPatchDiffStd).build();
 
             // Fill OpenCL buffers
             float[] diffStdMap = new float[wh];
@@ -699,15 +715,15 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             fillBufferWithFloatArray(clDiffStdMap, diffStdMap);
 
             // Create kernel and set args
-            kernelGetSynthPatchDiffStd = programGetSynthPatchDiffStd.createCLKernel("kernelGetSynthPatchDiffStd");
+            kernelGetPatchDiffStd = programGetPatchDiffStd.createCLKernel("kernelGetSynthPatchDiffStd2D");
 
             argn = 0;
-            kernelGetSynthPatchDiffStd.setArg(argn++, clLocalStds);
-            kernelGetSynthPatchDiffStd.setArg(argn++, clDiffStdMap);
+            kernelGetPatchDiffStd.setArg(argn++, clLocalStds);
+            kernelGetPatchDiffStd.setArg(argn++, clDiffStdMap);
 
             // Calculate absolute difference of StdDevs
             queue.putWriteBuffer(clDiffStdMap, true);
-            queue.put2DRangeKernel(kernelGetSynthPatchDiffStd, 0, 0, w, h, 0, 0);
+            queue.put2DRangeKernel(kernelGetPatchDiffStd, 0, 0, w, h, 0, 0);
             queue.finish();
 
             // Read Pearson's coefficients back from the GPU
@@ -721,9 +737,9 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             queue.finish();
 
             // Release GPU resources
-            kernelGetSynthPatchDiffStd.release();
+            kernelGetPatchDiffStd.release();
             clDiffStdMap.release();
-            programGetSynthPatchDiffStd.release();
+            programGetPatchDiffStd.release();
 
             // --------------------------------------- //
             // ---- Filter out irrelevant regions ---- //
@@ -736,7 +752,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 showStatus("Calculating relevance map...");
 
                 // Create OpenCL program
-                String programStringGetRelevanceMap = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetRelevanceMap.cl");
+                String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2D_.class, "kernelGetRelevanceMap2D.cl");
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$WIDTH$", "" + w);
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$HEIGHT$", "" + h);
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$PATCH_SIZE$", "" + patchSize);
@@ -753,7 +769,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 queue.finish();
 
                 // Create OpenCL kernel and set args
-                kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap");
+                kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap2D");
 
                 argn = 0;
                 kernelGetRelevanceMap.setArg(argn++, clRefPixels);
@@ -771,6 +787,11 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                     }
                 }
                 queue.finish();
+
+                // Release resources
+                kernelGetRelevanceMap.release();
+                clRelevanceMap.release();
+                programGetRelevanceMap.release();
 
                 // Calculate mean noise variance
                 float noiseMeanVar = 0.0f;
@@ -852,6 +873,9 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 }
             }
 
+            // Release resources
+            context.release();
+
 
             // ------------------------- //
             // ---- Display results ---- //
@@ -864,16 +888,16 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
 
         if(metric == metrics[2]) { // Hu moments
             // Create OpenCL program
-            String programStringGetSynthPatchHu = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchHu.cl");
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$WIDTH$", "" + w);
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$HEIGHT$", "" + h);
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BW$", "" + bW);
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BH$", "" + bH);
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BRW$", "" + bRW);
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$BRH$", "" + bRH);
-            programStringGetSynthPatchHu = replaceFirst(programStringGetSynthPatchHu, "$EPSILON$", "" + EPSILON);
-            programGetSynthPatchHu = context.createProgram(programStringGetSynthPatchHu).build();
+            String programStringGetPatchHu = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchHu2D.cl");
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$WIDTH$", "" + w);
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$HEIGHT$", "" + h);
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BW$", "" + bW);
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BH$", "" + bH);
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BRW$", "" + bRW);
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$BRH$", "" + bRH);
+            programStringGetPatchHu = replaceFirst(programStringGetPatchHu, "$EPSILON$", "" + EPSILON);
+            programGetPatchHu = context.createProgram(programStringGetPatchHu).build();
 
             // Fill OpenCL buffers
             clPatchPixels = context.createFloatBuffer(patchSize, READ_ONLY);
@@ -884,13 +908,13 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             fillBufferWithFloatArray(clHuMap, huMap);
 
             // Create OpenCL kernel and set args
-            kernelGetSynthPatchHu = programGetSynthPatchHu.createCLKernel("kernelGetSynthPatchHu");
+            kernelGetPatchHu = programGetPatchHu.createCLKernel("kernelGetPatchHu2D");
 
             argn = 0;
-            kernelGetSynthPatchHu.setArg(argn++, clPatchPixels);
-            kernelGetSynthPatchHu.setArg(argn++, clRefPixels);
-            kernelGetSynthPatchHu.setArg(argn++, clLocalMeans);
-            kernelGetSynthPatchHu.setArg(argn++, clHuMap);
+            kernelGetPatchHu.setArg(argn++, clPatchPixels);
+            kernelGetPatchHu.setArg(argn++, clRefPixels);
+            kernelGetPatchHu.setArg(argn++, clLocalMeans);
+            kernelGetPatchHu.setArg(argn++, clHuMap);
 
             // Calculate
             queue.putWriteBuffer(clPatchPixels, true);
@@ -898,7 +922,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             queue.finish();
 
             // Enqueue kernel
-            queue.put2DRangeKernel(kernelGetSynthPatchHu, 0, 0, w, h, 0, 0);
+            queue.put2DRangeKernel(kernelGetPatchHu, 0, 0, w, h, 0, 0);
 
             // Read results back from the device
             queue.putReadBuffer(clHuMap, true);
@@ -911,10 +935,10 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             queue.finish();
 
             // Release memory
-            kernelGetSynthPatchHu.release();
+            kernelGetPatchHu.release();
             clPatchPixels.release();
             clHuMap.release();
-            programGetSynthPatchHu.release();
+            programGetPatchHu.release();
 
 
             // --------------------------------------- //
@@ -990,18 +1014,18 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             showStatus("Calculating mSSIM...");
 
             // Build OpenCL program
-            String programStringGetSynthPatchSsim = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetSynthPatchSsim.cl");
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$WIDTH$", "" + w);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$HEIGHT$", "" + h);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$BW$", "" + bW);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$BH$", "" + bH);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$BRW$", "" + bRW);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$BRH$", "" + bRH);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$PATCH_MEAN$", "" + patchMeanFloat);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$PATCH_STD$", "" + patchStdDev);
-            programStringGetSynthPatchSsim = replaceFirst(programStringGetSynthPatchSsim, "$EPSILON$", "" + EPSILON);
-            programGetSynthPatchSsim = context.createProgram(programStringGetSynthPatchSsim).build();
+            String programStringGetPatchSsim = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchSsim2D.cl");
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$WIDTH$", "" + w);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$HEIGHT$", "" + h);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BW$", "" + bW);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BH$", "" + bH);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BRW$", "" + bRW);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BRH$", "" + bRH);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$PATCH_MEAN$", "" + patchMeanFloat);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$PATCH_STD$", "" + patchStdDev);
+            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$EPSILON$", "" + EPSILON);
+            programGetPatchSsim = context.createProgram(programStringGetPatchSsim).build();
 
             // Fill OpenCL buffers
             clPatchPixels = context.createFloatBuffer(patchSize, READ_ONLY);
@@ -1012,20 +1036,19 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             fillBufferWithFloatArray(clSsimMap, ssimMap);
 
             // Create kernel and set args
-            kernelGetSynthPatchSsim = programGetSynthPatchSsim.createCLKernel("kernelGetSynthPatchSsim");
+            kernelGetPatchSsim = programGetPatchSsim.createCLKernel("kernelGetSynthPatchSsim2D");
 
             argn = 0;
-            kernelGetSynthPatchSsim.setArg(argn++, clPatchPixels);
-            kernelGetSynthPatchSsim.setArg(argn++, clRefPixels);
-            //kernelGetSynthPatchSsim.setArg(argn++, clGaussianWindow);
-            kernelGetSynthPatchSsim.setArg(argn++, clLocalMeans);
-            kernelGetSynthPatchSsim.setArg(argn++, clLocalStds);
-            kernelGetSynthPatchSsim.setArg(argn++, clSsimMap);
+            kernelGetPatchSsim.setArg(argn++, clPatchPixels);
+            kernelGetPatchSsim.setArg(argn++, clRefPixels);
+            kernelGetPatchSsim.setArg(argn++, clLocalMeans);
+            kernelGetPatchSsim.setArg(argn++, clLocalStds);
+            kernelGetPatchSsim.setArg(argn++, clSsimMap);
 
             // Calculate Pearson's correlation coefficient (reference patch vs. all)
             queue.putWriteBuffer(clPatchPixels, true);
             queue.putWriteBuffer(clSsimMap, true);
-            queue.put2DRangeKernel(kernelGetSynthPatchSsim, 0, 0, w, h, 0, 0);
+            queue.put2DRangeKernel(kernelGetPatchSsim, 0, 0, w, h, 0, 0);
             queue.finish();
 
             // Read Pearson's coefficients back from the GPU
@@ -1039,10 +1062,10 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             queue.finish();
 
             // Release GPU resources
-            kernelGetSynthPatchSsim.release();
+            kernelGetPatchSsim.release();
             clPatchPixels.release();
             clSsimMap.release();
-            programGetSynthPatchSsim.release();
+            programGetPatchSsim.release();
 
 
             // --------------------------------------- //
@@ -1056,7 +1079,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 showStatus("Calculating relevance map...");
 
                 // Create OpenCL program
-                String programStringGetRelevanceMap = getResourceAsString(ArtificialBlockRedundancy_.class, "kernelGetRelevanceMap.cl");
+                String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2D_.class, "kernelGetRelevanceMap2D.cl");
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$WIDTH$", "" + w);
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$HEIGHT$", "" + h);
                 programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$PATCH_SIZE$", "" + patchSize);
@@ -1073,7 +1096,7 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                 queue.finish();
 
                 // Create OpenCL kernel and set args
-                kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap");
+                kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap2D");
 
                 argn = 0;
                 kernelGetRelevanceMap.setArg(argn++, clRefPixels);
@@ -1091,6 +1114,11 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
                     }
                 }
                 queue.finish();
+
+                // Release resources
+                kernelGetRelevanceMap.release();
+                clRelevanceMap.release();
+                programGetRelevanceMap.release();
 
                 // Calculate mean noise variance
                 float noiseMeanVar = 0.0f;
@@ -1181,6 +1209,9 @@ public class ArtificialBlockRedundancy_ implements PlugIn {
             ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
             imp1.show();
         }
+
+        // Release resources
+        context.release();
 
         // ---- Stop timer ----
         IJ.log("Finished!");

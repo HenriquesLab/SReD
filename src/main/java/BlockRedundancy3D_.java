@@ -1,10 +1,18 @@
+/**
+ *
+ * Returns a 3D repetition map where each pixel value represents the repetition score between the block centered around that pixel and a reference block.
+ *
+ * @author Afonso Mendes
+ * @version 2023.11.01
+ *
+ */
+
 import com.jogamp.opencl.*;
 import ij.*;
 import ij.gui.NonBlockingGenericDialog;
+import ij.measure.Calibration;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
-import ij.process.StackProcessor;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,7 +29,7 @@ import static java.lang.Math.*;
 import static nanoj.core2.NanoJCL.replaceFirst;
 
 
-public class BlockRedundancy3d_ implements PlugIn {
+public class BlockRedundancy3D_ implements PlugIn {
 
     // ------------------------ //
     // ---- OpenCL formats ---- //
@@ -121,18 +129,24 @@ public class BlockRedundancy3d_ implements PlugIn {
         // ------------------------------------------------- //
         // ---- Get reference patch and some parameters ---- //
         // ------------------------------------------------- //
+
+        // Get ImagePlus and ImageStack
         ImagePlus imp = WindowManager.getImage(patchID);
         if (imp == null) {
             IJ.error("Patch image not found. Try again.");
             return;
         }
-        //float[] patchPixels = (float[]) fp.getPixels();
 
         ImageStack ims = imp.getStack();
 
+        // Get patch dimensions
         int bW = ims.getWidth(); // Patch width
         int bH = ims.getHeight(); // Patch height
         int bZ = ims.getSize(); // Patch depth
+
+        int bRW = bW/2; // Patch radius (x-axis)
+        int bRH = bH/2; // Patch radius (y-axis)
+        int bRZ = bZ/2; // Patch radius (z-axis)
 
         // Check if patch dimensions are odd, otherwise kill program
         if (bW % 2 == 0 || bH % 2 == 0 || bZ % 2 == 0) {
@@ -146,23 +160,24 @@ public class BlockRedundancy3d_ implements PlugIn {
             return;
         }
 
-        // Get patch radii
-        int bRW = bW/2; // Patch radius (x-axis)
-        int bRH = bH/2; // Patch radius (y-axis)
-        int bRZ = bZ/2; // Patch radius (z-axis)
-
 
         // ------------------------------------------------- //
         // ---- Get reference image and some parameters ---- //
         // ------------------------------------------------- //
 
+        // Get ImagePlus and ImageStack
         ImagePlus imp0 = WindowManager.getImage(imgID);
         if (imp0 == null) {
             IJ.error("Image not found. Try again.");
             return;
         }
+
         ImageStack ims0 = imp0.getStack();
 
+        // Get calibration parameters
+        Calibration calibration = imp.getCalibration();
+
+        // Get image dimensions
         int w = ims0.getWidth();
         int h = ims0.getHeight();
         int z = ims0.getSize();
@@ -204,7 +219,7 @@ public class BlockRedundancy3d_ implements PlugIn {
         minimizer.run();
 
         for(int n=0; n<bZ; n++){
-            patchPixels[n] = TransformImageByVST3D_.getGAT(patchPixels[n], minimizer.gain, minimizer.sigma, minimizer.offset);
+            patchPixels[n] = VarianceStabilisingTransform3D_.getGAT(patchPixels[n], minimizer.gain, minimizer.sigma, minimizer.offset);
             ims.setProcessor(new FloatProcessor(bW, bH, patchPixels[n]), n+1);
         }
 
@@ -224,7 +239,7 @@ public class BlockRedundancy3d_ implements PlugIn {
         minimizer.run();
 
         for(int n=0; n<z; n++) {
-            refPixels[n] = TransformImageByVST3D_.getGAT(refPixels[n], minimizer.gain, minimizer.sigma, minimizer.offset);
+            refPixels[n] = VarianceStabilisingTransform3D_.getGAT(refPixels[n], minimizer.gain, minimizer.sigma, minimizer.offset);
             ims0.setProcessor(new FloatProcessor(w, h, refPixels[n]), n+1);
         }
 
@@ -446,7 +461,7 @@ public class BlockRedundancy3d_ implements PlugIn {
         clLocalStds = context.createFloatBuffer(whz, READ_WRITE);
 
         // Create OpenCL program
-        String programStringGetPatchMeans3D = getResourceAsString(BlockRedundancy3d_.class, "kernelGetPatchMeans3D.cl");
+        String programStringGetPatchMeans3D = getResourceAsString(BlockRedundancy3D_.class, "kernelGetPatchMeans3D.cl");
         programStringGetPatchMeans3D = replaceFirst(programStringGetPatchMeans3D, "$WIDTH$", "" + w);
         programStringGetPatchMeans3D = replaceFirst(programStringGetPatchMeans3D, "$HEIGHT$", "" + h);
         programStringGetPatchMeans3D = replaceFirst(programStringGetPatchMeans3D, "$DEPTH$", "" + z);
@@ -519,7 +534,7 @@ public class BlockRedundancy3d_ implements PlugIn {
             showStatus("Calculating Pearson correlations...");
 
             // Build OpenCL program
-            String programStringGetPatchPearson3D = getResourceAsString(BlockRedundancy3d_.class, "kernelGetPatchPearson3D.cl");
+            String programStringGetPatchPearson3D = getResourceAsString(BlockRedundancy3D_.class, "kernelGetPatchPearson3D.cl");
             programStringGetPatchPearson3D = replaceFirst(programStringGetPatchPearson3D, "$WIDTH$", "" + w);
             programStringGetPatchPearson3D = replaceFirst(programStringGetPatchPearson3D, "$HEIGHT$", "" + h);
             programStringGetPatchPearson3D = replaceFirst(programStringGetPatchPearson3D, "$DEPTH$", "" + z);
@@ -587,7 +602,7 @@ public class BlockRedundancy3d_ implements PlugIn {
                 showStatus("Calculating relevance map...");
 
                 // Create OpenCL program
-                String programStringGetRelevanceMap3D = getResourceAsString(BlockRedundancy3d_.class, "kernelGetRelevanceMap3D.cl");
+                String programStringGetRelevanceMap3D = getResourceAsString(BlockRedundancy3D_.class, "kernelGetRelevanceMap3D.cl");
                 programStringGetRelevanceMap3D = replaceFirst(programStringGetRelevanceMap3D, "$WIDTH$", "" + w);
                 programStringGetRelevanceMap3D = replaceFirst(programStringGetRelevanceMap3D, "$HEIGHT$", "" + h);
                 programStringGetRelevanceMap3D = replaceFirst(programStringGetRelevanceMap3D, "$DEPTH$", "" + z);
@@ -739,6 +754,7 @@ public class BlockRedundancy3d_ implements PlugIn {
                 imsFinal.setProcessor(temp, n+1);
             }
             ImagePlus impFinal = new ImagePlus("Block Redundancy Map", imsFinal);
+            impFinal.setCalibration(calibration);
             impFinal.show();
         }
 
@@ -770,28 +786,9 @@ public class BlockRedundancy3d_ implements PlugIn {
 
     }
 
-    public static void fillBufferWithFloat(CLBuffer<FloatBuffer> clBuffer, float pixel) {
-        FloatBuffer buffer = clBuffer.getBuffer();
-        buffer.put(pixel);
-    }
-
     public static void fillBufferWithFloatArray(CLBuffer<FloatBuffer> clBuffer, float[] pixels) {
         FloatBuffer buffer = clBuffer.getBuffer();
         for(int n=0; n<pixels.length; n++) {
-            buffer.put(n, pixels[n]);
-        }
-    }
-
-    public static void fillBufferWithDoubleArray(CLBuffer<DoubleBuffer> clBuffer, double[] pixels) {
-        DoubleBuffer buffer = clBuffer.getBuffer();
-        for(int n=0; n< pixels.length; n++) {
-            buffer.put(n, pixels[n]);
-        }
-    }
-
-    public static void fillBufferWithShortArray(CLBuffer<ShortBuffer> clBuffer, short[] pixels) {
-        ShortBuffer buffer = clBuffer.getBuffer();
-        for(int n=0; n< pixels.length; n++) {
             buffer.put(n, pixels[n]);
         }
     }

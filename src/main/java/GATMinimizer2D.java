@@ -1,4 +1,3 @@
-import ij.IJ;
 import ij.measure.Minimizer;
 import ij.measure.UserFunction;
 
@@ -6,7 +5,7 @@ import static java.lang.Math.min;
 import static java.lang.Math.sqrt;
 
 
-public class GATMinimizer implements UserFunction {
+public class GATMinimizer2D implements UserFunction {
 
     public double sigma;
     private final int width, height;
@@ -16,7 +15,7 @@ public class GATMinimizer implements UserFunction {
     public boolean showProgress = false;
     private final float[] pixels;
 
-    public GATMinimizer(float[] pixels, int width, int height, double gain, double sigma, double offset){
+    public GATMinimizer2D(float[] pixels, int width, int height, double gain, double sigma, double offset){
         this.pixels = pixels;
         this.width = width;
         this.height = height;
@@ -63,44 +62,26 @@ public class GATMinimizer implements UserFunction {
         float[] pixelsGAT = pixels.clone();
         applyGAT(pixelsGAT, gain, sigma, offset);
 
-        // ---- Get block dimensions (adjusted to image size to avoid out of bounds) ----
-        // Get min
-        int blockWidth = 64; // bounding box width
-        int blockHeight = 64; // bounding box height
-
-        if(width < 64*2 || height < 64*2) {
-            blockWidth = 32;
-            blockHeight = 32;
-        }
-
-        if(width < 32*2 || height < 32*2) {
-            blockWidth = 16;
-            blockHeight = 16;
-        }
-
-        if(width < 16*2 || height < 16*2) {
-            blockWidth = 8;
-            blockHeight = 8;
-        }
-
-        if(width < 8*2 || height < 8*2) {
-            blockWidth = 4;
-            blockHeight = 4;
-        }
-
-        if(width < 4*2 || height < 4*2) {
-            blockWidth = 2;
-            blockHeight = 2;
-        }
+        // Define the dimensions of the window used to estimate the noise variance (adjusted to image size to avoid out of bounds)
+        int blockWidth = width/6; // bounding box width
+        int blockHeight = height/6; // bounding box height
 
         // Get number of blocks
-        int nBlockX = width / blockWidth;
-        int nBlockY = height / blockHeight;
-        int nBlocks = nBlockX * nBlockY;
+        int nBlocksX = width / blockWidth;
+        int nBlocksY = height / blockHeight;
+
+        // Ensure that you have at least 2 blocks in XY
+        while(nBlocksX<2 || nBlocksY<2) {
+            blockWidth /= 2;
+            blockHeight /= 2;
+        }
+
+        int nBlocks = nBlocksX * nBlocksY;
+
 
         double error = 0;
-        for (int bY=0; bY<nBlockY; bY++) {
-            for (int bX=0; bX<nBlockX; bX++) {
+        for (int bY=0; bY<nBlocksY; bY++) {
+            for (int bX=0; bX<nBlocksX; bX++) {
 
                 int xStart = bX * blockWidth;
                 int xEnd = (bX+1) * blockWidth;

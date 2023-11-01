@@ -12,13 +12,12 @@ import ij.gui.Roi;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
-import org.tensorflow.op.math.Imag;
 
 import java.awt.*;
 import static java.lang.Math.sqrt;
 
 
-public class TransformImageByVST3D_ implements PlugIn {
+public class VarianceStabilisingTransform3D_ implements PlugIn {
 
     @Override
     public void run(String s) {

@@ -183,10 +183,10 @@ public class RedundancyMap_ implements PlugIn {
                 // --------------------------------------------------------------------------- //
                 // ---- Stabilize noise variance using the Generalized Anscombe transform ---- //
                 // --------------------------------------------------------------------------- //
-                GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
+                GATMinimizer2D minimizer = new GATMinimizer2D(refPixels0, w0, h0, 0, 100, 0);
                 minimizer.run();
 
-                refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
+                refPixels0 = VarianceStabilisingTransform2D_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
                 // ------------------------- //
@@ -233,11 +233,11 @@ public class RedundancyMap_ implements PlugIn {
 
                     refPixels0 = (float[]) ims.getProcessor(frame).convertToFloatProcessor().getPixels();
 
-                    GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
+                    GATMinimizer2D minimizer = new GATMinimizer2D(refPixels0, w0, h0, 0, 100, 0);
                     minimizer.run();
 
                     refPixels0 = (float[]) ims.getProcessor(frame).convertToFloatProcessor().getPixels();
-                    refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
+                    refPixels0 = VarianceStabilisingTransform2D_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
                     // ------------------------- //
@@ -280,10 +280,10 @@ public class RedundancyMap_ implements PlugIn {
             // ---- Stabilize noise variance using the Generalized Anscombe transform ---- //
             // --------------------------------------------------------------------------- //
 
-            GATMinimizer minimizer = new GATMinimizer(refPixels0, w0, h0, 0, 100, 0);
+            GATMinimizer2D minimizer = new GATMinimizer2D(refPixels0, w0, h0, 0, 100, 0);
             minimizer.run();
 
-            refPixels0 = TransformImageByVST_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
+            refPixels0 = VarianceStabilisingTransform2D_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
             // ------------------------- //

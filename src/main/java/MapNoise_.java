@@ -138,12 +138,12 @@ public class MapNoise_ implements PlugIn {
 
         // ---- Stabilize noise variance using the Generalized Anscombe's transform ----
         // Run minimizer to find optimal gain, sigma and offset that minimize the error from a noise variance of 1
-        GATMinimizer minimizer = new GATMinimizer(refPixels, w, h, 0, 100, 0);
+        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0);
         minimizer.run();
 
         // Get gain, sigma, offset and error from the minimizer and transform pixel values
         float[] pixelsGAT;
-        pixelsGAT = TransformImageByVST_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
+        pixelsGAT = VarianceStabilisingTransform2D_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
 
         IJ.log("Normalising image...");
 

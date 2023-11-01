@@ -15,7 +15,7 @@ import java.awt.*;
 import static java.lang.Math.sqrt;
 
 
-public class TransformImageByVST_ implements PlugIn {
+public class VarianceStabilisingTransform2D_ implements PlugIn {
 
     @Override
     public void run(String s) {
@@ -86,7 +86,7 @@ public class TransformImageByVST_ implements PlugIn {
         int height = ifp.getHeight(); // Get image height
 
         // Run the optimizer to find gain, offset and sigma that minimize the noise variance
-        GATMinimizer minimizer = new GATMinimizer(pixels, width, height, gain, sigma, offset); // Run minimizer
+        GATMinimizer2D minimizer = new GATMinimizer2D(pixels, width, height, gain, sigma, offset); // Run minimizer
         minimizer.run();
 
         // Create final "variance stable" image based on optimized parameters

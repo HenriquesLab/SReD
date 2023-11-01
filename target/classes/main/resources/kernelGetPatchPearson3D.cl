@@ -103,9 +103,6 @@ kernel void kernelGetPatchPearson3D(
         min_intensity = min(min_intensity, pixel_value);
         max_intensity = max(max_intensity, pixel_value);
     }
-    printf("%f\n", (float)min_intensity);
-    printf("%f\n", (float)max_intensity);
-
 
     // Remap pixel values
     for(int i=0; i<patch_size; i++){
