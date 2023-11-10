@@ -19,7 +19,6 @@ import static ij.IJ.showStatus;
 import static ij.WindowManager.getIDList;
 import static ij.WindowManager.getImageCount;
 import static java.lang.Math.*;
-import static nanoj.core2.NanoJCL.replaceFirst;
 
 
 public class BlockRedundancy2D_ implements PlugIn {
@@ -589,11 +588,6 @@ public class BlockRedundancy2D_ implements PlugIn {
                     }
                 }
                 queue.finish();
-
-                // Release resources
-                kernelGetRelevanceMap.release();
-                clRelevanceMap.release();
-                programGetRelevanceMap.release();
 
                 // Release resources
                 kernelGetRelevanceMap.release();
@@ -1210,8 +1204,6 @@ public class BlockRedundancy2D_ implements PlugIn {
             imp1.show();
         }
 
-        // Release resources
-        context.release();
 
         // ---- Stop timer ----
         IJ.log("Finished!");
@@ -1313,6 +1305,17 @@ public class BlockRedundancy2D_ implements PlugIn {
             }
         }
         return minMax;
+    }
+
+    public static String replaceFirst(String source, String target, String replacement) {
+        int index = source.indexOf(target);
+        if (index == -1) {
+            return source;
+        }
+
+        return source.substring(0, index)
+                .concat(replacement)
+                .concat(source.substring(index+target.length()));
     }
 
     public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax, float tMin, float tMax){

@@ -26,7 +26,6 @@ import static ij.IJ.showStatus;
 import static ij.WindowManager.getIDList;
 import static ij.WindowManager.getImageCount;
 import static java.lang.Math.*;
-import static nanoj.core2.NanoJCL.replaceFirst;
 
 
 public class BlockRedundancy3D_ implements PlugIn {
@@ -814,6 +813,17 @@ public class BlockRedundancy3D_ implements PlugIn {
             result.write(buffer, 0, length);
         }
         return result.toString("UTF-8");
+    }
+
+    public static String replaceFirst(String source, String target, String replacement) {
+        int index = source.indexOf(target);
+        if (index == -1) {
+            return source;
+        }
+
+        return source.substring(0, index)
+                .concat(replacement)
+                .concat(source.substring(index+target.length()));
     }
 
     private static int roundUp(int groupSize, int globalSize) {

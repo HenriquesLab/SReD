@@ -6,17 +6,14 @@ import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.FloatBuffer;
-
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
 import static java.lang.Math.min;
-import static nanoj.core2.NanoJCL.replaceFirst;
 
 public class MapNoise_ implements PlugIn {
 
@@ -326,6 +323,17 @@ public class MapNoise_ implements PlugIn {
             result.write(buffer, 0, length);
         }
         return result.toString("UTF-8");
+    }
+
+    public static String replaceFirst(String source, String target, String replacement) {
+        int index = source.indexOf(target);
+        if (index == -1) {
+            return source;
+        }
+
+        return source.substring(0, index)
+                .concat(replacement)
+                .concat(source.substring(index+target.length()));
     }
 
     public float[] makeGaussianKernel(int size, float sigma){

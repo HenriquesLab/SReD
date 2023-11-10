@@ -15,7 +15,6 @@ import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
 import static java.lang.Math.*;
-import static nanoj.core2.NanoJCL.replaceFirst;
 
 public class GlobalRedundancy implements Runnable, UserFunction{
 
@@ -591,6 +590,17 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             result.write(buffer, 0, length);
         }
         return result.toString("UTF-8");
+    }
+
+    public static String replaceFirst(String source, String target, String replacement) {
+        int index = source.indexOf(target);
+        if (index == -1) {
+            return source;
+        }
+
+        return source.substring(0, index)
+                .concat(replacement)
+                .concat(source.substring(index+target.length()));
     }
 
     public static void fillBufferWithIntArray(CLBuffer<IntBuffer> clBuffer, int[] pixels) {
