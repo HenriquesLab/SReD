@@ -160,7 +160,7 @@ public class MapNoise_ implements PlugIn {
         queue.putWriteBuffer(clRefPixels, false);
 
         // Create OpenCL program
-        String programStringGetLocalStatistics = getResourceAsString(RedundancyMap_.class, "kernelGetLocalMeans.cl");
+        String programStringGetLocalStatistics = getResourceAsString(RedundancyMap_.class, "kernelGetPatchMeans2D.cl");
         programStringGetLocalStatistics = replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
         programStringGetLocalStatistics = replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
         programStringGetLocalStatistics = replaceFirst(programStringGetLocalStatistics, "$BW$", "" + bW);
@@ -187,7 +187,7 @@ public class MapNoise_ implements PlugIn {
         queue.putWriteBuffer(clLocalStds, false);
 
         // Create kernel and set kernel arguments
-        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetLocalMeans");
+        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetPatchMeans2D");
 
         int argn = 0;
         kernelGetLocalStatistics.setArg(argn++, clRefPixels);

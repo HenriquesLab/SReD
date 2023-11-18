@@ -67,16 +67,18 @@ global float* local_stds
     for(int i=0; i<patch_size; i++){
         mean += patch[i];
     }
-    local_means[gy*w+gx] = (float)(mean/(double)patch_size);
+    mean /= (double)patch_size;
+    local_means[gy*w+gx] = (float)mean;
 
 
     // -------------------------------- //
     // ---- Calculate patch StdDev ---- //
     // -------------------------------- //
     double var = 0.0;
-        for(int i=0; i<patch_size; i++){
-            var += (patch[i] - mean) * (patch[i] - mean);
-        }
+    for(int i=0; i<patch_size; i++){
+        var += (patch[i] - mean) * (patch[i] - mean);
+    }
 
-    local_stds[gy*w+gx] = (float)sqrt(var/(double)(patch_size-1));
+    var /= (double)(patch_size-1);
+    local_stds[gy*w+gx] = (float)sqrt(var);
 }

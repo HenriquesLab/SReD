@@ -7,112 +7,209 @@
 #define bRW $BRW$
 #define bRH $BRH$
 #define filter_param $FILTERPARAM$
+#define filter_constant $FILTERCONSTANT$
 #define EPSILON $EPSILON$
-#define speedUp $SPEEDUP$
-float getExpDecayWeight(float ref, float comp);
-float getGaussianWeight(float ref, float comp, float h2);
 
 kernel void kernelGetPearsonMap(
     global float* ref_pixels,
     global float* local_means,
     global float* local_stds,
     global float* weights_sum_map,
-    global float* pearson_map,
-    global float* vars_mask
+    global float* pearson_map
 ){
 
-    int x0 = get_global_id(0);
-    int y0 = get_global_id(1);
-
-    // Check if reference pixel belongs to the unique list, and if not, kill the thread
-    if(vars_mask[y0*w+x0] == 0){
-        return;
-    }
+    int gx = get_global_id(0);
+    int gy = get_global_id(1);
 
     // Bound check to avoids borders dynamically based on patch dimensions
-    if(x0<bRW || x0>=w-bRW || y0<bRH || y0>=h-bRH){
+    if(gx<bRW || gx>=w-bRW || gy<bRH || gy>=h-bRH){
         return;
     }
 
-    // ---- Reference patch ----
-    // Get mean-subtracted patch
-    float ref_patch[patch_size] = {0.0f};
-    float ref_mean = local_means[y0*w+x0];
+    // Check if reference pixel is an estimated noise pixel, and if so, kill the thread
+    double ref_std = (double)local_stds[gy*w+gx];
+    double threshold = (double)(filter_param*filter_constant);
+    if((ref_std*ref_std)<threshold){
+        pearson_map[gy*w+gx] = 0.0f; // Set pixel to zero to avoid retaining spurious values already in memory
+        return;
+    }
 
-    int ref_counter = 0;
-    float r2 = bRW*bRW;
-    for(int j0=y0-bRH; j0<=y0+bRH; j0++){
-        for(int i0=x0-bRW; i0<=x0+bRW; i0++){
-            float dx = (float)((i0-x0)/bRW);
-            float dy = (float)((j0-y0)/bRH);
-            if(dx*dx+dy*dy <= 1.0f){
-                ref_patch[ref_counter] = (ref_pixels[j0*w+i0] - ref_mean);
-                ref_counter++;
+
+    // ------------------------------------ //
+    // ---- Get reference patch pixels ---- //
+    // ------------------------------------ //
+
+    double ref_patch[patch_size] = {0.0f};
+    int index = 0;
+
+    for(int j=gy-bRH; j<=gy+bRH; j++){
+        for(int i=gx-bRW; i<=gx+bRW; i++){
+            float dx = (float)(i-gx);
+            float dy = (float)(j-gy);
+            if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
+                ref_patch[index] = (double)ref_pixels[j*w+i];
+                index++;
             }
         }
     }
 
-    // For each comparison pixel...
-    for(int y1=bRH; y1<h-bRH; y1++){
-        for(int x1=bRW; x1<w-bRW; x1++){
-            // Get mean-subtracted patch and local standard deviation
-            float comp_patch[patch_size] = {0.0f};
-            float comp_mean = local_means[y1*w+x1];
-            float covar = 0.0f;
+/*
+    // ----------------------------------- //
+    // ---- Normalize reference patch ---- //
+    // ----------------------------------- //
 
-            int comp_counter = 0;
-            for(int j1=y1-bRH; j1<=y1+bRH; j1++){
-                for(int i1=x1-bRW; i1<=x1+bRW; i1++){
-                    float dx = (float)((i1-x1)/bRW);
-                    float dy = (float)((j1-y1)/bRH);
-                    if(dx*dx+dy*dy <= 1.0f){
-                        comp_patch[comp_counter] = (ref_pixels[j1*w+i1] - comp_mean);
-                        covar += ref_patch[comp_counter] * comp_patch[comp_counter];
-                        comp_counter++;
+    // Find min and max
+    double min_intensity = DBL_MAX;
+    double max_intensity = -DBL_MAX;
+
+    for(int i=0; i<patch_size; i++){
+        double pixel_value = ref_patch[i];
+        min_intensity = min(min_intensity, pixel_value);
+        max_intensity = max(max_intensity, pixel_value);
+    }
+
+    // Remap pixel values
+    for(int i=0; i<patch_size; i++){
+        ref_patch[i] = (ref_patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
+    }
+
+*/
+    // --------------------------------------- //
+    // ---- Mean-subtract reference patch ---- //
+    // --------------------------------------- //
+
+    double ref_mean = (double)local_means[gy*w+gx];
+
+    for(int i=0; i<patch_size; i++){
+        ref_patch[i] = ref_patch[i] - ref_mean;
+    }
+
+/*
+    // ----------------------------------------- //
+    // ---- Normalize reference patch again ---- //
+    // ----------------------------------------- //
+
+    // Find min and max
+    min_intensity = DBL_MAX;
+    max_intensity = -DBL_MAX;
+
+    for(int i=0; i<patch_size; i++){
+        double pixel_value = ref_patch[i];
+        min_intensity = min(min_intensity, pixel_value);
+        max_intensity = max(max_intensity, pixel_value);
+    }
+
+    // Remap pixel values
+    for(int i=0; i<patch_size; i++){
+        ref_patch[i] = (ref_patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
+    }
+*/
+
+    // ------------------------------------ //
+    // ---- Process comparison patches ---- //
+    // ------------------------------------ //
+
+    // Iterate over all pixels (excluding borders)
+    for(int y=bRH; y<h-bRH; y++){
+        for(int x=bRW; x<w-bRW; x++){
+
+
+            // ------------------------------------- //
+            // ---- Get comparison patch pixels ---- //
+            // ------------------------------------- //
+
+            // Check if comparison pixel is an estimated noise pixel, and if so, kill the thread
+            double comp_std = (double)local_stds[y*w+x];
+            if((comp_std*comp_std)<threshold){
+                return;
+            }
+
+            double comp_patch[patch_size] = {0.0f};
+            index = 0;
+            for(int j=y-bRH; j<=y+bRH; j++){
+                for(int i=x-bRW; i<=x+bRW; i++){
+                    float dx = (float)(i-x);
+                    float dy = (float)(j-y);
+                    if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
+                        comp_patch[index] = (double)ref_pixels[j*w+i];
+                        index++;
                     }
                 }
             }
 
-            covar /= patch_size;
+/*
+            // ------------------------------------ //
+            // ---- Normalize comparison patch ---- //
+            // ------------------------------------ //
 
-            // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-            float std_x = local_stds[y0*w+x0];
-            float std_y = local_stds[y1*w+x1];
-            //float weight = getGaussianWeight(std_x, std_y, filter_param); // doesn't work very well here
-            //float weight = getExpDecayWeight(std_x, std_y);
-            float weight = exp((-1.0f)*((fabs(std_x - std_y)*fabs(std_x - std_y))/(10.0f*filter_param+EPSILON)));
-            weights_sum_map[y0*w+x0] += weight;
+            // Find min and max
+            min_intensity = DBL_MAX;
+            max_intensity = -DBL_MAX;
 
-            float c1 = (0.01f * 1.0f) * (0.01f * 1.0f);
-            float c2 = 0.0000001;
+            for(int k=0; k<patch_size; k++){
+                double pixel_value = comp_patch[k];
+                min_intensity = min(min_intensity, pixel_value);
+                max_intensity = max(max_intensity, pixel_value);
+            }
 
-            pearson_map[gy*w+gx] = ((float) fmax(0.0f, (float)(((2.0f * covar + c2)) / ((std_x*std_x+std_y*std_y+c2)))));
+            // Remap pixel values
+            for(int k=0; k<patch_size; k++){
+                comp_patch[k] = (comp_patch[k] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
+            }
+*/
 
-            // PEARSON
-            //if(std_x == 0.0f && std_y == 0.0f){
-            //    pearson_map[y0*w+x0] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 0 because textures are the same)
-            //}else{
-            //    pearson_map[y0*w+x0] += (float) fmax(0.0f, (float) (covar / ((std_x * std_y) + EPSILON))) * weight; // Pearson distance, truncate anti-correlations to zero
-            //}
+            // ---------------------------------------- //
+            // ---- Mean-subtract comparison patch ---- //
+            // ---------------------------------------- //
 
+            double comp_mean = (double)local_means[y*w+x];
+            for(int k=0; k<patch_size; k++){
+                comp_patch[k] = comp_patch[k] - comp_mean;
+            }
+
+/*
+            // ------------------------------------------ //
+            // ---- Normalize comparison patch again ---- //
+            // ------------------------------------------ //
+
+            // Find min and max
+            min_intensity = DBL_MAX;
+            max_intensity = -DBL_MAX;
+
+            for(int k=0; k<patch_size; k++){
+                double pixel_value = comp_patch[k];
+                min_intensity = min(min_intensity, pixel_value);
+                max_intensity = max(max_intensity, pixel_value);
+            }
+
+            // Remap pixel values
+            for(int k=0; k<patch_size; k++){
+                comp_patch[k] = (comp_patch[k]-min_intensity)/(max_intensity-min_intensity+(double)EPSILON);
+            }
+*/
+
+            // ----------------------------------------------------- //
+            // ---- Calculate Pearson's correlation coefficient ---- //
+            // ----------------------------------------------------- //
+
+            // Calculate covariance
+            double covar = 0.0;
+            for(int k=0; k<patch_size; k++){
+                covar += ref_patch[k] * comp_patch[k];
+            }
+            covar /= (double)(patch_size-1);
+
+            // Calculate Pearson's correlation coefficient
+            double weight = exp((-1.0)*(((ref_std-comp_std)*(ref_std-comp_std))/((double)filter_param+(double)EPSILON)));
+            weights_sum_map[gy*w+gx] += (float)weight;
+
+            if(ref_std == 0.0 && comp_std == 0.0){
+                pearson_map[gy*w+gx] += 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
+            }else if(ref_std == 0.0 || comp_std == 0.0){
+                pearson_map[gy*w+gx] += 0.0f; // Special case when only one patch is flat (correlation would be NaN but we want 0 because texture has no correlation with complete lack of texture)
+            }else{
+                pearson_map[gy*w+gx] += (float)fmax(0.0, (covar/((ref_std*comp_std)+(double)EPSILON))) * (float)weight; // Truncate anti-correlations
+            }
         }
     }
-}
-
-// ---- USER FUNCTIONS ----
-float getExpDecayWeight(float ref, float comp){
-    // Gaussian weight, see https://en.wikipedia.org/wiki/Non-local_means#Common_weighting_functions
-    // Alternative: exponential decay function: 1-abs(mean_x-mean_y/abs(mean_x+abs(mean_y)))
-    float weight = 0;
-    float similarity = (-fabs(ref-comp)/(fabs(ref)+fabs(comp) + EPSILON));
-    weight = ((float) pow(100, similarity) - 1) / 99;
-
-    return weight;
-}
-
-float getGaussianWeight(float ref, float comp, float h2){
-    float weight = (-1) * (((fabs(comp-ref)) * (fabs(comp-ref))) / (h2 + EPSILON));
-    weight = exp(weight);
-    weight = fmax(weight, 0.0f);
-    return weight;
 }

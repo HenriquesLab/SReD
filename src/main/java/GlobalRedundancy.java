@@ -1,19 +1,19 @@
 import com.jogamp.opencl.*;
 import ij.IJ;
 import ij.ImagePlus;
-import ij.ImageStack;
 import ij.measure.UserFunction;
 import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
+import ij.process.IntProcessor;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
 import java.util.*;
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
+import static java.lang.Float.NaN;
 import static java.lang.Math.*;
 
 public class GlobalRedundancy implements Runnable, UserFunction{
@@ -29,36 +29,32 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
     private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPearsonMap, clDiffStdMap, clWeightsSumMap;
 
-    private CLBuffer<IntBuffer> clUniqueStdCoords, clVarsMask;
-
 
     // -------------------------- //
     // ---- Image parameters ---- //
     // -------------------------- //
 
-    public float[] refPixels, localMeans, localStds, pearsonMap, diffStdMap, weightsSumMap, nrmseMap, maeMap, psnrMap, ssimMap, luminanceMap,
-            contrastMap, structureMap, huMap, entropyMap, phaseCorrelationMap, hausdorffMap;
-    public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, speedUp, rotInv, scaleFactor, level, w0, h0;
+    public float[] refPixels, localMeans, localStds, weightsSumMap;
+    public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, scaleFactor, level, w0, h0;
     public float filterConstant, EPSILON;
+    public String metric;
 
-    public GlobalRedundancy(float[] refPixels, int w, int h, int bW, int bH, float EPSILON, CLContext context,
-                            CLCommandQueue queue, int rotInv, int scaleFactor, float filterConstant, int level, int w0, int h0){
+    public GlobalRedundancy(float[] refPixels, int w, int h, int bW, int bH, int bRW, int bRH, int patchSize, float EPSILON, CLContext context,
+                            CLCommandQueue queue, int scaleFactor, float filterConstant, int level, int w0, int h0, String metric){
+
         this.refPixels = refPixels;
         this.w = w;
         this.h = h;
         wh = w * h;
         this.bW = bW;
         this.bH = bH;
-        bRW = bW/2;
-        bRH = bH/2;
-        sizeWithoutBorders = (w - bRW * 2) * (h - bRH * 2);
-        patchSize = (2*bRW+1) * (2*bRH+1) - (int) ceil((sqrt(2)*bRW)*(sqrt(2)*bRH)); // Number of pixels in circular patch
-
+        this.bRW = bRW;
+        this.bRH = bRH;
+        sizeWithoutBorders = (w-bRW*2)*(h-bRH*2);
+        this.patchSize = patchSize; // Number of pixels in an elliptical patch
         this.EPSILON = EPSILON;
         this.context = context;
         this.queue = queue;
-        this.speedUp = speedUp;
-        this.rotInv = rotInv;
         this.scaleFactor = scaleFactor;
         this.filterConstant = filterConstant;
         this.level = level;
@@ -66,20 +62,8 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         this.h0 = h0;
         localMeans = new float[wh];
         localStds = new float[wh];
-        pearsonMap = new float[wh];
-        diffStdMap = new float[wh];
         weightsSumMap = new float[wh];
-        nrmseMap = new float[wh];
-        maeMap = new float[wh];
-        psnrMap = new float[wh];
-        ssimMap = new float[wh];
-        luminanceMap = new float[wh];
-        contrastMap = new float[wh];
-        structureMap = new float[wh];
-        huMap = new float[wh];
-        entropyMap = new float[wh];
-        phaseCorrelationMap = new float[wh];
-        hausdorffMap = new float[wh];
+        this.metric = metric;
     }
 
     @Override
@@ -88,45 +72,37 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         IJ.log("Calculating at scale level "+level+"...");
 
 
-        // ------------------------------------------------------------------------- //
-        // ---- Estimate noise standard deviation (used for weight calculation) ---- //
-        // ------------------------------------------------------------------------- //
-
-        float noiseVar = estimateNoiseVar(refPixels, w, h) + EPSILON;
-
-
-        // -------------------------------------------------------- //
-        // ---- Write input image (variance-stabilized) to GPU ---- //
-        // -------------------------------------------------------- //
+        // ------------------------------------------------------------------------------------------------------ //
+        // ---- Write input image (variance-stabilized, mean-subtracted and normalized) to the OpenCL device ---- //
+        // ------------------------------------------------------------------------------------------------------ //
 
         clRefPixels = context.createFloatBuffer(wh, READ_ONLY);
         fillBufferWithFloatArray(clRefPixels, refPixels);
-        queue.putWriteBuffer(clRefPixels, false);
+        queue.putWriteBuffer(clRefPixels, true);
 
 
-        // ------------------------------------------------------------ //
-        // ---- Calculate local means and standard deviations maps ---- //
-        // ------------------------------------------------------------ //
+        // ------------------------------------------------------------------ //
+        // ---- Calculate local means and local standard deviations maps ---- //
+        // ------------------------------------------------------------------ //
 
         // Create OpenCL program
         String programStringGetLocalMeans = getResourceAsString(RedundancyMap_.class, "kernelGetLocalMeans.cl");
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$WIDTH$", "" + w);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$HEIGHT$", "" + h);
-        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BW$", "" + bW);
-        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BH$", "" + bH);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$PATCH_SIZE$", "" + patchSize);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BRW$", "" + bRW);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BRH$", "" + bRH);
+        programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$EPSILON$", "" + EPSILON);
         programGetLocalMeans = context.createProgram(programStringGetLocalMeans).build();
 
         // Create, fill and write OpenCL buffers
         clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clLocalMeans, localMeans);
-        queue.putWriteBuffer(clLocalMeans, false);
+        queue.putWriteBuffer(clLocalMeans, true);
 
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clLocalStds, localStds);
-        queue.putWriteBuffer(clLocalStds, false);
+        queue.putWriteBuffer(clLocalStds, true);
 
         // Create OpenCL kernel and set kernel arguments
         kernelGetLocalMeans = programGetLocalMeans.createCLKernel("kernelGetLocalMeans");
@@ -137,18 +113,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         kernelGetLocalMeans.setArg(argn++, clLocalStds);
 
         // Calculate local means and standard deviations map in the GPU
-        int nXBlocks = w/64 + ((w%64==0)?0:1);
-        int nYBlocks = h/64 + ((h%64==0)?0:1);
-        for(int nYB=0; nYB<nYBlocks; nYB++) {
-            int yWorkSize = min(64, h-nYB*64);
-            for(int nXB=0; nXB<nXBlocks; nXB++) {
-                int xWorkSize = min(64, w-nXB*64);
-                showStatus("Calculating local means... blockX="+nXB+"/"+nXBlocks+" blockY="+nYB+"/"+nYBlocks);
-                queue.put2DRangeKernel(kernelGetLocalMeans, nXB*64, nYB*64, xWorkSize, yWorkSize, 0, 0);
-                queue.finish();
-            }
-        }
-
+        showStatus("Calculating local means...");
+        queue.put2DRangeKernel(kernelGetLocalMeans, 0, 0, w, h, 0, 0);
+        queue.finish();
+/*
         // Read the local means map back from the GPU
         queue.putReadBuffer(clLocalMeans, true);
         for (int y=0; y<h; y++) {
@@ -157,167 +125,74 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                 queue.finish();
             }
         }
-
-        // Read the local stds map back from the GPU
+*/
+        // Calculate the local variances map
         queue.putReadBuffer(clLocalStds, true);
-        for (int y=0; y<h; y++) {
-            for (int x=0; x<w; x++) {
-                localStds[y*w+x] = clLocalStds.getBuffer().get(y*w+x);
+
+        float[] localVars = new float[wh];
+        for (int y=bRH; y<h-bRH; y++) {
+            for (int x=bRW; x<w-bRW; x++) {
+                float std = clLocalStds.getBuffer().get(y*w+x);
+                localVars[y*w+x] = std*std;
                 queue.finish();
             }
         }
 
-        // Release GPU resources
+        // Release resources
         kernelGetLocalMeans.release();
         programGetLocalMeans.release();
+
+
+        // ------------------------------------------ //
+        // ---- Calculate average noise variance ---- //
+        // ------------------------------------------ //
+
+        // Copy the local variances map without borders
+        float[] sortedVars = new float[sizeWithoutBorders];
+        int index = 0;
+        for(int j=bRH; j<h-bRH; j++){
+            for(int i=bRW; i<w-bRW; i++){
+                sortedVars[index] = localVars[j*w+i];
+                index++;
+            }
+        }
+
+        // Get the 3% lowest variances and calculate their average
+        Arrays.sort(sortedVars);
+        int nVars = (int) (0.03f * (float)sizeWithoutBorders + 1.0f); // Number of blocks corresponding to the 3% chosen
+        float noiseVar = 0.0f;
+        for(int i=0; i<nVars; i++){
+            noiseVar += sortedVars[i];
+        }
+        noiseVar = abs(noiseVar/(float)nVars);
 
 
         // ---------------------------------------------------------------------- //
         // ---- Calculate noise variance filter mask (a.k.a. relevance mask) ---- //
         // ---------------------------------------------------------------------- //
 
-        // Get local variances map and mean variance
-        float[] vars = new float[wh];
-        float noiseMeanVar = 0.0f;
-        int nPixels = 0;
-        float var;
+        double nPixels = 0.0; // Number of relevant pixels
+        float threshold = noiseVar*filterConstant;
+        int[] relevanceMap = new int[wh];
+
         for(int j=bRH; j<h-bRH; j++){
             for(int i=bRW; i<w-bRW; i++){
-                var = localStds[j*w+i]*localStds[j*w+i];
-                vars[j*w+i] = var;
-                noiseMeanVar += var;
-                nPixels++;
-            }
-        }
-        noiseMeanVar /= nPixels;
-
-        // Generate mask
-        int[] varsMask = new int[wh];
-        for(int j=bRH; j<h-bRH; j++) {
-            for (int i=bRW; i<w-bRW; i++) {
-                if(vars[j*w+i]<=noiseMeanVar*filterConstant){
-                    varsMask[j*w+i] = 0;
+                if(localVars[j*w+i]<threshold){
+                    relevanceMap[j*w+i] = 0;
                 }else{
-                    varsMask[j*w+i] = 1;
+                    relevanceMap[j*w+i] = 1;
+                    nPixels += 1.0;
                 }
             }
         }
 
-        // Load mask into OpenCL device
-        clVarsMask = context.createIntBuffer(wh, READ_ONLY);
-        fillBufferWithIntArray(clVarsMask, varsMask);
-        queue.putWriteBuffer(clVarsMask, true);
+        // ----------------------------------------- //
+        // ---- Calculate Global Repetition Map ---- //
+        // ----------------------------------------- //
 
-        if(rotInv == 1){
+        float[] repetitionMap = new float[wh];
 
-            // Create OpenCL program
-            String programStringGetDiffStdMap = getResourceAsString(RedundancyMap_.class, "kernelGetDiffStdMap.cl");
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$WIDTH$", "" + w);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$HEIGHT$", "" + h);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BW$", "" + bW);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BH$", "" + bH);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BRW$", "" + bRW);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BRH$", "" + bRH);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$FILTERPARAM$", "" + noiseVar);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$EPSILON$", "" + EPSILON);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$SPEEDUP$", "" + speedUp);
-            programGetDiffStdMap = context.createProgram(programStringGetDiffStdMap).build();
-
-            // Create, fill and write OpenCL buffers
-            clDiffStdMap = context.createFloatBuffer(wh, READ_WRITE);
-            fillBufferWithFloatArray(clDiffStdMap, diffStdMap);
-            queue.putWriteBuffer(clDiffStdMap, false);
-
-            clWeightsSumMap = context.createFloatBuffer(wh, READ_WRITE);
-            fillBufferWithFloatArray(clWeightsSumMap, weightsSumMap);
-            queue.putWriteBuffer(clWeightsSumMap, true);
-
-            // Create OpenCL kernel and set kernel args
-            kernelGetDiffStdMap = programGetDiffStdMap.createCLKernel("kernelGetDiffStdMap");
-
-            argn = 0;
-            kernelGetDiffStdMap.setArg(argn++, clRefPixels);
-            kernelGetDiffStdMap.setArg(argn++, clLocalMeans);
-            kernelGetDiffStdMap.setArg(argn++, clLocalStds);
-            kernelGetDiffStdMap.setArg(argn++, clWeightsSumMap);
-            kernelGetDiffStdMap.setArg(argn++, clDiffStdMap);
-            kernelGetDiffStdMap.setArg(argn++, clVarsMask);
-
-            // Calculate weighted mean absolute difference of standard deviations map in the GPU
-            for (int nYB = 0; nYB < nYBlocks; nYB++) {
-                int yWorkSize = min(64, h - nYB * 64);
-                for (int nXB = 0; nXB < nXBlocks; nXB++) {
-                    int xWorkSize = min(64, w - nXB * 64);
-                    showStatus("Calculating redundancy... blockX=" + nXB + "/" + nXBlocks + " blockY=" + nYB + "/" + nYBlocks);
-                    queue.put2DRangeKernel(kernelGetDiffStdMap, nXB * 64, nYB * 64, xWorkSize, yWorkSize, 0, 0);
-                    queue.finish();
-                }
-            }
-
-            // Read the weighted mean absolute difference of standard deviations map back from the GPU (and finish the mean calculation simultaneously)
-            queue.putReadBuffer(clDiffStdMap, true);
-            queue.putReadBuffer(clWeightsSumMap, true);
-            for (int y=0; y<h; y++) {
-                for (int x=0; x<w; x++) {
-                    //diffStdMap[y*w+x] = clDiffStdMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*sizeWithoutBorders+EPSILON);
-                    diffStdMap[y*w+x] = clDiffStdMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*nPixels+EPSILON);
-                    queue.finish();
-                }
-            }
-
-            // Release GPU resources
-            kernelGetDiffStdMap.release();
-            programGetDiffStdMap.release();
-            clDiffStdMap.release();
-            clWeightsSumMap.release();
-            clVarsMask.release();
-
-            // Invert values (because so far we have inverse frequencies)
-            float[] diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
-            diffStdMap = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
-                    if(varsMask[j*w+i] == 1){
-                        diffStdMap[j * w + i] = 1.0f - diffStdMap[j*w+i];
-                    }
-                }
-            }
-            diffStdMap = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
-/*
-
-            // Filter out regions with low noise variance
-            float[] localVars = new float[wh];
-            float noiseMeanVar = 0.0f;
-            int counter = 0;
-            float value;
-            for(int j=0; j<h; j++){
-                for(int i=0; i<w; i++){
-                    value = localStds[j*w+i]*localStds[j*w+i];
-                    localVars[j*w+i] = value;
-                    noiseMeanVar += value;
-                    counter++;
-                }
-            }
-            noiseMeanVar /= counter;
-
-            for(int j=0; j<h; j++){
-                for(int i=0; i<w; i++){
-                    if(localVars[j*w+i]<noiseMeanVar*filterConstant){
-                        diffStdMap[j*w+i] = 0.0f;
-                        System.out.println("filtered");
-                    }
-                }
-            }
-*/
-        }
-
-
-        // ----------------------------------------------- //
-        // ---- Calculate weighted mean Pearson's map ---- //
-        // ----------------------------------------------- //
-
-        if(rotInv == 0){
+        if(metric == "Pearson's R"){
 
             // Create OpenCL program
             String programStringGetPearsonMap = getResourceAsString(RedundancyMap_.class, "kernelGetPearsonMap.cl");
@@ -329,13 +204,13 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRW$", "" + bRW);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRH$", "" + bRH);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTERPARAM$", "" + noiseVar);
+            programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTERCONSTANT$", "" + filterConstant);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$EPSILON$", "" + EPSILON);
-            programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$SPEEDUP$", "" + speedUp);
             programGetPearsonMap = context.createProgram(programStringGetPearsonMap).build();
 
             // Create, fill and write OpenCL buffers
             clPearsonMap = context.createFloatBuffer(wh, READ_WRITE);
-            fillBufferWithFloatArray(clPearsonMap, pearsonMap);
+            fillBufferWithFloatArray(clPearsonMap, repetitionMap);
             queue.putWriteBuffer(clPearsonMap, true);
 
             clWeightsSumMap = context.createFloatBuffer(wh, READ_WRITE);
@@ -351,9 +226,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             kernelGetPearsonMap.setArg(argn++, clLocalStds);
             kernelGetPearsonMap.setArg(argn++, clWeightsSumMap);
             kernelGetPearsonMap.setArg(argn++, clPearsonMap);
-            kernelGetPearsonMap.setArg(argn++, clVarsMask);
 
-            // Calculate weighted mean Pearson's map in the GPU
+            // Calculate weighted mean Pearson's map
+            int nXBlocks = w/64 + ((w%64==0)?0:1);
+            int nYBlocks = h/64 + ((h%64==0)?0:1);
             for (int nYB = 0; nYB < nYBlocks; nYB++) {
                 int yWorkSize = min(64, h - nYB * 64);
                 for (int nXB = 0; nXB < nXBlocks; nXB++) {
@@ -364,13 +240,12 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                 }
             }
 
-            // Read the weighted mean  Pearson's map back from the GPU (and finish the mean calculation simultaneously)
+            // Read the weighted mean Pearson's map back from the OpenCL device (and finish the mean calculation simultaneously)
             queue.putReadBuffer(clPearsonMap, true);
             queue.putReadBuffer(clWeightsSumMap, true);
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    //pearsonMap[y*w+x] = clPearsonMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*sizeWithoutBorders+EPSILON);
-                    pearsonMap[y*w+x] = clPearsonMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*nPixels+EPSILON);
+            for (int y=bRH; y<h-bRH; y++) {
+                for (int x=bRW; x<w-bRW; x++) {
+                    repetitionMap[y*w+x] = clPearsonMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*(float)nPixels+EPSILON);
                     queue.finish();
                 }
             }
@@ -380,43 +255,169 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             programGetPearsonMap.release();
             clPearsonMap.release();
             clWeightsSumMap.release();
-            clVarsMask.release();
 
-            // Normalize
-            float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
-            pearsonMap = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
-/*
-            float[] localVars = new float[wh];
-            float noiseMeanVar = 0.0f;
-            int counter = 0;
-            float value;
-            for(int j=0; j<h; j++){
-                for(int i=0; i<w; i++){
-                    value = localStds[j*w+i]*localStds[j*w+i];
-                    localVars[j*w+i] = value;
-                    if(i<bRW || i>=w-bRW || j<bRH || j>=h-bRH){
-                        continue;
-                    }
-                    noiseMeanVar += value;
-                    counter++;
-                }
-            }
-            noiseMeanVar /= counter;
 
-            for(int j=0; j<h; j++){
-                for(int i=0; i<w; i++){
-                    if(localVars[j*w+i]<noiseMeanVar*filterConstant){
-                        pearsonMap[j*w+i] = 0.0f;
+            // -------------------------- //
+            // ---- Normalize output ---- //
+            // -------------------------- //
+
+            // Find min and max
+            float min_intensity = Float.MAX_VALUE;
+            float max_intensity = -Float.MAX_VALUE;
+            for(int j=bRH; j<h-bRH; j++) {
+                for(int i=bRW; i<w-bRW; i++) {
+                    if(relevanceMap[j*w+i] == 1) {
+                        float pixelValue = repetitionMap[j*w+i];
+                        max_intensity = max(max_intensity, pixelValue);
+                        min_intensity = min(min_intensity, pixelValue);
                     }
                 }
             }
 
- */
+            // Remap pixels
+            for(int j=bRH; j<h-bRH; j++) {
+                for(int i=bRW; i<w-bRW; i++) {
+                    if(relevanceMap[j*w+i] == 1) {
+                        repetitionMap[j*w+i] = (repetitionMap[j*w+i]-min_intensity)/(max_intensity-min_intensity+EPSILON);
+                    }
+                }
+            }
         }
 
+        if(metric == "Abs. Diff. of StdDevs"){
 
-        //IJ.log("Done!");
-        //IJ.log("--------");
+            // Create OpenCL program
+            String programStringGetDiffStdMap = getResourceAsString(RedundancyMap_.class, "kernelGetDiffStdMap.cl");
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$WIDTH$", "" + w);
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$HEIGHT$", "" + h);
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BRW$", "" + bRW);
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BRH$", "" + bRH);
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$FILTERPARAM$", "" + noiseVar);
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$FILTERCONSTANT$", "" + filterConstant);
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$EPSILON$", "" + EPSILON);
+            programGetDiffStdMap = context.createProgram(programStringGetDiffStdMap).build();
+
+            // Create, fill and write OpenCL buffers
+            clDiffStdMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clDiffStdMap, repetitionMap);
+            queue.putWriteBuffer(clDiffStdMap, true);
+
+            clWeightsSumMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clWeightsSumMap, weightsSumMap);
+            queue.putWriteBuffer(clWeightsSumMap, true);
+
+            // Create OpenCL kernel and set kernel args
+            kernelGetDiffStdMap = programGetDiffStdMap.createCLKernel("kernelGetDiffStdMap");
+
+            argn = 0;
+            kernelGetDiffStdMap.setArg(argn++, clRefPixels);
+            kernelGetDiffStdMap.setArg(argn++, clLocalStds);
+            kernelGetDiffStdMap.setArg(argn++, clWeightsSumMap);
+            kernelGetDiffStdMap.setArg(argn++, clDiffStdMap);
+
+            // Calculate weighted mean Pearson's map
+            int nXBlocks = w/64 + ((w%64==0)?0:1);
+            int nYBlocks = h/64 + ((h%64==0)?0:1);
+            for (int nYB = 0; nYB < nYBlocks; nYB++) {
+                int yWorkSize = min(64, h - nYB * 64);
+                for (int nXB = 0; nXB < nXBlocks; nXB++) {
+                    int xWorkSize = min(64, w - nXB * 64);
+                    showStatus("Calculating redundancy... blockX=" + nXB + "/" + nXBlocks + " blockY=" + nYB + "/" + nYBlocks);
+                    queue.put2DRangeKernel(kernelGetDiffStdMap, nXB * 64, nYB * 64, xWorkSize, yWorkSize, 0, 0);
+                    queue.finish();
+                }
+            }
+            queue.finish();
+
+            // Read the weighted mean Pearson's map back from the OpenCL device (and finish the mean calculation simultaneously)
+            queue.putReadBuffer(clDiffStdMap, true);
+            queue.putReadBuffer(clWeightsSumMap, true);
+            for (int y=bRH; y<h-bRH; y++) {
+                for (int x=bRW; x<w-bRW; x++) {
+
+                    // Read similarity value from OpenCL device
+                    float similarity = clDiffStdMap.getBuffer().get(y*w+x);
+                    queue.finish();
+
+                    // Read weight sum from OpenCL device
+                    float weightSum = clWeightsSumMap.getBuffer().get(y*w+x);
+                    queue.finish();
+
+                    repetitionMap[y*w+x] = similarity / (weightSum*(float)nPixels+EPSILON);
+                }
+            }
+
+            // Release GPU resources
+            kernelGetDiffStdMap.release();
+            programGetDiffStdMap.release();
+            clDiffStdMap.release();
+            clWeightsSumMap.release();
+
+
+            // ------------------------------------------- //
+            // ---- Normalize output (robust scaling) ---- //
+            // ------------------------------------------- //
+
+            // Find median and interquartile range (IQR) for the relevant pixels
+            List<Float> relevantValues = new ArrayList<>();
+
+            for(int j=bRH; j<h-bRH; j++){
+                for(int i=bRW; i<w-bRW; i++){
+                    if(relevanceMap[j*w+i]==1){
+                        relevantValues.add(repetitionMap[j*w+i]);
+                    }
+                }
+            }
+
+            float[] relevantArray = new float[relevantValues.size()];
+            for(int k=0; k<relevantValues.size(); k++){
+                relevantArray[k] = relevantValues.get(k);
+            }
+
+            float median = calculateMedian(relevantArray);
+            float q1 = calculatePercentile(relevantArray, 25);
+            float q3 = calculatePercentile(relevantArray, 75);
+            float iqr = q3-q1;
+
+            // Robust scaling for the relevant subset
+            for(int j=bRH; j<h-bRH; j++){
+                for(int i=bRW; i<w-bRW; i++){
+                    if(relevanceMap[j*w+i]==1){
+                        repetitionMap[j*w+i] = (repetitionMap[j*w+i]-median)/(iqr+EPSILON);
+                    }else{
+                        repetitionMap[j*w+i] = 0.0f;
+                    }
+                }
+            }
+
+
+
+            /*
+            // Find min and max
+            float min_intensity = Float.MAX_VALUE;
+            float max_intensity = -Float.MAX_VALUE;
+            for(int j=bRH; j<h-bRH; j++) {
+                for(int i=bRW; i<w-bRW; i++) {
+                    if(relevanceMap[j*w+i] == 1) {
+                        float pixelValue = repetitionMap[j*w+i];
+                        max_intensity = max(max_intensity, pixelValue);
+                        min_intensity = min(min_intensity, pixelValue);
+                    }
+                }
+            }
+
+            // Remap pixels
+            for(int j=bRH; j<h-bRH; j++) {
+                for(int i=bRW; i<w-bRW; i++) {
+                    if(relevanceMap[j*w+i] == 1) {
+                        repetitionMap[j*w+i] = (repetitionMap[j*w+i]-min_intensity)/(max_intensity-min_intensity+EPSILON);
+                    }
+                }
+            }
+
+
+            */
+        }
 
 
         // ------------------------- //
@@ -425,31 +426,16 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
         IJ.log("Preparing results for display...");
 
-        // Absolute difference of standard deviations map (normalized to [0,1])
-        //float[] diffStdMinMax = findMinMax(diffStdMap, w, h, bRW, bRH);
-        //float[] diffStdMapNorm = normalize(diffStdMap, w, h, bRW, bRH, diffStdMinMax, 0, 0);
-        FloatProcessor fp1 = new FloatProcessor(w, h, diffStdMap);
+        FloatProcessor fp1 = new FloatProcessor(w, h, repetitionMap);
+        ImagePlus imp1 = new ImagePlus("Redundancy Map", fp1);
+        imp1.show();
 
-        // Pearson's map (normalized to [0,1])
-        //float[] pearsonMinMax = findMinMax(pearsonMap, w, h, bRW, bRH);
-        //float[] pearsonMapNorm = normalize(pearsonMap, w, h, bRW, bRH, pearsonMinMax, 0, 0);
-        FloatProcessor fp2 = new FloatProcessor(w, h, pearsonMap);
-
-        // Create image stack holding the redundancy maps and display it
-        ImageStack ims = new ImageStack(w, h);
-        //FloatProcessor inputImage = new FloatProcessor(w, h, refPixels);
-        //ims.addSlice("Variance-stabilised image", inputImage);
-        ims.addSlice("Absolute Difference of StdDevs", fp1);
-        ims.addSlice("Pearson", fp2);
-
-        FloatProcessor fp3 = new FloatProcessor(w, h, varsMask);
-        ImagePlus poop = new ImagePlus("Mask", fp3);
-        poop.show();
-
-        //FloatProcessor fp10 = new FloatProcessor(w, h, weightsSumMap);
-        //ims.addSlice("Weight sum", fp10);
+        FloatProcessor impp = new FloatProcessor(w, h, relevanceMap);
+        ImagePlus imp2 = new ImagePlus("Relevance Map", impp);
+        imp2.show();
 
 
+/*
         // ------------------------------------------- //
         // ---- Scale back to original dimensions ---- // (TODO: CHANGE THIS FOR SINGLE IMAGE INSTEAD OF STACK WHEN STACK ISNT NEEDED ANYMORE)
         // ------------------------------------------- //
@@ -481,48 +467,13 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             fpFinal = new FloatProcessor(w0, h0, tempImg);
             imsFinal.setProcessor(fpFinal, i);
         }
-/*
-        // Filter out regions with low variance
-        float[] upscaledVars = (float[]) imsFinal.getProcessor(3).convertToFloatProcessor().getPixels();
-        float noiseMeanVar = 0.0f;
-        int counter = 0;
-        float value;
-        for(int j=0; j<h0; j++){
-            for(int i=0; i<w0; i++){
-                if(i<newBRW || i>=w0-newBRW || j<newBRH || j>=h0-newBRH){
-                    continue;
-                }
-                value = upscaledVars[j*w0+i]*upscaledVars[j*w0+i];
-                upscaledVars[j*w0+i] = value;
-                noiseMeanVar += value;
-                counter++;
-            }
-        }
-        noiseMeanVar /= counter;
-
-        for(int n=1; n<nSlices; n++) {
-            for (int j=0; j<h0; j++) {
-                for (int i=0; i<w0; i++) {
-                    if (upscaledVars[j*w0+i] < noiseMeanVar*filterConstant) {
-                        imsFinal.getProcessor(n).setf(j*w0+i, 0.0f);
-                    }
-                }
-            }
-        }
-
-*/
-        // Delete unwanted slices
-        if(rotInv==1){
-            imsFinal.deleteSlice(2); // 3 becomes 2 after deleting previous
-        }else{
-            imsFinal.deleteSlice(1);
-        }
 
         ImagePlus impFinal = new ImagePlus("Redundancy Maps (level = " + level + ")", imsFinal);
         impFinal.show();
 
         // Apply LUT
         IJ.run(impFinal, "mpl-inferno", "");
+        */
     }
 
     @Override
@@ -530,43 +481,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         return 0;
     }
 
-    // ---- USER FUNCTIONS ----
-    public static float[] findMinMax(float[] inputArray, int w, int h, int offsetX, int offsetY){
-        float[] minMax = {inputArray[offsetY*w+offsetX], inputArray[offsetY*w+offsetX]};
-
-        for(int j=offsetY+1; j<h-offsetY; j++){
-            for(int i=offsetX+1; i<w-offsetX; i++){
-                if(inputArray[j*w+i] < minMax[0]){
-                    minMax[0] = inputArray[j*w+i];
-                }
-                if(inputArray[j*w+i] > minMax[1]){
-                    minMax[1] = inputArray[j*w+i];
-                }
-            }
-        }
-        return minMax;
-    }
-
-    public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax, float tMin, float tMax){
-        float rMin = minMax[0];
-        float rMax = minMax[1];
-        float denominator = rMax - rMin + 0.000001f;
-        float factor;
-
-        if(tMax == 0 && tMin == 0){
-            factor = 1; // So that the users can say they don't want an artificial range by choosing tMax and tMin = 0
-        }else {
-            factor = tMax - tMin;
-        }
-        float[] normalizedPixels = new float[w*h];
-
-        for(int j=offsetY; j<h-offsetY; j++) {
-            for (int i=offsetX; i<w-offsetX; i++) {
-                normalizedPixels[j*w+i] = (rawPixels[j*w+i]-rMin)/denominator * factor + tMin;
-            }
-        }
-        return normalizedPixels;
-    }
+    // ---- HELPER FUNCTIONS ----
 
     // Read a kernel from the resources
     public static String getResourceAsString(Class c, String resourceName) {
@@ -603,13 +518,6 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                 .concat(source.substring(index+target.length()));
     }
 
-    public static void fillBufferWithIntArray(CLBuffer<IntBuffer> clBuffer, int[] pixels) {
-        IntBuffer buffer = clBuffer.getBuffer();
-        for(int n=0; n<pixels.length; n++) {
-            buffer.put(n, pixels[n]);
-        }
-    }
-
     public static void fillBufferWithFloatArray(CLBuffer<FloatBuffer> clBuffer, float[] pixels) {
         FloatBuffer buffer = clBuffer.getBuffer();
         for(int n=0; n<pixels.length; n++) {
@@ -617,121 +525,14 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         }
     }
 
-    public static float[] getUniqueValues(float[] inArr, int w, int h, int offsetX, int offsetY){
-
-        // Make a copy of the input array
-        float[] tempArr = new float[inArr.length];
-        for(int i=0; i<inArr.length; i++){
-            tempArr[i] = inArr[i];
-        }
-
-        // Sort array
-        Arrays.sort(tempArr);
-
-        // Count unique elements
-        int count = 0;
-        for(int i=0; i<tempArr.length-1; i++){
-            if(tempArr[i] != tempArr[i+1]){
-                count++;
-            }
-        }
-
-        // Create array to hold unique elements
-        float[] outArr = new float[count];
-        int index = 0;
-        for(int i=0; i<tempArr.length-1; i++){
-            if(tempArr[i] != tempArr[i+1]){
-                outArr[index] = tempArr[i];
-                index++;
-            }
-        }
-
-        return outArr;
+    public static float calculateMedian(float[] values){
+        Arrays.sort(values);
+        int middle = values.length/2;
+        return values.length % 2 == 0 ? (values[middle-1]+values[middle])/2 : values[middle];
     }
 
-    public static int[] getUniqueValueCoordinates(float[] uniqueArr, float[] inArr, int w, int h, int bRW, int bRH){
-        int[] outArr = new int[uniqueArr.length];
-        boolean found = false;
-        for(int u=0; u<uniqueArr.length; u++){
-            found = false;
-            for(int j=bRH; j<h-bRH && !found; j++) {
-                for (int i=bRW; i<w-bRW; i++) {
-                    if (inArr[j*w+i] == uniqueArr[u]) {
-                        outArr[u] = j*w+i;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        return outArr;
+    public static float calculatePercentile(float[] values, int percentile){
+        int index = (int) Math.ceil((percentile/100.0)*values.length);
+        return values[index-1];
     }
-
-    float estimateNoiseVar(float[] inImg, int w, int h){
-        //Based on Liu, W. et al. - "A fast noise variance estimation algorithm". doi: 10.1109/PrimeAsia.2011.6075071
-
-        // Define block size based on image dimensions (8x8 if image dimensions are below or equal to 352x288 pixels, 16x16 otherwise)
-        int sizeThreshold = 352*288;
-        int bL = 0; // Block length
-        int bA = 0; // Block area, i.e., total number of pixels in the block
-
-        if(w*h <= sizeThreshold){
-            bL = 8;
-            bA = bL * bL;
-        }else{
-            bL = 16;
-            bA = bL * bL;
-        }
-
-        // Get total number of non-overlapping blocks
-        int nXBlocks = w / bL;
-        int nYBlocks = h / bL;
-        int nBlocks = nXBlocks * nYBlocks;
-
-        // Get block variances
-        float[] vars = new float[nBlocks]; // Array to store variances
-        float[] block = new float[bA]; // Array to temporarily store the current block's pixels
-        int counter0; // Counter for temporary block indexes
-        int counter1 = 0; // Counter for variances array indexes
-
-        for(int y=0; y<h-bL; y=y+bL){
-            for(int x=0; x<w-bL; x=x+bL){
-                counter0 = 0;
-
-                // Get current block
-                for(int yy=y; yy<y+bL; yy++){
-                    for(int xx=x; xx<x+bL; xx++){
-                        block[counter0] = inImg[yy*w+xx];
-                        counter0++;
-                    }
-                }
-
-                // Get current block variance (single-pass)
-                double sum = 0;
-                double sum2 = 0;
-                for(int i=0; i<bA; i++){
-                    sum += block[i];
-                    sum2 += block[i] * block[i];
-                }
-                double mean = sum / bA;
-                vars[counter1] = (float) abs(sum2 / bA - mean * mean);
-                counter1++;
-            }
-        }
-
-        // Get the 3% lowest variances and calculate their average
-        Arrays.sort(vars);
-        int num = (int) (0.03f * nBlocks + 1); // Number of blocks corresponding to the 3% chosen
-        float avgVar = 0;
-        for(int i=0; i<=num; i++){
-            avgVar += vars[i];
-        }
-        avgVar /= num;
-
-        // Calculate noise variance
-        float noiseVar = (1.0f + 0.001f * (avgVar - 40.0f)) * avgVar;
-        return abs(noiseVar);
-    }
-
 }

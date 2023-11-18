@@ -138,6 +138,7 @@ public class BlockRedundancy2D_ implements PlugIn {
             return;
         }
 
+        // Calculate block radius
         int bRW = bW/2; // Patch radius (x-axis)
         int bRH = bH/2; // Patch radius (y-axis)
 
@@ -641,7 +642,7 @@ public class BlockRedundancy2D_ implements PlugIn {
                     for (int j = bRH; j < h - bRH; j++) {
                         for (int i = bRW; i < w - bRW; i++) {
                             if (relevanceMap[j * w + i] > noiseMeanVar * filterConstant) {
-                                pearsonMap[j * w + i] = (pearsonMap[j * w + i] - pearsonMin) / (pearsonMax - pearsonMin);
+                                pearsonMap[j * w + i] = (pearsonMap[j * w + i] - pearsonMin) / (pearsonMax - pearsonMin + EPSILON);
                             }
                         }
                     }
@@ -672,7 +673,7 @@ public class BlockRedundancy2D_ implements PlugIn {
                 // Remap pixels
                 for (int j=bRH; j<h-bRH; j++) {
                     for (int i=bRW; i<w-bRW; i++) {
-                        pearsonMap[j*w+i] = (pearsonMap[j * w + i] - pearsonMin) / (pearsonMax - pearsonMin);
+                        pearsonMap[j*w+i] = (pearsonMap[j * w + i] - pearsonMin) / (pearsonMax - pearsonMin + EPSILON);
                     }
                 }
             }

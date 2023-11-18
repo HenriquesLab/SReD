@@ -1,16 +1,15 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
-#define bW $BW$
-#define bH $BH$
 #define patch_size $PATCH_SIZE$
 #define bRW $BRW$
 #define bRH $BRH$
+#define EPSILON $EPSILON$
 
 kernel void kernelGetLocalMeans(
-    global float* ref_pixels,
-    global float* local_means,
-    global float* local_stds
+global float* ref_pixels,
+global float* local_means,
+global float* local_stds
 ){
 
     int gx = get_global_id(0);
@@ -21,28 +20,46 @@ kernel void kernelGetLocalMeans(
         return;
     }
 
-    // Get patch and calculate local mean
-    double value = 0.0f;
-    double sum = 0.0f;
-    double sq_sum = 0.0f;
 
-    float r2 = bRW*bRW;
+    // -------------------------- //
+    // ---- Get patch pixels ---- //
+    // -------------------------- //
+
+    double patch[patch_size];
+    int index = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
-            float dx = (float)((i-gx)/bRW);
-            float dy = (float)((j-gy)/bRH);
-            if(dx*dx+dy*dy <= 1.0f){
-                value = ref_pixels[j*w+i];
-                sum += value;
-                sq_sum += value * value;
+            // Extract only pixels within the inbound circle/ellipse
+            float dx = (float)(i-gx);
+            float dy = (float)(j-gy);
+            if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
+                patch[index] = (double)ref_pixels[j*w+i];
+                index++;
             }
         }
     }
 
 
-    double mean = sum / patch_size;
-    double variance = fabs(sq_sum / (double) patch_size - mean * mean); // fabs() avoids negative values; solves a bug
+    // ------------------------------ //
+    // ---- Calculate patch mean ---- //
+    // ------------------------------ //
 
-    local_means[gy*w+gx] = (float) mean;
-    local_stds[gy*w+gx] = (float) sqrt(variance);
+    double mean = 0.0;
+    for(int i=0; i<patch_size; i++){
+        mean += patch[i];
+    }
+    mean /= (double)patch_size;
+    local_means[gy*w+gx] = (float)mean;
+
+
+    // -------------------------------- //
+    // ---- Calculate patch StdDev ---- //
+    // -------------------------------- //
+    double var = 0.0;
+    for(int i=0; i<patch_size; i++){
+        var += (patch[i] - mean) * (patch[i] - mean);
+    }
+
+    var /= (double)(patch_size-1);
+    local_stds[gy*w+gx] = (float)sqrt(var);
 }

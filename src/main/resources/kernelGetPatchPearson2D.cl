@@ -42,7 +42,7 @@ kernel void kernelGetPatchPearson2D(
     // ---- Get comparison patch pixels ---- //
     // ------------------------------------- //
 
-    double comp_patch[patch_size];
+    double comp_patch[patch_size] = {0.0};
     int index = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
@@ -55,9 +55,12 @@ kernel void kernelGetPatchPearson2D(
         }
     }
 
+
     // ------------------------------------ //
     // ---- Normalize comparison patch ---- //
     // ------------------------------------ //
+
+    // Find min and max
     double min_intensity = DBL_MAX;
     double max_intensity = -DBL_MAX;
 

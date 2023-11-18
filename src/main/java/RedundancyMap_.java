@@ -7,10 +7,7 @@
  **/
 
 import com.jogamp.opencl.*;
-import ij.IJ;
-import ij.ImagePlus;
-import ij.ImageStack;
-import ij.WindowManager;
+import ij.*;
 import ij.gui.NonBlockingGenericDialog;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
@@ -19,7 +16,6 @@ import org.apache.commons.math3.ml.clustering.KMeansPlusPlusClusterer;
 import org.apache.commons.math3.ml.distance.EuclideanDistance;
 import org.apache.commons.math3.ml.clustering.DoublePoint;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class RedundancyMap_ implements PlugIn {
@@ -42,27 +38,33 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Dialog box ---- //
         // -------------------- //
 
+        // Define metric possibilities
+        String[] metrics = new String[4];
+        metrics[0] = "Pearson's R";
+        metrics[1] = "Abs. Diff. of StdDevs";
+        metrics[2] = "Hu moments";
+        metrics[3] = "mSSIM";
+
+        // Initialize dialog box
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Global Redundancy");
-        gd.addNumericField("Box length in pixels: ", 3, 2);
+        gd.addNumericField("Block width (px): ", 3, 2);
+        gd.addNumericField("Box height (px): ", 3, 2);
         gd.addCheckbox("Time-lapse?", false);
-        gd.addCheckbox("Rotation invariant?", false);
         gd.addCheckbox("Multi-scale?", false);
         gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
+        gd.addChoice("Metric:", metrics, metrics[0]);
+        gd.addCheckbox("Use device from preferences?", false);
+
         gd.showDialog();
         if (gd.wasCanceled()) return;
 
         // Get dialog parameters
         int bW = (int) gd.getNextNumber(); // Patch width
-        int bH = bW; // Patch height
+        int bH = (int) gd.getNextNumber(); // Patch height
 
         int useTime = 0;
         if(gd.getNextBoolean() == true) {
             useTime = 1;
-        }
-
-        int rotInv = 0; // Rotation invariant analysis?
-        if(gd.getNextBoolean() == true) {
-            rotInv = 1;
         }
 
         int multiScale = 0; // Multi-scale analysis?
@@ -78,6 +80,31 @@ public class RedundancyMap_ implements PlugIn {
 
         float filterConstant = (float) gd.getNextNumber();
 
+        String metric = gd.getNextChoice();
+
+        boolean useDevice = gd.getNextBoolean();
+
+        // Check if patch dimensions are odd, otherwise kill program
+        if (bW % 2 == 0 || bH % 2 == 0) {
+            IJ.error("Patch dimensions must be odd (e.g., 3x3 or 5x5). Please try again.");
+            return;
+        }
+
+        // Calculate block radius
+        int bRW = bW/2; // Patch radius (x-axis)
+        int bRH = bH/2; // Patch radius (y-axis)
+
+        // Get final patch size (after removing pixels outside inbound circle/ellipse)
+        int patchSize = 0;
+        for(int j=0; j<bH; j++){
+            for (int i=0; i<bW; i++) {
+                float dx = (float)(i-bRW);
+                float dy = (float)(j-bRH);
+                if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
+                    patchSize++;
+                }
+            }
+        }
 
         // --------------------- //
         // ---- Start timer ---- //
@@ -140,6 +167,17 @@ public class RedundancyMap_ implements PlugIn {
             chosenDevice = context.getMaxFlopsDevice();
         }
 
+        // Get chosen device from preferences
+        if(useDevice){
+            String deviceName = Prefs.get("SReD.OpenCL.device", null);
+            for (CLDevice device : allDevices) {
+                if (device.getName().equals(deviceName)) {
+                    chosenDevice = device;
+                    break;
+                }
+            }
+        }
+
         IJ.log("Chosen device: " + chosenDevice.getName());
         IJ.log("--------");
 
@@ -176,6 +214,7 @@ public class RedundancyMap_ implements PlugIn {
 
         int rounds = 5; // How many scale levels should be analyzed
         if(multiScale == 0){
+
             int scaleFactor = 1;
 
             if(useTime == 0){
@@ -189,19 +228,45 @@ public class RedundancyMap_ implements PlugIn {
                 refPixels0 = VarianceStabilisingTransform2D_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
-                // ------------------------- //
-                // ---- Normalize image ---- //
-                // ------------------------- //
+                // ------------------- //
+                // ---- Normalize ---- //
+                // ------------------- //
 
-                float minMax[] = findMinMax(refPixels0, w0, h0, 0, 0);
-                refPixels0 = normalize(refPixels0, w0, h0, 0, 0, minMax, 0, 0);
+                // Cast to "double" type
+                double[] refPixelsDouble = new double[w0*h0];
+                for(int i=0; i<w0*h0; i++){
+                    refPixelsDouble[i] = (double)refPixels0[i];
+                }
+
+                // Find min and max
+                double imgMin = Double.MAX_VALUE;
+                double imgMax = -Double.MAX_VALUE;
+                for(int i=0; i<w0*h0; i++){
+                    double pixelValue = refPixelsDouble[i];
+                    if(pixelValue<imgMin){
+                        imgMin = pixelValue;
+                    }
+                    if(pixelValue>imgMax){
+                        imgMax = pixelValue;
+                    }
+                }
+
+                // Remap pixels
+                for(int i=0; i<w0*h0; i++) {
+                    refPixelsDouble[i] = (refPixelsDouble[i] - imgMin) / (imgMax - imgMin + (double)EPSILON);
+                }
+
+                // Cast back to float
+                for(int i=0; i<w0*h0; i++){
+                    refPixels0[i] = (float)refPixelsDouble[i];
+                }
 
 
                 // ---------------------- //
                 // ---- Run analysis ---- //
                 // ---------------------- //
 
-                GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, rotInv, scaleFactor, filterConstant, 1, w0, h0);
+                GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, bRW, bRH, patchSize, EPSILON, context, queue, scaleFactor, filterConstant, 1, w0, h0, metric);
                 red0.run();
             }else{
                 int nFrames = imp0.getNFrames();
@@ -240,19 +305,11 @@ public class RedundancyMap_ implements PlugIn {
                     refPixels0 = VarianceStabilisingTransform2D_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
-                    // ------------------------- //
-                    // ---- Normalize image ---- //
-                    // ------------------------- //
-
-                    float minMax[] = findMinMax(refPixels0, w0, h0, 0, 0);
-                    refPixels0 = normalize(refPixels0, w0, h0, 0, 0, minMax, 0, 0);
-
-
                     // ---------------------- //
                     // ---- Run analysis ---- //
                     // ---------------------- //
 
-                    GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, EPSILON, context, queue, rotInv, scaleFactor, filterConstant, 1, w0, h0);
+                    GlobalRedundancy red0 = new GlobalRedundancy(refPixels0, w0, h0, bW, bH, bRW, bRH, patchSize, EPSILON, context, queue, scaleFactor, filterConstant, 1, w0, h0, metric);
                     red0.run();
 
 
@@ -286,12 +343,43 @@ public class RedundancyMap_ implements PlugIn {
             refPixels0 = VarianceStabilisingTransform2D_.getGAT(refPixels0, minimizer.gain, minimizer.sigma, minimizer.offset);
 
 
-            // ------------------------- //
-            // ---- Normalize image ---- //
-            // ------------------------- //
+            // --------------------------- //
+            // ---- Pre-process image ---- //
+            // --------------------------- //
 
-            float minMax[] = findMinMax(refPixels0, w0, h0, 0, 0);
-            refPixels0 = normalize(refPixels0, w0, h0, 0, 0, minMax, 0, 0);
+            // Cast to "double" type
+            double[] refPixelsDouble = new double[w0*h0];
+            for(int i=0; i<w0*h0; i++){
+                refPixelsDouble[i] = (double)refPixels0[i];
+            }
+
+            // Get min and max
+            double imgMin = Double.MAX_VALUE;
+            double imgMax = -Double.MAX_VALUE;
+            for(int i=0; i<w0*h0; i++){
+                double pixelValue = refPixelsDouble[i];
+                if(pixelValue<imgMin){
+                    imgMin = pixelValue;
+                }
+                if(pixelValue>imgMax){
+                    imgMax = pixelValue;
+                }
+            }
+
+            // Normalize
+            for(int i=0; i<w0*h0; i++) {
+                refPixelsDouble[i] = (refPixelsDouble[i] - imgMin) / (imgMax - imgMin + (double)EPSILON);
+            }
+
+            // Cast back to float
+            for(int i=0; i<w0*h0; i++){
+                refPixels0[i] = (float)refPixelsDouble[i];
+            }
+
+
+            // ------------------------------------- //
+            // ---- Calculate global repetition ---- //
+            // ------------------------------------- //
 
             fp0 = new FloatProcessor(w0, h0, refPixels0);
 
@@ -316,7 +404,7 @@ public class RedundancyMap_ implements PlugIn {
                 float[] refPixels1 = (float[]) fp1.getPixels(); // Get blurred and downscale pixel array
 
                 // Calculate redundancy map
-                GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, EPSILON, context, queue, rotInv, scaleFactor, filterConstant, i+1, w0, h0);
+                GlobalRedundancy red = new GlobalRedundancy(refPixels1, w1, h1, bW, bH, bRW, bRH, patchSize, EPSILON, context, queue, scaleFactor, filterConstant, i+1, w0, h0, metric);
                 Thread thread = new Thread(red);
                 thread.start();
                 try {
@@ -353,57 +441,6 @@ public class RedundancyMap_ implements PlugIn {
     // ------------------------ //
     // ---- USER FUNCTIONS ---- //
     // ------------------------ //
-
-    public static float[] getUniqueValues(float[] inArr, int w, int h, int offsetX, int offsetY){
-        // Sort input array
-        Arrays.sort(inArr);
-
-        // Get number of unique values
-        int count = 1; // Starts at 1 because first value is not checked
-        for(int j=offsetY; j<h-offsetY; j++){
-            for(int i=offsetX; i<w-offsetX; i++){
-                if(inArr[j*w+i] != inArr[(j*w+i)+1]){
-                    count++;
-                }
-            }
-        }
-
-        // Get unique values
-        float[] outArr = new float[count];
-        int index = 0;
-        for(int j=offsetY; j<h-offsetY; j++){
-            for(int i=offsetX; i<w-offsetX; i++) {
-                if (inArr[j*w+i] != inArr[(j*w+i)+1]) {
-                    outArr[index] = inArr[j*w+i];
-                    index++;
-                }
-            }
-        }
-        outArr[index] = inArr[inArr.length-1]; // Add the last unique value, which is not added in the loop
-
-        return outArr;
-    }
-
-    public static int[] getUniqueValueCoordinates(float[] uniqueArr, float[] inArr, int w, int h, int bRW, int bRH){
-        int[] outArr = new int[uniqueArr.length];
-        int flag = 0;
-        for(int u=0; u<uniqueArr.length; u++){
-            flag = 0;
-            for(int j=bRH; j<h-bRH; j++) {
-                if (flag == 0) {
-                    for (int i=bRW; i<w-bRW; i++) {
-                        if (flag == 0 && inArr[j*w+i] == uniqueArr[u]) {
-                            outArr[u] = j*w+i;
-                            flag = 1;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        return outArr;
-    }
 
     public static int getOptimalK(double[][] featureVectors, int maxK){
         // Convert feature vectors array into List
@@ -494,42 +531,4 @@ public class RedundancyMap_ implements PlugIn {
 
         return input;
     }
-
-    public static float[] findMinMax(float[] inputArray, int w, int h, int offsetX, int offsetY){
-        float[] minMax = {inputArray[offsetY*w+offsetX], inputArray[offsetY*w+offsetX]};
-
-        for(int j=offsetY+1; j<h-offsetY; j++){
-            for(int i=offsetX+1; i<w-offsetX; i++){
-                if(inputArray[j*w+i] < minMax[0]){
-                    minMax[0] = inputArray[j*w+i];
-                }
-                if(inputArray[j*w+i] > minMax[1]){
-                    minMax[1] = inputArray[j*w+i];
-                }
-            }
-        }
-        return minMax;
-    }
-
-    public static float[] normalize(float[] rawPixels, int w, int h, int offsetX, int offsetY, float[] minMax, float tMin, float tMax){
-        float rMin = minMax[0];
-        float rMax = minMax[1];
-        float denominator = rMax - rMin + 0.000001f;
-        float factor;
-
-        if(tMax == 0 && tMin == 0){
-            factor = 1; // So that the users can say they don't want an artificial range by choosing tMax and tMin = 0
-        }else {
-            factor = tMax - tMin;
-        }
-        float[] normalizedPixels = new float[w*h];
-
-        for(int j=offsetY; j<h-offsetY; j++) {
-            for (int i=offsetX; i<w-offsetX; i++) {
-                normalizedPixels[j*w+i] = (rawPixels[j*w+i]-rMin)/denominator * factor + tMin;
-            }
-        }
-        return normalizedPixels;
-    }
-    // ADD FUNCTIONS HERE
 }
