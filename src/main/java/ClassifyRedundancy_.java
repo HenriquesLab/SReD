@@ -1,3 +1,11 @@
+/**
+ *
+ * This class classifies repetition scores using K-Means.
+ *
+ * @author Afonso Mendes
+ *
+ **/
+
 import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
@@ -8,7 +16,6 @@ import org.apache.commons.math3.ml.clustering.CentroidCluster;
 import org.apache.commons.math3.ml.clustering.DoublePoint;
 import org.apache.commons.math3.ml.clustering.KMeansPlusPlusClusterer;
 import org.apache.commons.math3.ml.distance.EuclideanDistance;
-
 import java.util.*;
 
 public class ClassifyRedundancy_ implements PlugIn {

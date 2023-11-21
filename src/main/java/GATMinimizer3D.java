@@ -1,4 +1,13 @@
-import ij.IJ;
+/**
+ *
+ * Returns a set of optimized GAT parameters (gain, sigma and offset) resulting in a remapping of the input with a variance as close to 1 as possible.
+ * Importantly, the input is expected to be a 3D image and the parameters are optimized to the variance of all slices.
+ * Each slice is treated indepedently but the best set of parameters is the one that results in a variance as close to 1 as possible across all slices.
+ *
+ * @author Afonso Mendes
+ *
+ **/
+
 import ij.measure.Minimizer;
 import ij.measure.UserFunction;
 import static java.lang.Math.sqrt;

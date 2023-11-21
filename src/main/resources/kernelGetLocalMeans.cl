@@ -55,6 +55,7 @@ global float* local_stds
     // -------------------------------- //
     // ---- Calculate patch StdDev ---- //
     // -------------------------------- //
+
     double var = 0.0;
     for(int i=0; i<patch_size; i++){
         var += (patch[i] - mean) * (patch[i] - mean);

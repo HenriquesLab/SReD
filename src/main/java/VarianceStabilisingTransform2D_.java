@@ -1,6 +1,12 @@
 /**
  * Created by Afonso Mendes and Ricardo Henriques on April 2021.
- * TODO: Solve issue with VST final image being weird when parameters are estimated from ROI
+ *
+ * Calls the "GATMinimizer2D" class to calculate the gain, sigma and offset of a 2D image that result in a variance as close as possible to 1.
+ * Remaps pixels to stabilize the noise variance using the Generalized Anscombe Transform using the optimized set of parameters.
+ *
+ * @author Afonso Mendes
+ * @author Ricardo Henriques
+ *
  */
 
 import ij.IJ;

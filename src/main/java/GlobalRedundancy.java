@@ -1,10 +1,18 @@
+/**
+ * Calculates the Global Repetition Map. Each local neighbourhood is used as a reference for a round of Block Repetition.
+ * Each pairwise comparison is weighted based on the similarity between reference and test blocks, and the resulting Block Repetition Map is averaged.
+ * The average value is plotted at the center position of the reference neighbourhood.
+ *
+ * @author Afonso Mendes
+ *
+ **/
+
+
 import com.jogamp.opencl.*;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.measure.UserFunction;
 import ij.process.FloatProcessor;
-import ij.process.IntProcessor;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,7 +21,6 @@ import java.util.*;
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
-import static java.lang.Float.NaN;
 import static java.lang.Math.*;
 
 public class GlobalRedundancy implements Runnable, UserFunction{
@@ -116,24 +123,12 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         showStatus("Calculating local means...");
         queue.put2DRangeKernel(kernelGetLocalMeans, 0, 0, w, h, 0, 0);
         queue.finish();
-/*
-        // Read the local means map back from the GPU
-        queue.putReadBuffer(clLocalMeans, true);
-        for (int y=0; y<h; y++) {
-            for(int x=0; x<w; x++) {
-                localMeans[y*w+x] = clLocalMeans.getBuffer().get(y*w+x);
-                queue.finish();
-            }
-        }
-*/
-        // Calculate the local variances map
-        queue.putReadBuffer(clLocalStds, true);
 
-        float[] localVars = new float[wh];
+        // Read the local standard deviations map from the OpenCL device
+        queue.putReadBuffer(clLocalStds, true);
         for (int y=bRH; y<h-bRH; y++) {
             for (int x=bRW; x<w-bRW; x++) {
-                float std = clLocalStds.getBuffer().get(y*w+x);
-                localVars[y*w+x] = std*std;
+                localStds[y*w+x] = clLocalStds.getBuffer().get(y*w+x);
                 queue.finish();
             }
         }
@@ -143,48 +138,83 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         programGetLocalMeans.release();
 
 
-        // ------------------------------------------ //
-        // ---- Calculate average noise variance ---- //
-        // ------------------------------------------ //
+        // --------------------------------- //
+        // ---- Calculate Relevance Map ---- //
+        // --------------------------------- //
 
-        // Copy the local variances map without borders
-        float[] sortedVars = new float[sizeWithoutBorders];
+        int blockWidth, blockHeight;
+        int CIF = 352*288; // Resolution of a CIF file
+
+        if(wh<=CIF){
+            blockWidth = 8;
+            blockHeight = 8;
+        }else{
+            blockWidth = 16;
+            blockHeight = 16;
+        }
+
+        int nBlocksX = w / blockWidth; // number of blocks in each row
+        int nBlocksY = h / blockHeight; // number of blocks in each column
+        int nBlocks = nBlocksX * nBlocksY; // total number of blocks
+        float[] localVars = new float[nBlocks];
         int index = 0;
-        for(int j=bRH; j<h-bRH; j++){
-            for(int i=bRW; i<w-bRW; i++){
-                sortedVars[index] = localVars[j*w+i];
+
+        // Calculate local variances
+        for(int y=0; y<nBlocksY; y++){
+            for(int x=0; x<nBlocksX; x++){
+                double[] meanVar = getMeanAndVarBlock(refPixels, w, x*blockWidth, y*blockHeight, (x+1)*blockWidth, (y+1)*blockHeight);
+                localVars[index] = (float)meanVar[1];
+                IJ.log("Var: " + localVars[index]);
                 index++;
             }
         }
 
-        // Get the 3% lowest variances and calculate their average
+        // Sort the local variances
+        float[] sortedVars = new float[nBlocks];
+        index = 0;
+        for(int i=0; i<nBlocks; i++){
+            sortedVars[index] = localVars[index];
+            index++;
+        }
         Arrays.sort(sortedVars);
-        int nVars = (int) (0.03f * (float)sizeWithoutBorders + 1.0f); // Number of blocks corresponding to the 3% chosen
+
+        // Get the 3% lowest variances and calculate their average
+        int nVars = (int) (0.03f * (float)nBlocks + 1.0f); // Number of blocks corresponding to 3% of the total amount of blocks
         float noiseVar = 0.0f;
+
         for(int i=0; i<nVars; i++){
             noiseVar += sortedVars[i];
+            IJ.log("Sorted var: " + sortedVars[i]);
         }
         noiseVar = abs(noiseVar/(float)nVars);
+        noiseVar = (1.0f+0.001f*(noiseVar-40.0f)) * noiseVar;
 
-
-        // ---------------------------------------------------------------------- //
-        // ---- Calculate noise variance filter mask (a.k.a. relevance mask) ---- //
-        // ---------------------------------------------------------------------- //
+        // Build the relevance map
+        float[] relevanceMap = new float[wh];
+        float threshold;
+        if(noiseVar == 0.0f){
+            IJ.log("WARNING: Noise variance is 0. Adjust the relevance threshold using the filter constant directly.");
+            threshold = filterConstant;
+            IJ.log("Threshold: " + filterConstant);
+        }else{
+            IJ.log("Noise variance: " + noiseVar);
+            threshold = noiseVar*filterConstant;
+            IJ.log("Relevance threshold: " + threshold);
+        }
 
         double nPixels = 0.0; // Number of relevant pixels
-        float threshold = noiseVar*filterConstant;
-        int[] relevanceMap = new int[wh];
-
         for(int j=bRH; j<h-bRH; j++){
             for(int i=bRW; i<w-bRW; i++){
-                if(localVars[j*w+i]<threshold){
-                    relevanceMap[j*w+i] = 0;
+                float var = localStds[j*w+i]*localStds[j*w+i];
+                if(var<threshold || var==0.0f){
+                    relevanceMap[j*w+i] = 0.0f;
                 }else{
-                    relevanceMap[j*w+i] = 1;
+                    relevanceMap[j*w+i] = 1.0f;
                     nPixels += 1.0;
                 }
             }
         }
+
 
         // ----------------------------------------- //
         // ---- Calculate Global Repetition Map ---- //
@@ -315,7 +345,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             kernelGetDiffStdMap.setArg(argn++, clWeightsSumMap);
             kernelGetDiffStdMap.setArg(argn++, clDiffStdMap);
 
-            // Calculate weighted mean Pearson's map
+            // Calculate weighted repetition map
             int nXBlocks = w/64 + ((w%64==0)?0:1);
             int nYBlocks = h/64 + ((h%64==0)?0:1);
             for (int nYB = 0; nYB < nYBlocks; nYB++) {
@@ -329,7 +359,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             }
             queue.finish();
 
-            // Read the weighted mean Pearson's map back from the OpenCL device (and finish the mean calculation simultaneously)
+            // Read the weighted repetition map back from the OpenCL device (and finish the mean calculation simultaneously)
             queue.putReadBuffer(clDiffStdMap, true);
             queue.putReadBuffer(clWeightsSumMap, true);
             for (int y=bRH; y<h-bRH; y++) {
@@ -354,45 +384,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             clWeightsSumMap.release();
 
 
-            // ------------------------------------------- //
-            // ---- Normalize output (robust scaling) ---- //
-            // ------------------------------------------- //
+            // -------------------------- //
+            // ---- Normalize output ---- //
+            // -------------------------- //
 
-            // Find median and interquartile range (IQR) for the relevant pixels
-            List<Float> relevantValues = new ArrayList<>();
-
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
-                    if(relevanceMap[j*w+i]==1){
-                        relevantValues.add(repetitionMap[j*w+i]);
-                    }
-                }
-            }
-
-            float[] relevantArray = new float[relevantValues.size()];
-            for(int k=0; k<relevantValues.size(); k++){
-                relevantArray[k] = relevantValues.get(k);
-            }
-
-            float median = calculateMedian(relevantArray);
-            float q1 = calculatePercentile(relevantArray, 25);
-            float q3 = calculatePercentile(relevantArray, 75);
-            float iqr = q3-q1;
-
-            // Robust scaling for the relevant subset
-            for(int j=bRH; j<h-bRH; j++){
-                for(int i=bRW; i<w-bRW; i++){
-                    if(relevanceMap[j*w+i]==1){
-                        repetitionMap[j*w+i] = (repetitionMap[j*w+i]-median)/(iqr+EPSILON);
-                    }else{
-                        repetitionMap[j*w+i] = 0.0f;
-                    }
-                }
-            }
-
-
-
-            /*
             // Find min and max
             float min_intensity = Float.MAX_VALUE;
             float max_intensity = -Float.MAX_VALUE;
@@ -414,9 +409,6 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                     }
                 }
             }
-
-
-            */
         }
 
 
@@ -429,11 +421,6 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         FloatProcessor fp1 = new FloatProcessor(w, h, repetitionMap);
         ImagePlus imp1 = new ImagePlus("Redundancy Map", fp1);
         imp1.show();
-
-        FloatProcessor impp = new FloatProcessor(w, h, relevanceMap);
-        ImagePlus imp2 = new ImagePlus("Relevance Map", impp);
-        imp2.show();
-
 
 /*
         // ------------------------------------------- //
@@ -534,5 +521,30 @@ public class GlobalRedundancy implements Runnable, UserFunction{
     public static float calculatePercentile(float[] values, int percentile){
         int index = (int) Math.ceil((percentile/100.0)*values.length);
         return values[index-1];
+    }
+
+    // Get mean and variance of a patch
+    public double[] getMeanAndVarBlock(float[] pixels, int width, int xStart, int yStart, int xEnd, int yEnd) {
+        double mean = 0;
+        double var;
+
+        double sq_sum = 0;
+
+        int bWidth = xEnd-xStart;
+        int bHeight = yEnd - yStart;
+        int bWH = bWidth*bHeight;
+
+        for (int j=yStart; j<yEnd; j++) {
+            for (int i=xStart; i<xEnd; i++) {
+                float v = pixels[j*width+i];
+                mean += v;
+                sq_sum += v * v;
+            }
+        }
+
+        mean = mean / bWH;
+        var = sq_sum / bWH - mean * mean;
+
+        return new double[] {mean, var};
     }
 }

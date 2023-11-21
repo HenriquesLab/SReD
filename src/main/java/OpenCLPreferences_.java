@@ -1,3 +1,12 @@
+/**
+ *
+ * Allows the user to define which device to use for OpenCL.
+ *
+ * @author Afonso Mendes
+ *
+ **/
+
+
 import com.jogamp.opencl.CLDevice;
 import com.jogamp.opencl.CLException;
 import com.jogamp.opencl.CLPlatform;

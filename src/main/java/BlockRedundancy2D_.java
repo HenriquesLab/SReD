@@ -1,3 +1,11 @@
+/**
+ *
+ * This class calculates block repetition maps for 2D data.
+ *
+ * @author Afonso Mendes
+ *
+ **/
+
 import com.jogamp.opencl.*;
 import ij.IJ;
 import ij.ImagePlus;
@@ -464,18 +472,19 @@ public class BlockRedundancy2D_ implements PlugIn {
         for (int y=0; y<h; y++) {
             for(int x=0; x<w; x++) {
                 localMeans[y*w+x] = clLocalMeans.getBuffer().get(y*w+x);
+                queue.finish();
+
             }
         }
-        queue.finish();
 
         // Read the local stds map back from the device
         queue.putReadBuffer(clLocalStds, true);
         for (int y=0; y<h; y++) {
             for (int x=0; x<w; x++) {
                 localStds[y*w+x] = clLocalStds.getBuffer().get(y*w+x);
+                queue.finish();
             }
         }
-        queue.finish();
 
         // Release memory
         kernelGetPatchMeans.release();

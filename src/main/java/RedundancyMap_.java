@@ -1,9 +1,17 @@
 /**
- * OPENCL INITIALIZATION (CONTEXT, DEVICE, QUEUE) IS BEING HANDLED IN THIS CLASS, WHILE BUFFERS ARE HANDLED IN THE
- * REDUNDANCY CLASS. This is so that we can create the OpenCL context and devices once and calculate redundancy multiple
- * times. Buffers, programs, kernels, etc, resources are managed in the "GlobalRedundancy" class.
- * TODO: Implement progress tracking
- * TODO: check kernels for division by zero
+ *
+ * This class acts as a master Global Repetition handler.
+ * It instantiates rounds of Global Repetition calculations according to the users' needs.
+ * This allows extending Global Repetition for timelapses and across scales sequentially.
+ *
+ * The OpenCL implementation (initialization, context creation, device selection, etc...) is also handled here.
+ * OpenCL buffer, programs, kernels, etc. are handled in the "GlobalRedundancy" class and recycled for each iteration.
+ * This allows using a single OpenCL context for all iterations.
+ *
+ * The calculation of the Global Repetition Map is handled in the "GlobalRedundancy" class.
+ *
+ * @author Afonso Mendes
+ *
  **/
 
 import com.jogamp.opencl.*;

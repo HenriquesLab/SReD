@@ -1,16 +1,21 @@
+/**
+ *
+ * Returns a set of optimized GAT parameters (gain, sigma and offset) resulting in a remapping of the input with a variance as close to 1 as possible
+ *
+ * @author Afonso Mendes
+ *
+ **/
+
+import ij.IJ;
 import ij.measure.Minimizer;
 import ij.measure.UserFunction;
-
-import static java.lang.Math.min;
 import static java.lang.Math.sqrt;
 
 
 public class GATMinimizer2D implements UserFunction {
 
-    public double sigma;
+    public double gain, sigma, offset;
     private final int width, height;
-    public double gain;
-    public double offset;
     //public boolean isCalculated = false;
     public boolean showProgress = false;
     private final float[] pixels;
@@ -94,16 +99,11 @@ public class GATMinimizer2D implements UserFunction {
                 error += (delta * delta) / nBlocks;
             }
         }
-        
         //IJ.log("gain:"+gain+" sigma:"+sigma+" offset:"+offset+" error: " + error);
         return error;
     }
 
     // ---- USER METHODS ----
-    // Get 1-D coordinates
-    public int get1DCoordinate(int x, int y) {
-        return y * width + x;
-    }
 
     // Get mean and variance of a patch
     public double[] getMeanAndVarBlock(float[] pixels, int xStart, int yStart, int xEnd, int yEnd) {
@@ -118,7 +118,7 @@ public class GATMinimizer2D implements UserFunction {
 
         for (int j=yStart; j<yEnd; j++) {
             for (int i=xStart; i<xEnd; i++) {
-                float v = pixels[get1DCoordinate(i,j)];
+                float v = pixels[j*width+i];
                 mean += v;
                 sq_sum += v * v;
             }

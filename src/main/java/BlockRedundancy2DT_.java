@@ -1,4 +1,10 @@
-//TODO: Filling buffer with a patch writes wrong values. Currently the kernels are reading the reference patch from the image buffer based on the patch position. Try to fix this to use a patch written in a buffer.
+/**
+ *
+ * This class calculates block repetition maps for 2D+T data.
+ *
+ * @author Afonso Mendes
+ *
+ **/
 
 import com.jogamp.opencl.*;
 import ij.*;
