@@ -41,7 +41,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
     // ---- Image parameters ---- //
     // -------------------------- //
 
-    public float[] refPixels, localMeans, localStds, weightsSumMap;
+    public float[] refPixels;
     public int w, h, wh, bW, bH, patchSize, bRW, bRH, sizeWithoutBorders, scaleFactor, level, w0, h0;
     public float filterConstant, EPSILON;
     public String metric;
@@ -67,9 +67,6 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         this.level = level;
         this.w0 = w0;
         this.h0 = h0;
-        localMeans = new float[wh];
-        localStds = new float[wh];
-        weightsSumMap = new float[wh];
         this.metric = metric;
     }
 
@@ -91,6 +88,12 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         // ------------------------------------------------------------------ //
         // ---- Calculate local means and local standard deviations maps ---- //
         // ------------------------------------------------------------------ //
+
+        float[] localMeans = new float[wh];
+        Arrays.fill(localMeans, 0.0f);
+
+        float[] localStds = new float[wh];
+        Arrays.fill(localStds, 0.0f);
 
         // Create OpenCL program
         String programStringGetLocalMeans = getResourceAsString(RedundancyMap_.class, "kernelGetLocalMeans.cl");
@@ -157,6 +160,8 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         int nBlocksY = h / blockHeight; // number of blocks in each column
         int nBlocks = nBlocksX * nBlocksY; // total number of blocks
         float[] localVars = new float[nBlocks];
+        Arrays.fill(localVars, 0.0f);
+
         int index = 0;
 
         // Calculate local variances
@@ -164,13 +169,14 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             for(int x=0; x<nBlocksX; x++){
                 double[] meanVar = getMeanAndVarBlock(refPixels, w, x*blockWidth, y*blockHeight, (x+1)*blockWidth, (y+1)*blockHeight);
                 localVars[index] = (float)meanVar[1];
-                IJ.log("Var: " + localVars[index]);
                 index++;
             }
         }
 
         // Sort the local variances
         float[] sortedVars = new float[nBlocks];
+        Arrays.fill(sortedVars, 0.0f);
+
         index = 0;
         for(int i=0; i<nBlocks; i++){
             sortedVars[index] = localVars[index];
@@ -184,13 +190,14 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
         for(int i=0; i<nVars; i++){
             noiseVar += sortedVars[i];
-            IJ.log("Sorted var: " + sortedVars[i]);
         }
         noiseVar = abs(noiseVar/(float)nVars);
         noiseVar = (1.0f+0.001f*(noiseVar-40.0f)) * noiseVar;
 
         // Build the relevance map
         float[] relevanceMap = new float[wh];
+        Arrays.fill(relevanceMap, 0.0f);
+
         float threshold;
         if(noiseVar == 0.0f){
             IJ.log("WARNING: Noise variance is 0. Adjust the relevance threshold using the filter constant directly.");
@@ -221,6 +228,11 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         // ----------------------------------------- //
 
         float[] repetitionMap = new float[wh];
+        Arrays.fill(repetitionMap, 0.0f);
+
+        float[] weightsSumMap = new float[wh];
+        Arrays.fill(weightsSumMap, 0.0f);
+
 
         if(metric == "Pearson's R"){
 
@@ -323,7 +335,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BRW$", "" + bRW);
             programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$BRH$", "" + bRH);
             programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$FILTERPARAM$", "" + noiseVar);
-            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$FILTERCONSTANT$", "" + filterConstant);
+            programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$THRESHOLD$", "" + threshold);
             programStringGetDiffStdMap = replaceFirst(programStringGetDiffStdMap, "$EPSILON$", "" + EPSILON);
             programGetDiffStdMap = context.createProgram(programStringGetDiffStdMap).build();
 
@@ -359,6 +371,8 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             }
             queue.finish();
 
+            showStatus("Retrieving results...");
+
             // Read the weighted repetition map back from the OpenCL device (and finish the mean calculation simultaneously)
             queue.putReadBuffer(clDiffStdMap, true);
             queue.putReadBuffer(clWeightsSumMap, true);
@@ -373,6 +387,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                     float weightSum = clWeightsSumMap.getBuffer().get(y*w+x);
                     queue.finish();
 
+                    // Store the repetition score
                     repetitionMap[y*w+x] = similarity / (weightSum*(float)nPixels+EPSILON);
                 }
             }
@@ -388,12 +403,14 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             // ---- Normalize output ---- //
             // -------------------------- //
 
+            showStatus("Normalizing output...");
+
             // Find min and max
             float min_intensity = Float.MAX_VALUE;
             float max_intensity = -Float.MAX_VALUE;
             for(int j=bRH; j<h-bRH; j++) {
                 for(int i=bRW; i<w-bRW; i++) {
-                    if(relevanceMap[j*w+i] == 1) {
+                    if(relevanceMap[j*w+i] == 1.0f) {
                         float pixelValue = repetitionMap[j*w+i];
                         max_intensity = max(max_intensity, pixelValue);
                         min_intensity = min(min_intensity, pixelValue);
@@ -404,8 +421,10 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             // Remap pixels
             for(int j=bRH; j<h-bRH; j++) {
                 for(int i=bRW; i<w-bRW; i++) {
-                    if(relevanceMap[j*w+i] == 1) {
+                    if(relevanceMap[j*w+i] == 1.0f) {
                         repetitionMap[j*w+i] = (repetitionMap[j*w+i]-min_intensity)/(max_intensity-min_intensity+EPSILON);
+                    }else{
+                        repetitionMap[j*w+i] = 0.0f;
                     }
                 }
             }

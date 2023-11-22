@@ -59,7 +59,7 @@ public class RedundancyMap_ implements PlugIn {
         gd.addNumericField("Box height (px): ", 3, 2);
         gd.addCheckbox("Time-lapse?", false);
         gd.addCheckbox("Multi-scale?", false);
-        gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
+        gd.addSlider("Filter constant: ", 0.0f, 10.0f, 0.0, 0.1f);
         gd.addChoice("Metric:", metrics, metrics[0]);
         gd.addCheckbox("Use device from preferences?", false);
 
@@ -140,12 +140,12 @@ public class RedundancyMap_ implements PlugIn {
             CLDevice[] allCLdeviceOnThisPlatform = allPlatform.listCLDevices();
 
             for (CLDevice clDevice : allCLdeviceOnThisPlatform) {
-                IJ.log("--------");
-                IJ.log("Device name: " + clDevice.getName());
-                IJ.log("Device type: " + clDevice.getType());
-                IJ.log("Max clock: " + clDevice.getMaxClockFrequency() + " MHz");
-                IJ.log("Number of compute units: " + clDevice.getMaxComputeUnits());
-                IJ.log("Max work group size: " + clDevice.getMaxWorkGroupSize());
+                //IJ.log("--------");
+                //IJ.log("Device name: " + clDevice.getName());
+                //IJ.log("Device type: " + clDevice.getType());
+                //IJ.log("Max clock: " + clDevice.getMaxClockFrequency() + " MHz");
+                //IJ.log("Number of compute units: " + clDevice.getMaxComputeUnits());
+                //IJ.log("Max work group size: " + clDevice.getMaxWorkGroupSize());
                 if (clDevice.getMaxComputeUnits() * clDevice.getMaxClockFrequency() > nFlops) {
                     nFlops = clDevice.getMaxComputeUnits() * clDevice.getMaxClockFrequency();
                     clPlatformMaxFlop = allPlatform;

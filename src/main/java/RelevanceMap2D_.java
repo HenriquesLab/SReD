@@ -293,7 +293,6 @@ public class RelevanceMap2D_ implements PlugIn {
             for(int x=0; x<nBlocksX; x++){
                 double[] meanVar = getMeanAndVarBlock(refPixels, w, x*blockWidth, y*blockHeight, (x+1)*blockWidth, (y+1)*blockHeight);
                 localVars[index] = (float)meanVar[1];
-                IJ.log("Var: " + localVars[index]);
                 index++;
             }
         }
@@ -313,7 +312,6 @@ public class RelevanceMap2D_ implements PlugIn {
 
         for(int i=0; i<nVars; i++){
             noiseVar += sortedVars[i];
-            IJ.log("Sorted var: " + sortedVars[i]);
         }
         noiseVar = abs(noiseVar/(float)nVars);
         noiseVar = (1.0f+0.001f*(noiseVar-40.0f)) * noiseVar;
@@ -333,8 +331,8 @@ public class RelevanceMap2D_ implements PlugIn {
 
         for(int j=bRH; j<h-bRH; j++){
             for(int i=bRW; i<w-bRW; i++){
-                float var = localStds[j*w+i]*localStds[j*w+i];
-                if(var<threshold || var==0.0f){
+                float variance = localStds[j*w+i]*localStds[j*w+i];
+                if(variance<threshold || variance==0.0f){
                     relevanceMap[j*w+i] = 0.0f;
                 }else{
                     relevanceMap[j*w+i] = 1.0f;
