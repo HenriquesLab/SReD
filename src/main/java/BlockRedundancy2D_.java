@@ -76,7 +76,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         // Define metric possibilities
         String[] metrics = new String[4];
         metrics[0] = "Pearson's R";
-        metrics[1] = "Abs. Diff. of StdDevs";
+        metrics[1] = "Cosine similarity";
         metrics[2] = "Hu moments";
         metrics[3] = "mSSIM";
 
@@ -232,9 +232,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         }
 
         // Convert patch to "double" type (keeping only the pixels within the inbound circle/ellipse)
-        // Also, apply Gaussian Window
         double[] patchPixelsDouble = new double[patchSize];
-        //double[] gaussianWindowDouble = new double[patchSize];
         int index = 0;
         for(int j=0; j<bH; j++){
             for (int i=0; i<bW; i++) {
@@ -242,8 +240,6 @@ public class BlockRedundancy2D_ implements PlugIn {
                 float dy = (float)(j-bRH);
                 if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
                     patchPixelsDouble[index] = (double) patchPixels[j*bW+i];
-                    //patchPixelsDouble[index] = (double) patchPixels[j*bW+i] * gaussianWindow[j*bW+i];
-                    //gaussianWindowDouble[index] = gaussianWindow[j*bW+i];
                     index++;
                 }
             }
@@ -272,35 +268,18 @@ public class BlockRedundancy2D_ implements PlugIn {
             patchPixelsDouble[i] = patchPixelsDouble[i] - patchMean;
         }
 
-        // Normalize again
-        patchMin = Double.MAX_VALUE; // Initialize as a very large number
-        patchMax = -Double.MAX_VALUE; // Initialize as a very small number
-
-        for(int i=0; i<patchSize; i++){
-            patchMin = min(patchMin, patchPixelsDouble[i]);
-            patchMax = max(patchMax, patchPixelsDouble[i]);
-        }
-
-        for(int i=0; i<patchSize; i++){
-            patchPixelsDouble[i] = (patchPixelsDouble[+i] - patchMin)/(patchMax - patchMin + EPSILON);
-        }
-
         // Typecast back to float
         float[] patchPixelsFloat = new float[patchSize];
-        //float[] gaussianWindowFloat = new float[patchSize];
         for(int i=0; i<patchSize; i++){
             patchPixelsFloat[i] = (float)patchPixelsDouble[i];
-            //gaussianWindowFloat[i] = (float)gaussianWindowDouble[i];
         }
 
-        // Calculate mean and standard deviation
-        float patchMeanFloat = 0.0f;
+        // Calculate standard deviation
+        float patchMeanFloat = (float) patchMean;
         double patchStdDev = 0.0;
         for(int i=0; i<patchSize; i++){
-            patchMeanFloat += patchPixelsFloat[i];
             patchStdDev += (patchPixelsDouble[i] - patchMean) * (patchPixelsDouble[i] - patchMean);
         }
-        patchMeanFloat /= (float) patchSize;
         patchStdDev = (float) sqrt(patchStdDev/(patchSize-1));
 
 
@@ -358,12 +337,12 @@ public class BlockRedundancy2D_ implements PlugIn {
             CLDevice[] allCLdeviceOnThisPlatform = allPlatform.listCLDevices();
 
             for (CLDevice clDevice : allCLdeviceOnThisPlatform) {
-                IJ.log("--------");
-                IJ.log("Device name: " + clDevice.getName());
-                IJ.log("Device type: " + clDevice.getType());
-                IJ.log("Max clock: " + clDevice.getMaxClockFrequency() + " MHz");
-                IJ.log("Number of compute units: " + clDevice.getMaxComputeUnits());
-                IJ.log("Max work group size: " + clDevice.getMaxWorkGroupSize());
+                //IJ.log("--------");
+                //IJ.log("Device name: " + clDevice.getName());
+                //IJ.log("Device type: " + clDevice.getType());
+                //IJ.log("Max clock: " + clDevice.getMaxClockFrequency() + " MHz");
+                //IJ.log("Number of compute units: " + clDevice.getMaxComputeUnits());
+                //IJ.log("Max work group size: " + clDevice.getMaxWorkGroupSize());
                 if (clDevice.getMaxComputeUnits() * clDevice.getMaxClockFrequency() > nFlops) {
                     nFlops = clDevice.getMaxComputeUnits() * clDevice.getMaxClockFrequency();
                     clPlatformMaxFlop = allPlatform;
@@ -656,35 +635,6 @@ public class BlockRedundancy2D_ implements PlugIn {
                         }
                     }
                 }
-
-            }else if(normalizeOutput){
-
-                // -------------------------- //
-                // ---- Normalize output ---- //
-                // -------------------------- //
-
-                // Find min and max
-                float pearsonMin = Float.MAX_VALUE;
-                float pearsonMax = -Float.MAX_VALUE;
-
-                for (int j=bRH; j<h-bRH; j++) {
-                    for (int i=bRW; i<w-bRW; i++) {
-                        float pixelValue = pearsonMap[j*w+i];
-                        if (pixelValue > pearsonMax) {
-                            pearsonMax = pixelValue;
-                        }
-                        if (pixelValue < pearsonMin) {
-                            pearsonMin = pixelValue;
-                        }
-                    }
-                }
-
-                // Remap pixels
-                for (int j=bRH; j<h-bRH; j++) {
-                    for (int i=bRW; i<w-bRW; i++) {
-                        pearsonMap[j*w+i] = (pearsonMap[j * w + i] - pearsonMin) / (pearsonMax - pearsonMin + EPSILON);
-                    }
-                }
             }
 
             // Release resources
@@ -700,8 +650,8 @@ public class BlockRedundancy2D_ implements PlugIn {
             imp1.show();
         }
 
-        if(metric == metrics[1]) { // Absolute Difference of Standard Deviations
-            showStatus("Calculating Absolute Difference of Standard Deviations...");
+        if(metric == metrics[1]) { // Cosine similarity
+            showStatus("Calculating Cosine similarity...");
 
             // Build OpenCL program
             String programStringGetPatchDiffStd = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchDiffStd2D.cl");
@@ -719,7 +669,7 @@ public class BlockRedundancy2D_ implements PlugIn {
             fillBufferWithFloatArray(clDiffStdMap, diffStdMap);
 
             // Create kernel and set args
-            kernelGetPatchDiffStd = programGetPatchDiffStd.createCLKernel("kernelGetSynthPatchDiffStd2D");
+            kernelGetPatchDiffStd = programGetPatchDiffStd.createCLKernel("kernelGetPatchDiffStd2D");
 
             argn = 0;
             kernelGetPatchDiffStd.setArg(argn++, clLocalStds);
@@ -730,7 +680,7 @@ public class BlockRedundancy2D_ implements PlugIn {
             queue.put2DRangeKernel(kernelGetPatchDiffStd, 0, 0, w, h, 0, 0);
             queue.finish();
 
-            // Read Pearson's coefficients back from the GPU
+            // Read results back from the OpenCL device
             queue.putReadBuffer(clDiffStdMap, true);
             for (int y=0; y<h; y++) {
                 for (int x=0; x<w; x++) {
@@ -750,7 +700,6 @@ public class BlockRedundancy2D_ implements PlugIn {
             // --------------------------------------- //
             //TODO: SHOULDNT THIS BE 3% PRIME ASIA?
             // NOTE: THIS KERNEL IS THE SAME AS THE LOCAL STDS BUT WITHOUT NORMALIZING THE PATCHES. WE CAN USE THE SAME BUFFERS
-            float[] diffStdMapNorm = new float[wh];
 
             if(filterConstant>0.0f) {
                 showStatus("Calculating relevance map...");
@@ -817,62 +766,37 @@ public class BlockRedundancy2D_ implements PlugIn {
                     }
                 }
 
-                // ----------------------------------------------------------------------- //
-                // ---- Normalize output (avoiding pixels outside the relevance mask) ---- //
-                // ----------------------------------------------------------------------- //
+                if(normalizeOutput) {
 
-                // Find min and max within the relevance mask
-                float diffStdMin = Float.MAX_VALUE;
-                float diffStdMax = -Float.MAX_VALUE;
+                    // ----------------------------------------------------------------------- //
+                    // ---- Normalize output (avoiding pixels outside the relevance mask) ---- //
+                    // ----------------------------------------------------------------------- //
 
-                for (int j=bRH; j<h-bRH; j++) {
-                    for (int i=bRW; i<w-bRW; i++) {
-                        if (relevanceMap[j*w+i]>noiseMeanVar*filterConstant) {
-                            float pixelValue = diffStdMap[j*w+i];
-                            if (pixelValue > diffStdMax) {
-                                diffStdMax = pixelValue;
+                    // Find min and max within the relevance mask
+                    float diffStdMin = Float.MAX_VALUE;
+                    float diffStdMax = -Float.MAX_VALUE;
+
+                    for (int j = bRH; j < h - bRH; j++) {
+                        for (int i = bRW; i < w - bRW; i++) {
+                            if (relevanceMap[j * w + i] > noiseMeanVar * filterConstant) {
+                                float pixelValue = diffStdMap[j * w + i];
+                                if (pixelValue > diffStdMax) {
+                                    diffStdMax = pixelValue;
+                                }
+                                if (pixelValue < diffStdMin) {
+                                    diffStdMin = pixelValue;
+                                }
                             }
-                            if (pixelValue < diffStdMin) {
-                                diffStdMin = pixelValue;
+                        }
+                    }
+
+                    // Remap pixels
+                    for (int j=bRH; j<h-bRH; j++) {
+                        for (int i=bRW; i<w-bRW; i++) {
+                            if (relevanceMap[j*w+i] > noiseMeanVar * filterConstant) {
+                                diffStdMap[j*w+i] = (diffStdMap[j*w+i]-diffStdMin)/(diffStdMax-diffStdMin+EPSILON);
                             }
                         }
-                    }
-                }
-
-                // Remap pixels
-                for (int j=bRH; j<h-bRH; j++) {
-                    for (int i=bRW; i<w-bRW; i++) {
-                        if (relevanceMap[j*w+i]>noiseMeanVar*filterConstant) {
-                            diffStdMapNorm[j*w+i] = (diffStdMap[j*w+i]-diffStdMin) / (diffStdMax-diffStdMin);
-                        }
-                    }
-                }
-            }else{
-
-                // -------------------------- //
-                // ---- Normalize output ---- //
-                // -------------------------- //
-
-                // Find min and max
-                float diffStdMin = Float.MAX_VALUE;
-                float diffStdMax = -Float.MAX_VALUE;
-
-                for (int j=bRH; j<h-bRH; j++) {
-                    for (int i=bRW; i<w-bRW; i++) {
-                        float pixelValue = diffStdMap[j*w+i];
-                        if (pixelValue > diffStdMax) {
-                            diffStdMax = pixelValue;
-                        }
-                        if (pixelValue < diffStdMin) {
-                            diffStdMin = pixelValue;
-                        }
-                    }
-                }
-
-                // Remap pixels
-                for (int j=bRH; j<h-bRH; j++) {
-                    for (int i=bRW; i<w-bRW; i++) {
-                        diffStdMapNorm[j*w+i] = (diffStdMap[j*w+i]-diffStdMin) / (diffStdMax - diffStdMin);
                     }
                 }
             }
@@ -885,7 +809,7 @@ public class BlockRedundancy2D_ implements PlugIn {
             // ---- Display results ---- //
             // ------------------------- //
 
-            FloatProcessor fp1 = new FloatProcessor(w, h, diffStdMapNorm);
+            FloatProcessor fp1 = new FloatProcessor(w, h, diffStdMap);
             ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
             imp1.show();
         }

@@ -22,12 +22,8 @@ kernel void kernelGetPatchDiffStd2D(
     // ---- Calculate absolute difference of standard deviations ---- //
     // -------------------------------------------------------------- //
 
-    float comp_std = local_stds[gy*w+gx];
+    float test_std = local_stds[gy*w+gx];
 
-    // We use the reciprocal to get a measure of similarity
-    // We cap the max value to Float.MAX to avoid "inf"
-
-    float similarity = 1.0f / (fabs(ref_std - comp_std)+EPSILON);
-    similarity = fmin(similarity, FLT_MAX);
-    diff_std_map[gy*w+gx] = similarity;
+    float similarity = (ref_std*test_std) / (sqrt(ref_std*ref_std)*sqrt(test_std*test_std)+EPSILON);
+    diff_std_map[gy*w+gx] = (float)fmax(0.0f, similarity);
 }

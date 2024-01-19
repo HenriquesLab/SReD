@@ -49,7 +49,7 @@ public class RedundancyMap_ implements PlugIn {
         // Define metric possibilities
         String[] metrics = new String[4];
         metrics[0] = "Pearson's R";
-        metrics[1] = "Abs. Diff. of StdDevs";
+        metrics[1] = "Cosine similarity";
         metrics[2] = "Hu moments";
         metrics[3] = "mSSIM";
 
@@ -59,6 +59,7 @@ public class RedundancyMap_ implements PlugIn {
         gd.addNumericField("Box height (px): ", 3, 2);
         gd.addCheckbox("Time-lapse?", false);
         gd.addCheckbox("Multi-scale?", false);
+
         gd.addSlider("Filter constant: ", 0.0f, 10.0f, 0.0, 0.1f);
         gd.addChoice("Metric:", metrics, metrics[0]);
         gd.addCheckbox("Use device from preferences?", false);

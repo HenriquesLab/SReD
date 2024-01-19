@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
 #define patch_size $PATCH_SIZE$
@@ -27,9 +27,9 @@ kernel void kernelGetPatchPearson2D(
     }
 
 
-    // ------------------------------------------------------------------------ //
-    // ---- Get mean-subtracted and normalized reference patch from buffer ---- //
-    // ------------------------------------------------------------------------ //
+    // --------------------------------------------- //
+    // ---- Get mean-subtracted reference block ---- //
+    // --------------------------------------------- //
 
     __local double ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
 
@@ -56,26 +56,6 @@ kernel void kernelGetPatchPearson2D(
     }
 
 
-    // ------------------------------------ //
-    // ---- Normalize comparison patch ---- //
-    // ------------------------------------ //
-
-    // Find min and max
-    double min_intensity = DBL_MAX;
-    double max_intensity = -DBL_MAX;
-
-    for(int i=0; i<patch_size; i++){
-        double pixel_value = comp_patch[i];
-        min_intensity = min(min_intensity, pixel_value);
-        max_intensity = max(max_intensity, pixel_value);
-    }
-
-    // Remap pixel values
-    for(int i=0; i<patch_size; i++){
-        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
-    }
-
-
     // ---------------------------------------- //
     // ---- Mean-subtract comparison patch ---- //
     // ---------------------------------------- //
@@ -86,51 +66,29 @@ kernel void kernelGetPatchPearson2D(
     }
 
 
-    // ------------------------------------------ //
-    // ---- Normalize comparison patch again ---- //
-    // ------------------------------------------ //
+    // ------------------------------- //
+    // ---- Calculate covariance ----- //
+    // ------------------------------- //
 
-    min_intensity = DBL_MAX;
-    max_intensity = -DBL_MAX;
-
+    double covariance = 0.0;
     for(int i=0; i<patch_size; i++){
-        double pixel_value = comp_patch[i];
-        min_intensity = min(min_intensity, pixel_value);
-        max_intensity = max(max_intensity, pixel_value);
+        covariance += ref_patch[i] * comp_patch[i];
     }
-
-    // Remap pixel values
-    for(int i=0; i<patch_size; i++){
-        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
-    }
+    covariance /= (double)(patch_size-1);
 
 
-    // ------------------------- //
-    // ---- Get Covariance ----- //
-    // ------------------------- //
+    // ----------------------------------------------------- //
+    // ---- Calculate Pearson's correlation coefficient ---- //
+    // ----------------------------------------------------- //
 
-    double covar = 0.0;
-    for(int i=0; i<patch_size; i++){
-        covar += ref_patch[i] * comp_patch[i];
-    }
-    covar /= (double)(patch_size-1);
-
-    // Calculate Pearson correlation coefficient X,Y and add it to the sum at X (avoiding division by zero)
-    //float c1 = (0.01f * 1.0f) * (0.01f * 1.0f);
-    //float c2 = (0.03f * 1.0f) * (0.03f * 1.0f);
-    //float c2 = 0.0000001;
-    //float c3 = c2 / 2.0f;
-
-    //pearson_map[gy*w+gx] = ((float) fmax(0.0f, (float)(((2.0f * covar + c2)) / ((ref_std*ref_std+comp_std*comp_std+c2)))));
-
-    // PEARSON
     double ref_std_d = (double)ref_std;
     double comp_std_d = (double)local_stds[gy*w+gx];
+
     if(ref_std_d == 0.0 && comp_std_d == 0.0){
         pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
     }else if(ref_std_d==0.0 || comp_std_d==0.0){
         pearson_map[gy*w+gx] = 0.0; // Special case when only one patch is flat, correlation would be NaN but we want 0
     }else{
-        pearson_map[gy*w+gx] = (float) fmax(0.0, (covar / ((ref_std_d * comp_std_d) + EPSILON))); // Truncate anti-correlations
+        pearson_map[gy*w+gx] = (float) fmax(0.0, (covariance / ((ref_std_d * comp_std_d) + (double)EPSILON))); // Truncate anti-correlations
     }
 }

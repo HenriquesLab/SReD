@@ -40,25 +40,6 @@ global float* local_stds
     }
 
 
-    // ------------------------- //
-    // ---- Normalize patch ---- //
-    // ------------------------- //
-
-    // Find min and max
-    double min_intensity = DBL_MAX;
-    double max_intensity = -DBL_MAX;
-    for(int i=0; i<patch_size; i++){
-        double pixel_value = patch[i];
-        min_intensity = min(min_intensity, pixel_value);
-        max_intensity = max(max_intensity, pixel_value);
-    }
-
-    // Remap pixels
-    for(int i=0; i<patch_size; i++){
-        patch[i] = (patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
-    }
-
-
     // ------------------------------ //
     // ---- Calculate patch mean ---- //
     // ------------------------------ //

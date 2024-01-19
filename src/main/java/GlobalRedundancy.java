@@ -13,6 +13,8 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.measure.UserFunction;
 import ij.process.FloatProcessor;
+import ij.process.ImageProcessor;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -237,16 +239,14 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         if(metric == "Pearson's R"){
 
             // Create OpenCL program
-            String programStringGetPearsonMap = getResourceAsString(RedundancyMap_.class, "kernelGetPearsonMap.cl");
+            String programStringGetPearsonMap = getResourceAsString(RedundancyMap_.class, "kernelGetGlobalPearson.cl");
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$WIDTH$", "" + w);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$HEIGHT$", "" + h);
-            programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BW$", "" + bW);
-            programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BH$", "" + bH);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$PATCH_SIZE$", "" + patchSize);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRW$", "" + bRW);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$BRH$", "" + bRH);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTERPARAM$", "" + noiseVar);
-            programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$FILTERCONSTANT$", "" + filterConstant);
+            programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$THRESHOLD$", "" + threshold);
             programStringGetPearsonMap = replaceFirst(programStringGetPearsonMap, "$EPSILON$", "" + EPSILON);
             programGetPearsonMap = context.createProgram(programStringGetPearsonMap).build();
 
@@ -282,13 +282,25 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                 }
             }
 
+            showStatus("Processing results...");
+
             // Read the weighted mean Pearson's map back from the OpenCL device (and finish the mean calculation simultaneously)
             queue.putReadBuffer(clPearsonMap, true);
             queue.putReadBuffer(clWeightsSumMap, true);
+
             for (int y=bRH; y<h-bRH; y++) {
                 for (int x=bRW; x<w-bRW; x++) {
-                    repetitionMap[y*w+x] = clPearsonMap.getBuffer().get(y*w+x) / (clWeightsSumMap.getBuffer().get(y*w+x)*(float)nPixels+EPSILON);
+
+                    // Read the similarity value from the OpenCL device
+                    float similarity = clPearsonMap.getBuffer().get(y*w+x);
                     queue.finish();
+
+                    // Read the weight sum from the OpenCL device
+                    float weightSum = clWeightsSumMap.getBuffer().get(y*w+x);
+                    queue.finish();
+
+                    // Calculate and store the repetition score
+                    repetitionMap[y*w+x] = similarity / (weightSum * (float)nPixels + EPSILON);
                 }
             }
 
@@ -303,12 +315,14 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             // ---- Normalize output ---- //
             // -------------------------- //
 
+            showStatus("Normalizing output...");
+
             // Find min and max
             float min_intensity = Float.MAX_VALUE;
             float max_intensity = -Float.MAX_VALUE;
             for(int j=bRH; j<h-bRH; j++) {
                 for(int i=bRW; i<w-bRW; i++) {
-                    if(relevanceMap[j*w+i] == 1) {
+                    if(relevanceMap[j*w+i]==1.0f) {
                         float pixelValue = repetitionMap[j*w+i];
                         max_intensity = max(max_intensity, pixelValue);
                         min_intensity = min(min_intensity, pixelValue);
@@ -319,14 +333,16 @@ public class GlobalRedundancy implements Runnable, UserFunction{
             // Remap pixels
             for(int j=bRH; j<h-bRH; j++) {
                 for(int i=bRW; i<w-bRW; i++) {
-                    if(relevanceMap[j*w+i] == 1) {
+                    if(relevanceMap[j*w+i]==1.0f) {
                         repetitionMap[j*w+i] = (repetitionMap[j*w+i]-min_intensity)/(max_intensity-min_intensity+EPSILON);
+                    }else{
+                        repetitionMap[j*w+i] = 0.0f;
                     }
                 }
             }
         }
 
-        if(metric == "Abs. Diff. of StdDevs"){
+        if(metric == "Cosine similarity"){
 
             // Create OpenCL program
             String programStringGetDiffStdMap = getResourceAsString(RedundancyMap_.class, "kernelGetDiffStdMap.cl");
@@ -431,51 +447,56 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         }
 
 
+        // Scale back to original dimensions
+
+        int newBRW = bRW * scaleFactor;
+        int newBRH = bRH * scaleFactor;
+
+        // Get output without borders (so that we later dont interpolate edges)
+        FloatProcessor fpOutput = new FloatProcessor(w, h, repetitionMap);
+        fpOutput.setRoi(bRW, bRH, w-2*bRW, h-2*bRH);
+        FloatProcessor fpCrop = fpOutput.crop().convertToFloatProcessor(); // If you don't create a new one, bad things happen
+
+        // Upscale
+        fpCrop.setInterpolationMethod(ImageProcessor.BILINEAR); // Bicubic is generating edge artifacts
+        FloatProcessor fpUpscaled = fpCrop.resize(w0-2*newBRW, h0-2*newBRH, true).convertToFloatProcessor(); // If you don't crete a new one, bad things happen
+
+        // Add borders
+        FloatProcessor fpFinal = new FloatProcessor(w0, h0);
+        fpFinal.insert(fpUpscaled, newBRW, newBRH);
+
+        // Normalize while avoiding borders
+        float[] temp = (float[]) fpFinal.getPixels();
+        float min_intensity = Float.MAX_VALUE;
+        float max_intensity = -Float.MAX_VALUE;
+
+        for(int y=newBRH; y<h0-newBRH; y++){
+            for(int x=newBRW; x<w0-newBRW; x++){
+                float pixelValue = temp[y*w0+x];
+                max_intensity = max(max_intensity, pixelValue);
+                min_intensity = min(min_intensity, pixelValue);
+            }
+        }
+
+        // Remap pixels
+        for(int y=newBRH; y<h0-newBRH; y++){
+            for(int x=newBRW; x<w0-newBRW; x++){
+                fpFinal.setf(x, y, (temp[y*w0+x]-min_intensity)/(max_intensity-min_intensity+EPSILON));
+            }
+        }
+
+
         // ------------------------- //
         // ---- Display results ---- //
         // ------------------------- //
 
         IJ.log("Preparing results for display...");
 
-        FloatProcessor fp1 = new FloatProcessor(w, h, repetitionMap);
-        ImagePlus imp1 = new ImagePlus("Redundancy Map", fp1);
+        ImagePlus imp1 = new ImagePlus("Redundancy Map - Level "+level, fpFinal);
         imp1.show();
 
 /*
-        // ------------------------------------------- //
-        // ---- Scale back to original dimensions ---- // (TODO: CHANGE THIS FOR SINGLE IMAGE INSTEAD OF STACK WHEN STACK ISNT NEEDED ANYMORE)
-        // ------------------------------------------- //
 
-        // Resize
-        int nSlices = ims.getSize();
-        ImageStack imsFinal = new ImageStack(w0, h0, nSlices);
-        int newBRW = bRW * scaleFactor;
-        int newBRH = bRH * scaleFactor;
-
-        for(int i=1; i<=nSlices;i++) {
-            // Get downscaled image without border (so that later we don't interpolate edges)
-            FloatProcessor fpDowscaled = ims.getProcessor(i).convertToFloatProcessor();
-            fpDowscaled.setRoi(bRW, bRH, w-2*bRW, h-2*bRH);
-            FloatProcessor fpCropped = fpDowscaled.crop().convertToFloatProcessor();
-
-            // Upscale crop
-            fpCropped.setInterpolationMethod(ImageProcessor.BICUBIC);
-            FloatProcessor fpUpscaled = fpCropped.resize(w0-2*newBRW, h0-2*newBRH, true).convertToFloatProcessor();
-
-            // Map upscaled crop to upscaled image with borders
-            FloatProcessor fpFinal = new FloatProcessor(w0, h0);
-            fpFinal.insert(fpUpscaled, newBRW, newBRH);
-
-            // Normalize while avoiding borders (TODO: OVERIMPOSE BORDERS IN ALL SCALES, BASICALLY OVERIMPOSE BORDER OF LAST LEVEL)
-            float[] tempImg = (float[]) fpFinal.getPixels();
-            float[] tempMinMax = findMinMax(tempImg, w0, h0, newBRW, newBRH);
-            tempImg = normalize(tempImg, w0, h0, newBRW, newBRH, tempMinMax, 0, 0);
-            fpFinal = new FloatProcessor(w0, h0, tempImg);
-            imsFinal.setProcessor(fpFinal, i);
-        }
-
-        ImagePlus impFinal = new ImagePlus("Redundancy Maps (level = " + level + ")", imsFinal);
-        impFinal.show();
 
         // Apply LUT
         IJ.run(impFinal, "mpl-inferno", "");
