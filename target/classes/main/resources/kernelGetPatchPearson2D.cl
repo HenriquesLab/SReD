@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
 #define patch_size $PATCH_SIZE$
@@ -31,10 +31,10 @@ kernel void kernelGetPatchPearson2D(
     // ---- Get mean-subtracted reference block ---- //
     // --------------------------------------------- //
 
-    __local double ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
+    __local float ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
 
     for(int i=0; i<patch_size; i++){
-        ref_patch[i] = (double)patch_pixels[i];
+        ref_patch[i] = patch_pixels[i];
     }
 
 
@@ -42,14 +42,14 @@ kernel void kernelGetPatchPearson2D(
     // ---- Get comparison patch pixels ---- //
     // ------------------------------------- //
 
-    double comp_patch[patch_size] = {0.0};
+    float comp_patch[patch_size] = {0.0f};
     int index = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
             float dx = (float)(i-gx);
             float dy = (float)(j-gy);
             if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
-                comp_patch[index] = (double)ref_pixels[j*w+i];
+                comp_patch[index] = ref_pixels[j*w+i];
                 index++;
             }
         }
@@ -60,7 +60,7 @@ kernel void kernelGetPatchPearson2D(
     // ---- Mean-subtract comparison patch ---- //
     // ---------------------------------------- //
 
-    double comp_mean = (double)local_means[gy*w+gx];
+    float comp_mean = local_means[gy*w+gx];
     for(int i=0; i<patch_size; i++){
         comp_patch[i] = comp_patch[i] - comp_mean;
     }
@@ -70,25 +70,24 @@ kernel void kernelGetPatchPearson2D(
     // ---- Calculate covariance ----- //
     // ------------------------------- //
 
-    double covariance = 0.0;
+    float covariance = 0.0f;
     for(int i=0; i<patch_size; i++){
         covariance += ref_patch[i] * comp_patch[i];
     }
-    covariance /= (double)(patch_size-1);
+    covariance /= (float)(patch_size-1);
 
 
     // ----------------------------------------------------- //
     // ---- Calculate Pearson's correlation coefficient ---- //
     // ----------------------------------------------------- //
 
-    double ref_std_d = (double)ref_std;
-    double comp_std_d = (double)local_stds[gy*w+gx];
+    float comp_std = local_stds[gy*w+gx];
 
-    if(ref_std_d == 0.0 && comp_std_d == 0.0){
+    if(ref_std == 0.0f && comp_std == 0.0f){
         pearson_map[gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
-    }else if(ref_std_d==0.0 || comp_std_d==0.0){
-        pearson_map[gy*w+gx] = 0.0; // Special case when only one patch is flat, correlation would be NaN but we want 0
+    }else if(ref_std==0.0f || comp_std==0.0f){
+        pearson_map[gy*w+gx] = 0.0f; // Special case when only one patch is flat, correlation would be NaN but we want 0
     }else{
-        pearson_map[gy*w+gx] = (float) fmax(0.0, (covariance / ((ref_std_d * comp_std_d) + (double)EPSILON))); // Truncate anti-correlations
+        pearson_map[gy*w+gx] = (float) fmax(0.0f, (float)(covariance / ((ref_std * comp_std) + EPSILON))); // Truncate anti-correlations
     }
 }

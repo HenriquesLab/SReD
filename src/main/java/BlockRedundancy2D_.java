@@ -489,7 +489,9 @@ public class BlockRedundancy2D_ implements PlugIn {
             programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_MEAN$", "" + patchMeanFloat);
             programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_STD$", "" + patchStdDev);
             programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$EPSILON$", "" + EPSILON);
+
             programGetPatchPearson = context.createProgram(programStringGetPatchPearson).build();
+            //System.out.println(programGetPatchPearson.getBuildLog()); // Print program build log to check for errors
 
             // Fill OpenCL buffers
             clPatchPixels = context.createFloatBuffer(patchSize, READ_ONLY);
