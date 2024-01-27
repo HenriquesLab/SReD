@@ -106,7 +106,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$BRH$", "" + bRH);
         programStringGetLocalMeans = replaceFirst(programStringGetLocalMeans, "$EPSILON$", "" + EPSILON);
         programGetLocalMeans = context.createProgram(programStringGetLocalMeans).build();
-
+        System.out.println(programGetLocalMeans.getBuildLog());
         // Create, fill and write OpenCL buffers
         clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
         fillBufferWithFloatArray(clLocalMeans, localMeans);

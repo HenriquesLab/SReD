@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
 #define bRW $BRW$
