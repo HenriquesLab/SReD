@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
 #define z $DEPTH$
@@ -17,6 +17,7 @@ global float* local_stds
     int gx = get_global_id(0);
     int gy = get_global_id(1);
     int gz = get_global_id(2);
+
     // Bound check (avoids borders dynamically based on patch dimensions)
     if(gx<bRW || gx>=w-bRW || gy<bRH || gy>=h-bRH || gz<bRZ || gz>=z-bRZ){
         return;

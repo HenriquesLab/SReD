@@ -27,7 +27,7 @@ global float* local_stds
     // ---- Get patch pixels ---- //
     // -------------------------- //
 
-    double patch[patch_size];
+    float patch[patch_size];
     int index = 0;
     for(int n=gz-bRZ; n<=gz+bRZ; n++){
         for(int j=gy-bRH; j<=gy+bRH; j++){
@@ -37,7 +37,7 @@ global float* local_stds
                 float dy = (float)(j-gy);
                 float dz = (float)(n-gz);
                 if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH))+((dz*dz)/(float)(bRZ*bRZ)) <= 1.0f){
-                    patch[index] = (double)ref_pixels[w*h*n+j*w+i];
+                    patch[index] = ref_pixels[w*h*n+j*w+i];
                     index++;
                 }
             }
@@ -49,17 +49,17 @@ global float* local_stds
     // ------------------------- //
 
     // Find min and max
-    double min_intensity = DBL_MAX;
-    double max_intensity = -DBL_MAX;
+    float min_intensity = FLT_MAX;
+    float max_intensity = -FLT_MAX;
     for(int i=0; i<patch_size; i++){
-        double pixel_value = patch[i];
+        float pixel_value = patch[i];
         min_intensity = min(min_intensity, pixel_value);
         max_intensity = max(max_intensity, pixel_value);
     }
 
     // Remap pixels
     for(int i=0; i<patch_size; i++){
-        patch[i] = (patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
+        patch[i] = (patch[i] - min_intensity) / (max_intensity - min_intensity + EPSILON);
     }
 
 
@@ -67,20 +67,20 @@ global float* local_stds
     // ---- Calculate patch mean ---- //
     // ------------------------------ //
 
-    double mean = 0.0;
+    float mean = 0.0f;
     for(int i=0; i<patch_size; i++){
         mean += patch[i];
     }
 
-    local_means[w*h*gz+gy*w+gx] = (float)(mean/(double)patch_size);
+    local_means[w*h*gz+gy*w+gx] = (float)(mean/(float)patch_size);
 
     // -------------------------------- //
     // ---- Calculate patch StdDev ---- //
     // -------------------------------- //
-    double var = 0.0;
+    float var = 0.0;
         for(int i=0; i<patch_size; i++){
             var += (patch[i] - mean) * (patch[i] - mean);
         }
 
-    local_stds[w*h*gz+gy*w+gx] = (float)sqrt(var/(double)(patch_size-1));
+    local_stds[w*h*gz+gy*w+gx] = (float)sqrt(var/(float)(patch_size-1));
 }

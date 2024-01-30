@@ -35,10 +35,10 @@ kernel void kernelGetPatchPearson3D(
     // ---- Get mean-subtracted and normalized reference patch from buffer ---- //
     // ------------------------------------------------------------------------ //
 
-    __local double ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
+    __local float ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
 
     for(int i=0; i<patch_size; i++){
-        ref_patch[i] = (double)patch_pixels[i];
+        ref_patch[i] = patch_pixels[i];
     }
 
 
@@ -46,7 +46,7 @@ kernel void kernelGetPatchPearson3D(
     // ---- Get comparison patch pixels ---- //
     // ------------------------------------- //
 
-    double comp_patch[patch_size];
+    float comp_patch[patch_size];
     int index = 0;
     for(int n=gz-bRZ; n<=gz+bRZ; n++){
         for(int j=gy-bRH; j<=gy+bRH; j++){
@@ -55,7 +55,7 @@ kernel void kernelGetPatchPearson3D(
                 float dy = (float)(j-gy);
                 float dz = (float)(n-gz);
                 if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH))+((dz*dz)/(float)(bRZ*bRZ)) <= 1.0f){
-                    comp_patch[index] = (double)ref_pixels[w*h*n+j*w+i];
+                    comp_patch[index] = ref_pixels[w*h*n+j*w+i];
                     index++;
                 }
             }
@@ -66,18 +66,18 @@ kernel void kernelGetPatchPearson3D(
     // ------------------------------------ //
     // ---- Normalize comparison patch ---- //
     // ------------------------------------ //
-    double min_intensity = DBL_MAX;
-    double max_intensity = -DBL_MAX;
+    float min_intensity = FLT_MAX;
+    float max_intensity = -FLT_MAX;
 
     for(int i=0; i<patch_size; i++){
-        double pixel_value = comp_patch[i];
+        float pixel_value = comp_patch[i];
         min_intensity = min(min_intensity, pixel_value);
         max_intensity = max(max_intensity, pixel_value);
     }
 
     // Remap pixel values
     for(int i=0; i<patch_size; i++){
-        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
+        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + EPSILON);
     }
 
 
@@ -85,7 +85,7 @@ kernel void kernelGetPatchPearson3D(
     // ---- Mean-subtract comparison patch ---- //
     // ---------------------------------------- //
 
-    double comp_mean = (double)local_means[w*h*gz+gy*w+gx];
+    float comp_mean = local_means[w*h*gz+gy*w+gx];
     for(int i=0; i<patch_size; i++){
         comp_patch[i] = comp_patch[i] - comp_mean;
     }
@@ -95,18 +95,18 @@ kernel void kernelGetPatchPearson3D(
     // ---- Normalize comparison patch again ---- //
     // ------------------------------------------ //
 
-    min_intensity = DBL_MAX;
-    max_intensity = -DBL_MAX;
+    min_intensity = FLT_MAX;
+    max_intensity = -FLT_MAX;
 
     for(int i=0; i<patch_size; i++){
-        double pixel_value = comp_patch[i];
+        float pixel_value = comp_patch[i];
         min_intensity = min(min_intensity, pixel_value);
         max_intensity = max(max_intensity, pixel_value);
     }
 
     // Remap pixel values
     for(int i=0; i<patch_size; i++){
-        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + (double)EPSILON);
+        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + EPSILON);
     }
 
 
@@ -114,22 +114,21 @@ kernel void kernelGetPatchPearson3D(
     // ---- Get Covariance ----- //
     // ------------------------- //
 
-    double covar = 0.0;
+    float covar = 0.0;
     for(int i=0; i<patch_size; i++){
         covar += ref_patch[i] * comp_patch[i];
 
     }
-    covar /= (double)(patch_size-1);
+    covar /= (float)(patch_size-1);
 
     // Calculate Pearson correlation coefficient REF vs. COMP and add it to the sum at REF (avoiding division by zero)
-    double ref_std_d = (double)ref_std;
-    double comp_std_d = (double)local_stds[w*h*gz+gy*w+gx];
+    float comp_std = local_stds[w*h*gz+gy*w+gx];
 
-    if(ref_std_d == 0.0 && comp_std_d == 0.0){
+    if(ref_std == 0.0 && comp_std == 0.0){
         pearson_map[w*h*gz+gy*w+gx] = 1.0f; // Special case when both patches are flat (correlation would be NaN but we want 1 because textures are the same)
-    }else if(ref_std_d==0.0 || comp_std_d==0.0){
+    }else if(ref_std==0.0 || comp_std==0.0){
         pearson_map[w*h*gz+gy*w+gx] = 0.0; // Special case when only one patch is flat, correlation would be NaN but we want 0
     }else{
-        pearson_map[w*h*gz+gy*w+gx] = (float) fmax(0.0, (covar / ((ref_std_d * comp_std_d) + EPSILON))); // Truncate anti-correlations
+        pearson_map[w*h*gz+gy*w+gx] = (float) fmax(0.0, (covar / ((ref_std * comp_std) + EPSILON))); // Truncate anti-correlations
     }
 }
