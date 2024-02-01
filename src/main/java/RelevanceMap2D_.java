@@ -32,6 +32,8 @@ public class RelevanceMap2D_ implements PlugIn {
     @Override
     public void run(String s) {
 
+        float EPSILON = 0.0000001f;
+
 
         // -------------------- //
         // ---- Dialog box ---- //
@@ -63,7 +65,6 @@ public class RelevanceMap2D_ implements PlugIn {
         int bH = (int) gd.getNextNumber(); // Block height
         int bRW = bH / 2;
         int bRH = bW / 2;
-        float EPSILON = 0.0000001f;
         float filterConstant = (float) gd.getNextNumber();
         boolean useDevice = gd.getNextBoolean();
 

@@ -37,7 +37,7 @@ kernel void kernelGetPearsonMap(
     // ---- Check to avoid blocks with no structural relevance ---- //
     // ------------------------------------------------------------ //
 
-    double ref_std = (double)local_stds[gy*w+gx];
+    float ref_std = local_stds[gy*w+gx];
     float ref_var = (float)ref_std*(float)ref_std;
 
     if(ref_var<threshold || ref_var==0.0f){
@@ -50,7 +50,7 @@ kernel void kernelGetPearsonMap(
     // ---- Get reference block ---- //
     // ----------------------------- //
 
-    double ref_patch[patch_size] = {0.0f};
+    float ref_patch[patch_size] = {0.0f};
     int index = 0;
 
     for(int j=gy-bRH; j<=gy+bRH; j++){
@@ -58,7 +58,7 @@ kernel void kernelGetPearsonMap(
             float dx = (float)(i-gx);
             float dy = (float)(j-gy);
             if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
-                ref_patch[index] = (double)ref_pixels[j*w+i];
+                ref_patch[index] = ref_pixels[j*w+i];
                 index++;
             }
         }
@@ -69,7 +69,7 @@ kernel void kernelGetPearsonMap(
     // ---- Mean-subtract reference block ---- //
     // --------------------------------------- //
 
-    double ref_mean = (double)local_means[gy*w+gx];
+    float ref_mean = local_means[gy*w+gx];
     for(int i=0; i<patch_size; i++){
         ref_patch[i] = ref_patch[i] - ref_mean;
     }
@@ -88,20 +88,20 @@ kernel void kernelGetPearsonMap(
             // ------------------------------- //
 
             // Check to avoid blocks with no structural relevance
-            double test_std = (double)local_stds[y*w+x];
+            float test_std = local_stds[y*w+x];
             float test_var = (float)test_std*(float)test_std;
 
             if(test_var<threshold || test_var==0.0f){
                 pearson_map[gy*w+gx] += 0.0f;
             }else{
-                double test_patch[patch_size] = {0.0f};
+                float test_patch[patch_size] = {0.0f};
                 index = 0;
                 for(int j=y-bRH; j<=y+bRH; j++){
                     for(int i=x-bRW; i<=x+bRW; i++){
                         float dx = (float)(i-x);
                         float dy = (float)(j-y);
                         if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
-                            test_patch[index] = (double)ref_pixels[j*w+i];
+                            test_patch[index] = ref_pixels[j*w+i];
                             index++;
                         }
                     }
@@ -112,7 +112,7 @@ kernel void kernelGetPearsonMap(
                 // ---- Mean-subtract test block ---- //
                 // ---------------------------------- //
 
-                double test_mean = (double)local_means[y*w+x];
+                float test_mean = local_means[y*w+x];
                 for(int k=0; k<patch_size; k++){
                     test_patch[k] = test_patch[k] - test_mean;
                 }
@@ -122,18 +122,18 @@ kernel void kernelGetPearsonMap(
                 // ---- Calculate covariance ----- //
                 // ------------------------------- //
 
-                double covariance = 0.0;
+                float covariance = 0.0;
                 for(int k=0; k<patch_size; k++){
                     covariance += ref_patch[k] * test_patch[k];
                 }
-                covariance /= (double)(patch_size-1);
+                covariance /= (float)(patch_size-1);
 
 
                 // ----------------------------------------------------- //
                 // ---- Calculate Pearson's correlation coefficient ---- //
                 // ----------------------------------------------------- //
 
-                double weight = exp((-1.0)*(((ref_std-test_std)*(ref_std-test_std))/((double)filter_param+(double)EPSILON)));
+                float weight = exp((-1.0)*(((ref_std-test_std)*(ref_std-test_std))/(filter_param+(float)EPSILON)));
                 weights_sum_map[gy*w+gx] += (float)weight;
 
                 if(ref_std == 0.0 && test_std == 0.0){
@@ -141,7 +141,7 @@ kernel void kernelGetPearsonMap(
                 }else if(ref_std == 0.0 || test_std == 0.0){
                     pearson_map[gy*w+gx] += 0.0f; // Special case when only one patch is flat (correlation would be NaN but we want 0 because texture has no correlation with complete lack of texture)
                 }else{
-                    pearson_map[gy*w+gx] += (float)fmax(0.0, (covariance/((ref_std*test_std)+(double)EPSILON))) * (float)weight; // Truncate anti-correlations
+                    pearson_map[gy*w+gx] += (float)fmax(0.0, (covariance/((ref_std*test_std)+EPSILON))) * (float)weight; // Truncate anti-correlations
                 }
             }
         }
