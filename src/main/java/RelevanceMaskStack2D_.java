@@ -248,7 +248,6 @@ public class RelevanceMaskStack2D_ implements PlugIn {
 
         // Release resources
         context.release();
-        System.out.println("context released");
 
 
         // ---------------------------------- //
@@ -274,6 +273,7 @@ public class RelevanceMaskStack2D_ implements PlugIn {
             imsOutput.setSliceLabel(String.valueOf(filterConstant), i+1);
 
             imsInput.setProcessor(fpInput, i+1);
+            imsInput.setSliceLabel(String.valueOf(filterConstant), i+1);
 
             filterConstant += step;
         }

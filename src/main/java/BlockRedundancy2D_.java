@@ -174,15 +174,15 @@ public class BlockRedundancy2D_ implements PlugIn {
         // ---------------------------------- //
 
         // Patch
-        IJ.log("Stabilising noise variance of the patch...");
-        GATMinimizer2D minimizer = new GATMinimizer2D(patchPixels, bW, bH, 0, 100, 0);
-        minimizer.run();
-        patchPixels = VarianceStabilisingTransform2D_.getGAT(patchPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
-        IJ.log("Done.");
+        //IJ.log("Stabilising noise variance of the patch...");
+        //GATMinimizer2D minimizer = new GATMinimizer2D(patchPixels, bW, bH, 0, 100, 0);
+        //minimizer.run();
+        //patchPixels = VarianceStabilisingTransform2D_.getGAT(patchPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
+        //IJ.log("Done.");
 
         // Image
         IJ.log("Stabilising noise variance of the image...");
-        minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0);
+        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0);
         minimizer.run();
         refPixels = VarianceStabilisingTransform2D_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
         IJ.log("Done.");

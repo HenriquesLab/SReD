@@ -61,7 +61,7 @@ public class RedundancyMap_ implements PlugIn {
         gd.addCheckbox("Multi-scale?", false);
 
         gd.addSlider("Filter constant: ", 0.0f, 10.0f, 0.0, 0.1f);
-        gd.addChoice("Metric:", metrics, metrics[0]);
+        gd.addChoice("Metric:", metrics, metrics[1]);
         gd.addCheckbox("Use device from preferences?", false);
 
         gd.showDialog();
@@ -326,7 +326,7 @@ public class RedundancyMap_ implements PlugIn {
                     // ---- Get output and add to final stack ---- //
                     // ------------------------------------------- //
 
-                    ImagePlus impTemp = WindowManager.getImage("Redundancy Maps (level = 1)");
+                    ImagePlus impTemp = WindowManager.getImage("Redundancy Map - Level 1");
                     FloatProcessor fpTemp = impTemp.getProcessor().convertToFloatProcessor();
 
                     finalStack.setProcessor(fpTemp, frame);

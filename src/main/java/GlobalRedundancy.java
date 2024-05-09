@@ -147,6 +147,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         // ---- Calculate Relevance Map ---- //
         // --------------------------------- //
 
+        // Define block dimensions for variance calculation
         int blockWidth, blockHeight;
         int CIF = 352*288; // Resolution of a CIF file
 
@@ -161,12 +162,13 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         int nBlocksX = w / blockWidth; // number of blocks in each row
         int nBlocksY = h / blockHeight; // number of blocks in each column
         int nBlocks = nBlocksX * nBlocksY; // total number of blocks
+
+        // Calculate local variances
         float[] localVars = new float[nBlocks];
         Arrays.fill(localVars, 0.0f);
 
         int index = 0;
 
-        // Calculate local variances
         for(int y=0; y<nBlocksY; y++){
             for(int x=0; x<nBlocksX; x++){
                 double[] meanVar = getMeanAndVarBlock(refPixels, w, x*blockWidth, y*blockHeight, (x+1)*blockWidth, (y+1)*blockHeight);
@@ -405,6 +407,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
                     // Store the repetition score
                     repetitionMap[y*w+x] = similarity / (weightSum*(float)nPixels+EPSILON);
+
                 }
             }
 
