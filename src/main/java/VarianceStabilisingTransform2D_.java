@@ -131,7 +131,7 @@ public class VarianceStabilisingTransform2D_ implements PlugIn {
         for (int n=0; n<pixels.length; n++) {
             double v = pixels[n];
             if (v <= -refConstant / gain) {
-                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40 out of 10!
+                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40/10!
             }else {
                 v = (2 / gain) * sqrt(gain * v + refConstant);
             }

@@ -62,7 +62,9 @@ kernel void kernelGetDiffStdMap(
                 weights_sum_map[gy*w+gx] += (float)weight;
 
                 float similarity = (float)(ref_std*test_std) / (float)(sqrt(ref_std*ref_std)*sqrt(test_std*test_std)+EPSILON); // Based on cosine similarity, ranges between -1 and 1, same interpretation as PEarson
-                diff_std_map[gy*w+gx] += (float)fmax(0.0f, similarity)*(float)weight;
+                diff_std_map[gy*w+gx] += (float)similarity*(float)weight;
+                //diff_std_map[gy*w+gx] += (float)fmax(0.0f, similarity)*(float)weight;
+
             }
         }
     }

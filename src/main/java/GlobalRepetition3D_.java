@@ -43,8 +43,8 @@ public class GlobalRepetition3D_ implements PlugIn {
         // Initialize dialog box
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Global Repetition (3D)");
         gd.addNumericField("Block width (px): ", 3, 2);
-        gd.addNumericField("Box height (px): ", 3, 2);
-        gd.addNumericField("Box depth (px): ", 3, 2);
+        gd.addNumericField("Block height (px): ", 3, 2);
+        gd.addNumericField("Block depth (px): ", 3, 2);
         gd.addSlider("Filter constant: ", 0.0f, 10.0f, 0.0, 0.1f);
         gd.addChoice("Metric:", metrics, metrics[1]);
         gd.addCheckbox("Normalize output?", true);
@@ -68,13 +68,13 @@ public class GlobalRepetition3D_ implements PlugIn {
 
         // Check if patch dimensions are odd, otherwise kill program
         if(bW%2==0 || bH%2==0) {
-            IJ.error("Patch dimensions must be odd (e.g., 3x3 or 5x5). Please try again.");
+            IJ.error("Block dimensions must be odd (e.g., 3x3 or 5x5). Please try again.");
             return;
         }
 
         // Check if patch has at least 3 slices, otherwise kill program
         if(bZ<3) {
-            IJ.error("Patch must have at least 3 slices. Please try again.");
+            IJ.error("Block must have at least 3 slices. Please try again.");
             return;
         }
 
@@ -311,8 +311,31 @@ public class GlobalRepetition3D_ implements PlugIn {
 
         // Calculate
         showStatus("Calculating local statistics...");
-        queue.put3DRangeKernel(kernelGetLocalMeans3D, 0, 0, 0, w, h, z, 0, 0, 0);
-        queue.finish();
+        //queue.put3DRangeKernel(kernelGetLocalMeans3D, 0, 0, 0, w, h, z, 0, 0, 0);
+        //queue.finish();
+
+        // Calculate Pearson's correlation coefficient
+        int nXBlocks = w/64 + ((w%64==0)?0:1);
+        int nYBlocks = h/64 + ((h%64==0)?0:1);
+        //int nZBlocks = z/64 + ((z%64==0)?0:1);
+        int nZBlocks = z/bZ + ((z%bZ==0)?0:1); // This tries to reduce workload by creating blocks with the minimum z-size required for calculations
+        float totalBlocks = nXBlocks*nYBlocks*nZBlocks;
+        float currentBlock = 1.0f;
+
+        for(int nZB=0; nZB<nZBlocks; nZB++){
+            int zWorkSize = min(bZ, z-nZB*bZ);
+            for(int nYB=0; nYB<nYBlocks; nYB++){
+                int yWorkSize = min(64, h-nYB*64);
+                for(int nXB=0; nXB<nXBlocks; nXB++){
+                    int xWorkSize = min(64, w-nXB*64);
+                    float progress = (currentBlock/totalBlocks)*100.0f;
+                    showStatus("Calculating local statistics... " + (int)progress + "%");
+                    queue.put3DRangeKernel(kernelGetLocalMeans3D, nXB*64, nYB*64, nZB*bZ, xWorkSize, yWorkSize, zWorkSize, 0, 0, 0);
+                    queue.finish();
+                    currentBlock += 1.0f;
+                }
+            }
+        }
 
         // Read the local means map back from the device
         queue.putReadBuffer(clLocalMeans, true);
@@ -342,6 +365,36 @@ public class GlobalRepetition3D_ implements PlugIn {
         kernelGetLocalMeans3D.release();
         programGetLocalMeans3D.release();
 
+        // TODO: THIS IS FOR TESTING ONLY
+        ImageStack imsFinal1 = new ImageStack(w, h, z);
+        for (int n=0; n<z; n++) {
+            FloatProcessor temp = new FloatProcessor(w, h);
+            for (int y=0; y<h; y++) {
+                for (int x=0; x<w; x++) {
+                    temp.setf(x, y, localMeans[w*h*n+y*w+x]);
+                }
+            }
+            imsFinal1.setProcessor(temp, n+1);
+        }
+        ImagePlus impFinal1 = new ImagePlus("Local means", imsFinal1);
+        impFinal1.setCalibration(calibration);
+        impFinal1.show();
+
+        // TODO: THIS IS FOR TESTING ONLY
+        ImageStack imsFinal2 = new ImageStack(w, h, z);
+        for (int n=0; n<z; n++) {
+            FloatProcessor temp = new FloatProcessor(w, h);
+            for (int y=0; y<h; y++) {
+                for (int x=0; x<w; x++) {
+                    temp.setf(x, y, localStds[w*h*n+y*w+x]);
+                }
+            }
+            imsFinal2.setProcessor(temp, n+1);
+        }
+        ImagePlus impFinal2 = new ImagePlus("local stds", imsFinal2);
+        impFinal2.setCalibration(calibration);
+        impFinal2.show();
+
 
         // --------------------------------- //
         // ---- Calculate relevance map ---- //
@@ -360,7 +413,7 @@ public class GlobalRepetition3D_ implements PlugIn {
         }else{
             blockWidth = 16;
             blockHeight = 16;
-            blockDepth = 16;
+            blockDepth = bZ; // TODO: CHANGE THIS TO LIKE 1 otherwise image would need at least 16 slices
         }
 
         int nBlocksX = w / blockWidth; // number of blocks in each row
@@ -483,21 +536,16 @@ public class GlobalRepetition3D_ implements PlugIn {
             kernelGetCosineSimMap3D.setArg(argn++, clCosineSimMap);
 
             // Calculate Pearson's correlation coefficient
-            int nXBlocks = w/64 + ((w%64==0)?0:1);
-            int nYBlocks = h/64 + ((h%64==0)?0:1);
-            int nZBlocks = z/64 + ((z%64==0)?0:1);
-            float totalBlocks = nXBlocks*nYBlocks*nZBlocks;
-            float currentBlock = 1.0f;
-
+            currentBlock = 1.0f; // Restart the counter
             for(int nZB=0; nZB<nZBlocks; nZB++){
-                int zWorkSize = min(64, z-nZB*64);
+                int zWorkSize = min(bZ, z-nZB*bZ);
                 for(int nYB=0; nYB<nYBlocks; nYB++){
                     int yWorkSize = min(64, h-nYB*64);
                     for(int nXB=0; nXB<nXBlocks; nXB++){
                         int xWorkSize = min(64, w-nXB*64);
                         float progress = (currentBlock/totalBlocks)*100.0f;
                         showStatus("Calculating global repetition... " + (int)progress + "%");
-                        queue.put3DRangeKernel(kernelGetCosineSimMap3D, nXB*64, nYB*64, nZB*64, xWorkSize, yWorkSize, zWorkSize, 0, 0, 0);
+                        queue.put3DRangeKernel(kernelGetCosineSimMap3D, nXB*64, nYB*64, nZB*bZ, xWorkSize, yWorkSize, zWorkSize, 0, 0, 0);
                         queue.finish();
                         currentBlock += 1.0f;
                     }

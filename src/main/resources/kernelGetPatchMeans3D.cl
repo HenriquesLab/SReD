@@ -45,24 +45,6 @@ global float* local_stds
         }
     }
 
-    // ------------------------- //
-    // ---- Normalize patch ---- //
-    // ------------------------- //
-
-    // Find min and max
-    float min_intensity = FLT_MAX;
-    float max_intensity = -FLT_MAX;
-    for(int i=0; i<patch_size; i++){
-        float pixel_value = patch[i];
-        min_intensity = min(min_intensity, pixel_value);
-        max_intensity = max(max_intensity, pixel_value);
-    }
-
-    // Remap pixels
-    for(int i=0; i<patch_size; i++){
-        patch[i] = (patch[i] - min_intensity) / (max_intensity - min_intensity + EPSILON);
-    }
-
 
     // ------------------------------ //
     // ---- Calculate patch mean ---- //
@@ -72,16 +54,17 @@ global float* local_stds
     for(int i=0; i<patch_size; i++){
         mean += patch[i];
     }
+    mean /= (float)patch_size;
 
-    local_means[w*h*gz+gy*w+gx] = (float)(mean/(float)patch_size);
+    local_means[w*h*gz+gy*w+gx] = mean;
 
     // -------------------------------- //
     // ---- Calculate patch StdDev ---- //
     // -------------------------------- //
-    float var = 0.0;
-        for(int i=0; i<patch_size; i++){
-            var += (patch[i] - mean) * (patch[i] - mean);
-        }
+    float var = 0.0f;
+    for(int i=0; i<patch_size; i++){
+        var += (patch[i] - mean) * (patch[i] - mean);
+    }
 
     local_stds[w*h*gz+gy*w+gx] = (float)sqrt(var/(float)(patch_size-1));
 }

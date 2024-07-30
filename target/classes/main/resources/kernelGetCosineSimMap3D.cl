@@ -38,11 +38,13 @@ kernel void kernelGetCosineSimMap3D(
     // ---- Check to avoid blocks with no structural relevance ---- //
     // ------------------------------------------------------------ //
 
-    float ref_std = local_stds[w*h*gz+gy*w+gx];
+    int ref_index = w * h * gz + gy * w + gx;
+
+    float ref_std = local_stds[ref_index];
     float ref_var = ref_std*ref_std;
 
     if(ref_var<threshold || ref_var==0.0f){
-        cosine_sim_map[w*h*gz+gy*w+gx] = 0.0f; // Set pixel to zero to avoid retaining spurious values already in memory
+        cosine_sim_map[ref_index] = 0.0f; // Set pixel to zero to avoid retaining spurious values already in memory
         return;
     }
 
@@ -50,6 +52,9 @@ kernel void kernelGetCosineSimMap3D(
     // -------------------------------------------------------------------- //
     // ---- Calculate similarity between the reference and test blocks ---- //
     // -------------------------------------------------------------------- //
+
+    float weight_sum = 0.0f;
+    float cosine_similarity_sum = 0.0f;
 
     for(int n=bRZ; n<z-bRZ; n++){
         for(int y=bRH; y<h-bRH; y++){
@@ -60,15 +65,17 @@ kernel void kernelGetCosineSimMap3D(
                 float test_var = test_std*test_std;
 
                 if(test_var<threshold || test_var==0.0f){
-                    cosine_sim_map[w*h*gz+gy*w+gx] += 0.0f;
+                    cosine_similarity_sum += 0.0f;
                 }else{
                     float weight = exp((-1.0)*(((ref_std-test_std)*(ref_std-test_std))/(filter_param+EPSILON)));
-                    weights_sum_map[w*h*gz+gy*w+gx] += weight;
+                    weight_sum += weight;
 
                     float similarity = (ref_std*test_std) / (float)(sqrt(ref_std*ref_std)*sqrt(test_std*test_std)+EPSILON); // Based on cosine similarity, ranges between -1 and 1, same interpretation as PEarson
-                    cosine_sim_map[w*h*gz+gy*w+gx] += (float)fmax(0.0f, similarity) * weight;
+                    cosine_similarity_sum += (float)fmax(0.0f, similarity) * weight;
                 }
             }
         }
     }
+    cosine_sim_map[ref_index] = cosine_similarity_sum;
+    weights_sum_map[ref_index] = weight_sum;
 }
