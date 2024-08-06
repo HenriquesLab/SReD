@@ -1,6 +1,6 @@
 # SReD: Structural Repetition Detector Plugin for ImageJ and Fiji
 
-SReD (Structural Repetition Detector) is an ImageJ and Fiji plugin for analyzing structural redundancy in microscopy images.
+SReD (Structural Repetition Detector) is an ImageJ and Fiji plugin for analyzing structural repetition in microscopy images.
 
 ## Installation
 
