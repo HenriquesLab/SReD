@@ -4,7 +4,7 @@ on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: [self-hosted, Ubuntu]
+    runs-on: ubuntu-latest
     permissions:
         contents: read
         packages: write
@@ -17,6 +17,9 @@ jobs:
           java-version: '8'
           distribution: 'zulu'
           cache: 'maven'
+
+      - name: Install Maven
+        run: sudo apt-get update; sudo apt-get install maven -y
 
       - name: Build with Maven
         run: mvn -B package --file pom.xml
