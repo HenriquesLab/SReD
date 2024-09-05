@@ -2,3 +2,5 @@
 .DS_Store
 SReD.iml
 *.iml
+target/*
+.vscode/*
