@@ -10,7 +10,7 @@ jobs:
         packages: write
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -18,8 +18,15 @@ jobs:
           distribution: 'zulu'
           cache: 'maven'
 
+      - name: Install Maven
+        run: sudo apt-get update; sudo apt-get install maven -y
+
+      - name: Clear Maven cache
+        run: mvn dependency:purge-local-repository -DactTransitively=false -DreResolve=false
+
       - name: Build with Maven
-        run: mvn -B package --file pom.xml
+        run: mvn clean validate compile package verify install --file pom.xml
+
       - run: mkdir staging && cp target/*.jar staging
       - uses: actions/upload-artifact@v4
         with:
