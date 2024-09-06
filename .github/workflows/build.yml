@@ -4,7 +4,7 @@ on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Ubuntu]
     permissions:
         contents: read
         packages: write
@@ -21,11 +21,8 @@ jobs:
       - name: Install Maven
         run: sudo apt-get update; sudo apt-get install maven -y
 
-      - name: Clear Maven cache
-        run: mvn dependency:purge-local-repository -DactTransitively=false -DreResolve=false
-
       - name: Build with Maven
-        run: mvn clean validate compile package verify install --file pom.xml
+        run: mvn clean validate compile package --file pom.xml
 
       - run: mkdir staging && cp target/*.jar staging
       - uses: actions/upload-artifact@v4
