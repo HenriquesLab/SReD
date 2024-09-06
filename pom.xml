@@ -22,15 +22,15 @@
     </organization>
     <licenses>
         <license>
-            <name>GPLv3</name>
-            <url>https://www.gnu.org/licenses/gpl-3.0.html</url>
+            <name>MIT</name>
+            <url>https://www.mit.edu/~amini/LICENSE.md</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
 
     <developers>
         <developer>
-            <id>paxcalpt</id>
+            <id>ammendes</id>
             <name>Afonso Mendes</name>
             <url>https://github.com/ammendes</url>
             <roles>
@@ -83,8 +83,6 @@
     </properties>
 
     <dependencies>
-
-		<!-- ImageJ dependencies -->
 		<dependency>
 			<groupId>net.imagej</groupId>
 			<artifactId>ij</artifactId>
