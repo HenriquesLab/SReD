@@ -3,6 +3,11 @@ name: Automatic Testing
 on:
     push:
       branches: ["main"]
+      paths:
+      # only run if src
+      # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetpathspaths-ignore
+      - "src/**"
+      - "pom.xml"
     pull_request:
         branches: ["main"]
     workflow_dispatch:
