@@ -34,7 +34,7 @@ kernel void kernelGetPatchPearson2D(
     __local float ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
 
     for(int i=0; i<patch_size; i++){
-        ref_patch[i] = patch_pixels[i];
+        ref_patch[i] = patch_pixels[i]; // Block is mean-subtracted in the host Java class
     }
 
 
@@ -56,10 +56,7 @@ kernel void kernelGetPatchPearson2D(
     }
 
 
-    // ---------------------------------------- //
-    // ---- Mean-subtract comparison patch ---- //
-    // ---------------------------------------- //
-
+    // Mean-subtract comparison patch
     float comp_mean = local_means[gy*w+gx];
     for(int i=0; i<patch_size; i++){
         comp_patch[i] = comp_patch[i] - comp_mean;

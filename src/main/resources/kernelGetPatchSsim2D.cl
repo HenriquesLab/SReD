@@ -1,4 +1,4 @@
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+//#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 #define w $WIDTH$
 #define h $HEIGHT$
 #define patch_size $PATCH_SIZE$
@@ -27,14 +27,14 @@ kernel void kernelGetPatchSsim2D(
     }
 
 
-    // ------------------------------------------------------------------------ //
-    // ---- Get mean-subtracted and normalized reference patch from buffer ---- //
-    // ------------------------------------------------------------------------ //
+    // --------------------------------------------- //
+    // ---- Get mean-subtracted reference block ---- //
+    // --------------------------------------------- //
 
     __local float ref_patch[patch_size]; // Make a local copy to avoid slower reads from global memory
 
     for(int i=0; i<patch_size; i++){
-        ref_patch[i] = patch_pixels[i];
+        ref_patch[i] = patch_pixels[i]; // Block is mean-subtracted in the host Java class
     }
 
 
@@ -42,7 +42,7 @@ kernel void kernelGetPatchSsim2D(
     // ---- Get comparison patch pixels ---- //
     // ------------------------------------- //
 
-    float comp_patch[patch_size];
+    float comp_patch[patch_size] = {0.0f};
     int index = 0;
     for(int j=gy-bRH; j<=gy+bRH; j++){
         for(int i=gx-bRW; i<=gx+bRW; i++){
@@ -55,99 +55,42 @@ kernel void kernelGetPatchSsim2D(
         }
     }
 
-
-    // ------------------------------------ //
-    // ---- Normalize comparison patch ---- //
-    // ------------------------------------ //
-
-    float min_intensity = FLT_MAX;
-    float max_intensity = -FLT_MAX;
-
-    for(int i=0; i<patch_size; i++){
-        float pixel_value = comp_patch[i];
-        min_intensity = min(min_intensity, pixel_value);
-        max_intensity = max(max_intensity, pixel_value);
-    }
-
-    // Remap pixel values
-    for(int i=0; i<patch_size; i++){
-        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + EPSILON);
-    }
-
-
-    // ---------------------------------------- //
-    // ---- Mean-subtract comparison patch ---- //
-    // ---------------------------------------- //
-
+    // Mean-subtract comparison patch
     float comp_mean = local_means[gy*w+gx];
-
     for(int i=0; i<patch_size; i++){
         comp_patch[i] = comp_patch[i] - comp_mean;
     }
 
 
-    // ------------------------------------------ //
-    // ---- Normalize comparison patch again ---- //
-    // ------------------------------------------ //
+    // ------------------------------- //
+    // ---- Calculate Covariance ----- //
+    // ------------------------------- //
 
-    min_intensity = FLT_MAX;
-    max_intensity = -FLT_MAX;
-
+    float covariance = 0.0f;
     for(int i=0; i<patch_size; i++){
-        float pixel_value = comp_patch[i];
-        min_intensity = min(min_intensity, pixel_value);
-        max_intensity = max(max_intensity, pixel_value);
+        covariance += ref_patch[i] * comp_patch[i];
     }
-
-    // Remap pixel values
-    for(int i=0; i<patch_size; i++){
-        comp_patch[i] = (comp_patch[i] - min_intensity) / (max_intensity - min_intensity + EPSILON);
-    }
+    covariance /= (float)(patch_size-1);
 
 
-    // ------------------------- //
-    // ---- Get Covariance ----- //
-    // ------------------------- //
+    // ------------------------ //
+    // ---- Calculate SSIM ---- //
+    // ------------------------ //
 
-    float covar = 0.0;
-    for(int i=0; i<patch_size; i++){
-        covar += ref_patch[i] * comp_patch[i];
-    }
-    covar /= (float)(patch_size-1);
-
-
-    // ----------------------------------- //
-    // ---- Calculate (modified) SSIM ---- //
-    // ----------------------------------- //
-
-    float c1 = (0.01f * 1.0f) * (0.01f * 1.0f);
+    //float c1 = (0.01f * 1.0f) * (0.01f * 1.0f);
+    float c1 = 0.0001f;
     //float c2 = (0.03f * 1.0f) * (0.03f * 1.0f);
-    float c2 = 0.0000001f;
-    float c3 = c2/2.0f;
-
+    float c2 = 0.0009f;
+    //float c3 = c2/2.0f;
+    float c3 = 0.00045f;
     float comp_std = local_stds[gy*w+gx];
-
-    //ssim_map[gy*w+gx] = (float)fmax(0.0, (2.0 * ref_mean * comp_mean + c1)/((ref_mean*ref_mean)+(comp_mean*comp_mean)+c1)); // Luminance
-    //ssim_map[gy*w+gx] = (float)fmax(0.0, (2.0 * ref_std * comp_std + c1)/((ref_std*ref_std)+(comp_std*comp_std)+c1)); // Contrast
 
     if(ref_std == 0.0 && comp_std == 0.0){
         ssim_map[gy*w+gx] = 1.0f; // Special case when both patches are flat, correlation is 1
     }else if(ref_std == 0.0 || comp_std == 0.0){
         ssim_map[gy*w+gx] = 0.0f; // Special case when one patch is flat, correlation is 0
     }else{
-        //ssim_map[gy*w+gx] = (float)fmax(0.0, (covar+c3)/(ref_std*comp_std+c3)); // Structure
-        ssim_map[gy*w+gx] = (float)fmax(0.0, (2.0*covar+c3)/((ref_std*ref_std)+(comp_std*comp_std)+c3)); // Structure
-
+        float ssim = (float) ((2.0f*ref_mean*comp_mean+c1)*(2.0f*covariance+c2))/(((ref_mean*ref_mean)+(comp_mean*comp_mean)+c1)*((ref_std*ref_std)+(comp_std*comp_std)+c2));
+        ssim_map[gy*w+gx] = (float) fmax(0.0f, ssim);
     }
-
-
-
-
-
-    //ssim_map[gy*w+gx] = (float)fmax(0.0, ((2.0*ref_std*comp_std+c2)/((ref_std*ref_std)+(comp_std*comp_std)+c2)));
-
-
-    //ssim_map[gy*w+gx] = (float)fmax(0.0, () * ((2.0*ref_std*comp_std+c2)/((ref_std*ref_std)+(comp_std*comp_std)+c2)) * ((covar+c3)/(ref_std*comp_std)));
-
-    //ssim_map[gy*w+gx] = (float)fmax(0.0, ((2.0*ref_std*comp_std+c2)/((ref_std*ref_std)+(comp_std*comp_std)+c2)) * ((covar+c3)/(ref_std*comp_std)));
 }
