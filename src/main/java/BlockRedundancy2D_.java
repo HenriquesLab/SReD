@@ -12,9 +12,13 @@ import ij.ImagePlus;
 import ij.Prefs;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
+import ij.plugin.LutLoader;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
+import ij.process.LUT;
+
+import java.awt.image.IndexColorModel;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,17 +41,17 @@ public class BlockRedundancy2D_ implements PlugIn {
 
     static private CLContext context;
 
-    static private CLProgram programGetPatchMeans, programGetPatchDiffStd, programGetPatchPearson,
+    static private CLProgram programGetPatchMeans, programGetPatchCosineSim, programGetPatchDiffStd, programGetPatchPearson,
             programGetPatchHu, programGetPatchSsim, programGetRelevanceMap;
 
     static private CLKernel kernelGetPatchMeans, kernelGetPatchDiffStd, kernelGetPatchPearson,
-            kernelGetPatchHu, kernelGetPatchSsim, kernelGetRelevanceMap;
+            kernelGetPatchHu, kernelGetPatchSsim, kernelGetRelevanceMap, kernelGetPatchCosineSim;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPatchPixels, clDiffStdMap, clPearsonMap,
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPatchPixels, clCosineSimMap, clDiffStdMap, clPearsonMap,
             clHuMap, clSsimMap, clRelevanceMap, clGaussianWindow;
 
     @Override
@@ -55,13 +59,15 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         float EPSILON = 0.0000001f;
 
+        // Install SReD LUT
+        installLUT.run();
 
         // -------------------- //
         // ---- Dialog box ---- //
         // -------------------- //
 
         // Get all open image titles
-        int  nImages = getImageCount();
+        int nImages = getImageCount();
         if (nImages < 2) {
             IJ.error("Not enough images found. You need at least two.");
             return;
@@ -69,15 +75,16 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         int[] ids = getIDList();
         String[] titles = new String[nImages];
-        for(int i=0; i<nImages; i++){
+        for (int i = 0; i < nImages; i++) {
             titles[i] = WindowManager.getImage(ids[i]).getTitle();
         }
 
         // Define metric possibilities
-        String[] metrics = new String[3];
+        String[] metrics = new String[4];
         metrics[0] = "Pearson's R";
         metrics[1] = "Cosine similarity";
         metrics[2] = "SSIM";
+        metrics[3] = "NRMSE (inverted)";
 
         // Initialize dialog box
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Block Repetition (2D)");
@@ -94,16 +101,16 @@ public class BlockRedundancy2D_ implements PlugIn {
         // Get parameters from dialog box
         String patchTitle = gd.getNextChoice();
         int patchID = 0;
-        for(int i=0; i<nImages; i++){
-            if(titles[i].equals(patchTitle)){ // .equals() instead of "==" required to run from macro
+        for (int i = 0; i < nImages; i++) {
+            if (titles[i].equals(patchTitle)) { // .equals() instead of "==" required to run from macro
                 patchID = ids[i];
             }
         }
 
         String imgTitle = gd.getNextChoice();
         int imgID = 0;
-        for(int i=0; i<nImages; i++){
-            if(titles[i].equals(imgTitle)){ // .equals() instead of "==" required to run from macro
+        for (int i = 0; i < nImages; i++) {
+            if (titles[i].equals(imgTitle)) { // .equals() instead of "==" required to run from macro
                 imgID = ids[i];
             }
         }
@@ -146,8 +153,8 @@ public class BlockRedundancy2D_ implements PlugIn {
         }
 
         // Calculate block radius
-        int bRW = bW/2; // Patch radius (x-axis)
-        int bRH = bH/2; // Patch radius (y-axis)
+        int bRW = bW / 2; // Patch radius (x-axis)
+        int bRH = bH / 2; // Patch radius (y-axis)
 
 
         // ------------------------------------------------- //
@@ -164,7 +171,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         float[] refPixels = (float[]) fp0.getPixels();
         int w = fp0.getWidth();
         int h = fp0.getHeight();
-        int wh = w*h;
+        int wh = w * h;
         //int sizeWithoutBorders = (w-bRW*2)*(h-bRH*2); // The area of the search field (= image without borders)
 
 
@@ -193,11 +200,11 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         // Get final block size (after removing pixels outside inbound circle/ellipse)
         int patchSize = 0;
-        for(int j=0; j<bH; j++){
-            for (int i=0; i<bW; i++) {
-                float dx = (float)(i-bRW);
-                float dy = (float)(j-bRH);
-                if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
+        for (int j = 0; j < bH; j++) {
+            for (int i = 0; i < bW; i++) {
+                float dx = (float) (i - bRW);
+                float dy = (float) (j - bRH);
+                if (((dx * dx) / (float) (bRW * bRW)) + ((dy * dy) / (float) (bRH * bRH)) <= 1.0f) {
                     patchSize++;
                 }
             }
@@ -206,12 +213,12 @@ public class BlockRedundancy2D_ implements PlugIn {
         // Convert patch to "double" type (keeping only the pixels within the inbound circle/ellipse)
         double[] patchPixelsDouble = new double[patchSize];
         int index = 0;
-        for(int j=0; j<bH; j++){
-            for (int i=0; i<bW; i++) {
-                float dx = (float)(i-bRW);
-                float dy = (float)(j-bRH);
-                if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)) <= 1.0f){
-                    patchPixelsDouble[index] = (double) patchPixels[j*bW+i];
+        for (int j = 0; j < bH; j++) {
+            for (int i = 0; i < bW; i++) {
+                float dx = (float) (i - bRW);
+                float dy = (float) (j - bRH);
+                if (((dx * dx) / (float) (bRW * bRW)) + ((dy * dy) / (float) (bRH * bRH)) <= 1.0f) {
+                    patchPixelsDouble[index] = (double) patchPixels[j * bW + i];
                     index++;
                 }
             }
@@ -221,38 +228,38 @@ public class BlockRedundancy2D_ implements PlugIn {
         double patchMin = Double.MAX_VALUE; // Initialize as a very large number
         double patchMax = -Double.MAX_VALUE; // Initialize as a very small number
 
-        for(int i=0; i<patchSize; i++){
+        for (int i = 0; i < patchSize; i++) {
             patchMin = min(patchMin, patchPixelsDouble[i]);
             patchMax = max(patchMax, patchPixelsDouble[i]);
         }
 
         // Normalize and calculate mean
         double patchMean = 0.0;
-        for(int i=0; i<patchSize; i++){
-            patchPixelsDouble[i] = (patchPixelsDouble[i] - patchMin)/(patchMax - patchMin + EPSILON);
+        for (int i = 0; i < patchSize; i++) {
+            patchPixelsDouble[i] = (patchPixelsDouble[i] - patchMin) / (patchMax - patchMin + EPSILON);
             patchMean += patchPixelsDouble[i];
 
         }
         patchMean /= (double) patchSize;
 
         // Subtract mean
-        for(int i=0; i<patchSize; i++){
+        for (int i = 0; i < patchSize; i++) {
             patchPixelsDouble[i] = patchPixelsDouble[i] - patchMean;
         }
 
         // Typecast back to float
         float[] patchPixelsFloat = new float[patchSize];
-        for(int i=0; i<patchSize; i++){
-            patchPixelsFloat[i] = (float)patchPixelsDouble[i];
+        for (int i = 0; i < patchSize; i++) {
+            patchPixelsFloat[i] = (float) patchPixelsDouble[i];
         }
 
         // Calculate standard deviation
         float patchMeanFloat = (float) patchMean;
         double patchStdDev = 0.0;
-        for(int i=0; i<patchSize; i++){
+        for (int i = 0; i < patchSize; i++) {
             patchStdDev += (patchPixelsDouble[i] - patchMean) * (patchPixelsDouble[i] - patchMean);
         }
-        patchStdDev = (float) sqrt(patchStdDev/(patchSize-1));
+        patchStdDev = (float) sqrt(patchStdDev / (patchSize - 1));
 
 
         // ----------------------- //
@@ -261,31 +268,31 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         // Cast to "double" type
         double[] refPixelsDouble = new double[wh];
-        for(int i=0; i<wh; i++){
-            refPixelsDouble[i] = (double)refPixels[i];
+        for (int i = 0; i < wh; i++) {
+            refPixelsDouble[i] = (double) refPixels[i];
         }
 
         // Get min and max
         double imgMin = Double.MAX_VALUE;
         double imgMax = -Double.MAX_VALUE;
-        for(int i=0; i<wh; i++){
+        for (int i = 0; i < wh; i++) {
             double pixelValue = refPixelsDouble[i];
-            if(pixelValue<imgMin){
+            if (pixelValue < imgMin) {
                 imgMin = pixelValue;
             }
-            if(pixelValue>imgMax){
+            if (pixelValue > imgMax) {
                 imgMax = pixelValue;
             }
         }
 
         // Normalize
-        for(int i=0; i<wh; i++) {
+        for (int i = 0; i < wh; i++) {
             refPixelsDouble[i] = (refPixelsDouble[i] - imgMin) / (imgMax - imgMin + EPSILON);
         }
 
         // Cast back to float
-        for(int i=0; i<wh; i++){
-            refPixels[i] = (float)refPixelsDouble[i];
+        for (int i = 0; i < wh; i++) {
+            refPixels[i] = (float) refPixelsDouble[i];
         }
 
 
@@ -345,7 +352,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         }
 
         // Get chosen device from preferences
-        if(useDevice){
+        if (useDevice) {
             String deviceName = Prefs.get("SReD.OpenCL.device", null);
             for (CLDevice device : allDevices) {
                 if (device.getName().equals(deviceName)) {
@@ -360,7 +367,7 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         // Create command queue
         queue = chosenDevice.createCommandQueue();
-        int elementCount = w*h;
+        int elementCount = w * h;
         int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
@@ -415,9 +422,9 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         // Read the local means map back from the device
         queue.putReadBuffer(clLocalMeans, true);
-        for (int y=0; y<h; y++) {
-            for(int x=0; x<w; x++) {
-                localMeans[y*w+x] = clLocalMeans.getBuffer().get(y*w+x);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                localMeans[y * w + x] = clLocalMeans.getBuffer().get(y * w + x);
                 queue.finish();
 
             }
@@ -425,9 +432,9 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         // Read the local stds map back from the device
         queue.putReadBuffer(clLocalStds, true);
-        for (int y=0; y<h; y++) {
-            for (int x=0; x<w; x++) {
-                localStds[y*w+x] = clLocalStds.getBuffer().get(y*w+x);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                localStds[y * w + x] = clLocalStds.getBuffer().get(y * w + x);
                 queue.finish();
             }
         }
@@ -443,7 +450,7 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         float[] repetitionMap = new float[wh]; // Array to store output repetition map
 
-        if(metric == metrics[0]) { // Pearson correlation
+        if (metric == metrics[0]) { // Pearson correlation
             showStatus("Calculating Pearson correlations...");
 
             // Build OpenCL program
@@ -502,52 +509,52 @@ public class BlockRedundancy2D_ implements PlugIn {
             programGetPatchPearson.release();
         }
 
-        if(metric == metrics[1]) { // Cosine similarity
+        if (metric == metrics[1]) { // Cosine similarity
             showStatus("Calculating Cosine similarity...");
 
             // Build OpenCL program
-            String programStringGetPatchDiffStd = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchDiffStd2D.cl");
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$WIDTH$", "" + w);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$HEIGHT$", "" + h);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRW$", "" + bRW);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRH$", "" + bRH);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$PATCH_STD$", "" + patchStdDev);
-            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$EPSILON$", "" + EPSILON);
-            programGetPatchDiffStd = context.createProgram(programStringGetPatchDiffStd).build();
+            String programStringGetPatchCosineSim = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchCosineSim2D.cl");
+            programStringGetPatchCosineSim = replaceFirst(programStringGetPatchCosineSim, "$WIDTH$", "" + w);
+            programStringGetPatchCosineSim = replaceFirst(programStringGetPatchCosineSim, "$HEIGHT$", "" + h);
+            programStringGetPatchCosineSim = replaceFirst(programStringGetPatchCosineSim, "$BRW$", "" + bRW);
+            programStringGetPatchCosineSim = replaceFirst(programStringGetPatchCosineSim, "$BRH$", "" + bRH);
+            programStringGetPatchCosineSim = replaceFirst(programStringGetPatchCosineSim, "$PATCH_STD$", "" + patchStdDev);
+            programStringGetPatchCosineSim = replaceFirst(programStringGetPatchCosineSim, "$EPSILON$", "" + EPSILON);
+            programGetPatchCosineSim = context.createProgram(programStringGetPatchCosineSim).build();
 
             // Fill OpenCL buffers
-            clDiffStdMap = context.createFloatBuffer(wh, READ_WRITE);
-            fillBufferWithFloatArray(clDiffStdMap, repetitionMap);
+            clCosineSimMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clCosineSimMap, repetitionMap);
 
             // Create kernel and set args
-            kernelGetPatchDiffStd = programGetPatchDiffStd.createCLKernel("kernelGetPatchDiffStd2D");
+            kernelGetPatchCosineSim = programGetPatchCosineSim.createCLKernel("kernelGetPatchCosineSim2D");
 
             argn = 0;
-            kernelGetPatchDiffStd.setArg(argn++, clLocalStds);
-            kernelGetPatchDiffStd.setArg(argn++, clDiffStdMap);
+            kernelGetPatchCosineSim.setArg(argn++, clLocalStds);
+            kernelGetPatchCosineSim.setArg(argn++, clCosineSimMap);
 
             // Calculate absolute difference of StdDevs
-            queue.putWriteBuffer(clDiffStdMap, true);
-            queue.put2DRangeKernel(kernelGetPatchDiffStd, 0, 0, w, h, 0, 0);
+            queue.putWriteBuffer(clCosineSimMap, true);
+            queue.put2DRangeKernel(kernelGetPatchCosineSim, 0, 0, w, h, 0, 0);
             queue.finish();
 
             // Read results back from the OpenCL device
-            queue.putReadBuffer(clDiffStdMap, true);
-            for (int y=0; y<h; y++) {
-                for (int x=0; x<w; x++) {
-                    repetitionMap[y*w+x] = clDiffStdMap.getBuffer().get(y*w+x);
+            queue.putReadBuffer(clCosineSimMap, true);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    repetitionMap[y * w + x] = clCosineSimMap.getBuffer().get(y * w + x);
                     queue.finish();
                 }
             }
             queue.finish();
 
             // Release GPU resources
-            kernelGetPatchDiffStd.release();
-            clDiffStdMap.release();
-            programGetPatchDiffStd.release();
+            kernelGetPatchCosineSim.release();
+            clCosineSimMap.release();
+            programGetPatchCosineSim.release();
         }
 
-        if(metric == metrics[2]) { // SSIM
+        if (metric == metrics[2]) { // SSIM
             showStatus("Calculating SSIM...");
 
             // Build OpenCL program
@@ -590,9 +597,9 @@ public class BlockRedundancy2D_ implements PlugIn {
 
             // Read SSIM back from the GPU
             queue.putReadBuffer(clSsimMap, true);
-            for (int y=0; y<h; y++) {
-                for (int x=0; x<w; x++) {
-                    repetitionMap[y*w+x] = clSsimMap.getBuffer().get(y*w+x);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    repetitionMap[y * w + x] = clSsimMap.getBuffer().get(y * w + x);
                     queue.finish();
                 }
             }
@@ -605,7 +612,7 @@ public class BlockRedundancy2D_ implements PlugIn {
             programGetPatchSsim.release();
         }
 
-        if(metric == metrics[2]) { // SSIM
+        if (metric == metrics[3]) { // SSIM
             showStatus("Calculating SSIM...");
 
             // Build OpenCL program
@@ -648,9 +655,9 @@ public class BlockRedundancy2D_ implements PlugIn {
 
             // Read SSIM back from the GPU
             queue.putReadBuffer(clSsimMap, true);
-            for (int y=0; y<h; y++) {
-                for (int x=0; x<w; x++) {
-                    repetitionMap[y*w+x] = clSsimMap.getBuffer().get(y*w+x);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    repetitionMap[y * w + x] = clSsimMap.getBuffer().get(y * w + x);
                     queue.finish();
                 }
             }
@@ -668,7 +675,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         // ---- Filter out irrelevant regions ---- //
         // --------------------------------------- //
 
-        if(filterConstant>0.0f) {
+        if (filterConstant > 0.0f) {
             showStatus("Calculating relevance map...");
 
             // Create OpenCL program
@@ -701,9 +708,9 @@ public class BlockRedundancy2D_ implements PlugIn {
 
             // Read the relevance map back from the device
             queue.putReadBuffer(clRelevanceMap, true);
-            for (int y=0; y<h; y++) {
-                for (int x=0; x<w; x++) {
-                    relevanceMap[y*w+x] = clRelevanceMap.getBuffer().get(y*w+x);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    relevanceMap[y * w + x] = clRelevanceMap.getBuffer().get(y * w + x);
                 }
             }
             queue.finish();
@@ -716,24 +723,24 @@ public class BlockRedundancy2D_ implements PlugIn {
             // Calculate mean noise variance
             float noiseMeanVar = 0.0f;
             float n = 0.0f;
-            for (int j=bRH; j<h-bRH; j++) {
-                for (int i=bRW; i<w-bRW; i++) {
-                    noiseMeanVar += relevanceMap[j*w+i];
+            for (int j = bRH; j < h - bRH; j++) {
+                for (int i = bRW; i < w - bRW; i++) {
+                    noiseMeanVar += relevanceMap[j * w + i];
                     n += 1.0f;
                 }
             }
             noiseMeanVar /= n;
 
             // Filter out irrelevant regions
-            for(int j=bRH; j<h-bRH; j++) {
-                for (int i=bRW; i<w-bRW; i++) {
-                    if(relevanceMap[j*w+i] <= noiseMeanVar*filterConstant) {
-                        repetitionMap[j*w+i] = 0.0f;
+            for (int j = bRH; j < h - bRH; j++) {
+                for (int i = bRW; i < w - bRW; i++) {
+                    if (relevanceMap[j * w + i] <= noiseMeanVar * filterConstant) {
+                        repetitionMap[j * w + i] = 0.0f;
                     }
                 }
             }
 
-            if(normalizeOutput){
+            if (normalizeOutput) {
                 // ----------------------------------------------------------------------- //
                 // ---- Normalize output (avoiding pixels outside the relevance mask) ---- //
                 // ----------------------------------------------------------------------- //
@@ -777,10 +784,39 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         FloatProcessor fp1 = new FloatProcessor(w, h, repetitionMap);
         ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
+
+        // Apply SReD LUT
+        InputStream lutStream = getClass().getResourceAsStream("/luts/sred-jet.lut");
+        if (lutStream == null) {
+            IJ.error("Could not load SReD LUT. Using default LUT.");
+        }else{
+            try {
+                // Load LUT file
+                IndexColorModel icm = LutLoader.open(lutStream);
+                byte[] r = new byte[256];
+                byte[] g = new byte[256];
+                byte[] b = new byte[256];
+                icm.getReds(r);
+                icm.getGreens(g);
+                icm.getBlues(b);
+                LUT lut = new LUT(8, 256, r, g, b);
+
+                // Apply LUT to image
+                imp1.getProcessor().setLut(lut);
+                //imp1.updateAndDraw();
+            } catch (IOException e) {
+                IJ.error("Could not load SReD LUT");
+            }
+        }
+
+        // Display
         imp1.show();
 
 
-        // ---- Stop timer ----
+        // -------------------- //
+        // ---- Stop timer ---- //
+        // -------------------- //
+
         IJ.log("Finished!");
         long elapsedTime = System.currentTimeMillis() - start;
         IJ.log("Elapsed time: " + elapsedTime/1000 + " sec");
