@@ -88,9 +88,9 @@ public class BlockRedundancy2D_ implements PlugIn {
 
         // Initialize dialog box
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Block Repetition (2D)");
-        gd.addChoice("Block:", titles, titles[0]);
-        gd.addChoice("Image:", titles, titles[1]);
-        gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
+        gd.addChoice("Block:", titles, titles[1]);
+        gd.addChoice("Image:", titles, titles[0]);
+        gd.addSlider("Filter constant: ", 0.0f, 5.0f, 0.0f, 0.1f);
         gd.addChoice("Metric:", metrics, metrics[0]);
         gd.addCheckbox("Normalize output?", true);
         gd.addCheckbox("Use device from preferences?", false);
