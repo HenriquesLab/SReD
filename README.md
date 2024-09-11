@@ -1,4 +1,4 @@
-<img src="https://github.com/HenriquesLab/SReD/blob/main/Docs/Logo/logo.png" align="right" width="200"/>
+<img src="https://github.com/HenriquesLab/SReD/blob/main/Docs/Logo/logo.png" align="right" width="300"/>
 
 # SReD: Structural Repetition Detector Plugin for ImageJ and Fiji
 
