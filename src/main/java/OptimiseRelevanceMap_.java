@@ -38,7 +38,7 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         gd.addMessage("Optimise relevance map!");
         gd.addNumericField("Block width (px): ", 3);
         gd.addNumericField("Block height (px): ", 3);
-        gd.addNumericField("Filter constant step: ", 1.0f);
+        gd.addNumericField("Relevance constant step: ", 1.0f);
         gd.addCheckbox("Use device from preferences?", false);
 
         gd.showDialog();
@@ -200,9 +200,9 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         queue = chosenDevice.createCommandQueue();
 
 
-        // --------------------------------------------- //
-        // ---- Calculate local standard deviations ---- //
-        // --------------------------------------------- //
+        // ----------------------------------- //
+        // ---- Calculate local variances ---- //
+        // ----------------------------------- //
 
         // Write input image to the OpenCL device
         clRefPixels = context.createFloatBuffer(wh, READ_ONLY);
@@ -210,7 +210,7 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         queue.putWriteBuffer(clRefPixels, true);
 
         // Create OpenCL program
-        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMap2D_.class, "kernelGetLocalMeans.cl");
+        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMap2D_.class, "kernelGetRelevanceMap2D.cl");
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$PATCH_SIZE$", "" + patchSize);
@@ -231,11 +231,10 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         queue.putWriteBuffer(clLocalStds, true);
 
         // Create kernel and set kernel arguments
-        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetLocalMeans");
+        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetRelevanceMap2D");
 
         int argn = 0;
         kernelGetLocalStatistics.setArg(argn++, clRefPixels);
-        kernelGetLocalStatistics.setArg(argn++, clLocalMeans);
         kernelGetLocalStatistics.setArg(argn++, clLocalStds);
 
         // Calculate
@@ -245,9 +244,9 @@ public class OptimiseRelevanceMap_ implements PlugIn {
 
         // Read the local stds map back from the OpenCL device
         queue.putReadBuffer(clLocalStds, true);
-        for (int y = bRH; y < h - bRH; y++) {
-            for (int x = bRW; x < w - bRW; x++) {
-                localStds[y * w + x] = clLocalStds.getBuffer().get(y * w + x);
+        for (int y=0; y<h ; y++) {
+            for (int x=0; x<w; x++) {
+                localStds[y*w+x] = clLocalStds.getBuffer().get(y*w+x);
                 queue.finish();
             }
         }
@@ -255,6 +254,7 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         // Release resources
         context.release();
         System.out.println("context released");
+
 
         // ------------------------------------------------------------ //
         // ---- Calculate relevance maps to get optimised constant ---- //
@@ -294,7 +294,7 @@ public class OptimiseRelevanceMap_ implements PlugIn {
 
 
     public static float[] getRelevanceMap(float[] refPixels, int w, int h, int wh, int bRW, int bRH, float filterConstant, float EPSILON, float[] localStds) {
-
+    // TODO: Try sampling with blocksize equal to the actual block size instead of CIF-based
     // --------------------------------- //
     // ---- Calculate Relevance Map ---- //
     // --------------------------------- //
@@ -316,9 +316,9 @@ public class OptimiseRelevanceMap_ implements PlugIn {
     float[] localVars = new float[nBlocks];
     Arrays.fill(localVars, 0.0f);
 
+    // Calculate local variances
     int index = 0;
 
-    // Calculate local variances
     for (int y = 0; y < nBlocksY; y++) {
         for (int x = 0; x < nBlocksX; x++) {
             float[] meanVar = getMeanAndVarBlock(refPixels, w, x * blockWidth, y * blockHeight, (x + 1) * blockWidth, (y + 1) * blockHeight);

@@ -18,9 +18,10 @@ kernel void kernelGetPatchCosineSim2D(
         return;
     }
 
-    // -------------------------------------------------------------- //
-    // ---- Calculate absolute difference of standard deviations ---- //
-    // -------------------------------------------------------------- //
+
+    // ------------------------------------- //
+    // ---- Calculate cosine similarity ---- //
+    // ------------------------------------- //
 
     float test_std = local_stds[gy*w+gx];
 

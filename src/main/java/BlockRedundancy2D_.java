@@ -25,6 +25,8 @@ import java.io.InputStream;
 import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
+import java.util.Arrays;
+
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
@@ -90,7 +92,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Block Repetition (2D)");
         gd.addChoice("Block:", titles, titles[1]);
         gd.addChoice("Image:", titles, titles[0]);
-        gd.addSlider("Filter constant: ", 0.0f, 5.0f, 0.0f, 0.1f);
+        gd.addSlider("Relevance constant: ", 0.0f, 5.0f, 0.0f, 0.1f);
         gd.addChoice("Metric:", metrics, metrics[0]);
         gd.addCheckbox("Normalize output?", true);
         gd.addCheckbox("Use device from preferences?", false);
@@ -275,14 +277,10 @@ public class BlockRedundancy2D_ implements PlugIn {
         // Get min and max
         double imgMin = Double.MAX_VALUE;
         double imgMax = -Double.MAX_VALUE;
-        for (int i = 0; i < wh; i++) {
+        for (int i = 0; i < w * h; i++) {
             double pixelValue = refPixelsDouble[i];
-            if (pixelValue < imgMin) {
-                imgMin = pixelValue;
-            }
-            if (pixelValue > imgMax) {
-                imgMax = pixelValue;
-            }
+            imgMin = min(imgMin, pixelValue);
+            imgMax = max(imgMax, pixelValue);
         }
 
         // Normalize
@@ -720,6 +718,8 @@ public class BlockRedundancy2D_ implements PlugIn {
             clRelevanceMap.release();
             programGetRelevanceMap.release();
 
+            /* OLD
+
             // Calculate mean noise variance
             float noiseMeanVar = 0.0f;
             float n = 0.0f;
@@ -730,6 +730,11 @@ public class BlockRedundancy2D_ implements PlugIn {
                 }
             }
             noiseMeanVar /= n;
+
+           */
+
+            // Calculate mean noise variance
+            float noiseMeanVar = getMeanNoiseVar(relevanceMap, w, h, wh);
 
             // Filter out irrelevant regions
             for (int j = bRH; j < h - bRH; j++) {
@@ -823,8 +828,89 @@ public class BlockRedundancy2D_ implements PlugIn {
         IJ.log("--------");
     }
 
-    // ---- USER FUNCTIONS ----
-    private float[] meanVarStd (float a[]){
+    // ------------------------ //
+    // ---- USER FUNCTIONS ---- //
+    // ------------------------ //
+
+    public static float getMeanNoiseVar(float[] refPixels, int w, int h, int wh) {
+
+        int blockWidth, blockHeight;
+        int CIF = 352 * 288; // Resolution of a CIF file
+
+        if (wh <= CIF) {
+            blockWidth = 8;
+            blockHeight = 8;
+        } else {
+            blockWidth = 16;
+            blockHeight = 16;
+        }
+
+        int nBlocksX = w / blockWidth; // number of blocks in each row
+        int nBlocksY = h / blockHeight; // number of blocks in each column
+        int nBlocks = nBlocksX * nBlocksY; // total number of blocks
+        float[] localVars = new float[nBlocks];
+        Arrays.fill(localVars, 0.0f);
+
+        // Calculate local variances
+        int index = 0;
+
+        for (int y = 0; y < nBlocksY; y++) {
+            for (int x = 0; x < nBlocksX; x++) {
+                float[] meanVar = getMeanAndVarBlock(refPixels, w, x * blockWidth, y * blockHeight, (x + 1) * blockWidth, (y + 1) * blockHeight);
+                localVars[index] = (float) meanVar[1];
+                index++;
+            }
+        }
+
+        // Sort the local variances
+        float[] sortedVars = new float[nBlocks];
+        Arrays.fill(sortedVars, 0.0f);
+
+        index = 0;
+        for (int i = 0; i < nBlocks; i++) {
+            sortedVars[index] = localVars[index];
+            index++;
+        }
+        Arrays.sort(sortedVars);
+
+        // Get the 3% lowest variances and calculate their average
+        int nVars = (int) (0.03f * (float) nBlocks + 1.0f); // Number of blocks corresponding to 3% of the total amount of blocks
+        float noiseVar = 0.0f;
+
+        for (int i = 0; i < nVars; i++) {
+            noiseVar += sortedVars[i];
+        }
+        noiseVar = abs(noiseVar / (float) nVars);
+        noiseVar = (1.0f + 0.001f * (noiseVar - 40.0f)) * noiseVar;
+
+        return noiseVar;
+    }
+
+    public static float[] getMeanAndVarBlock(float[] pixels, int width, int xStart, int yStart, int xEnd, int yEnd) {
+        float mean = 0;
+        float var;
+
+        float sq_sum = 0;
+
+        int bWidth = xEnd-xStart;
+        int bHeight = yEnd - yStart;
+        int bWH = bWidth*bHeight;
+
+        for (int j=yStart; j<yEnd; j++) {
+            for (int i=xStart; i<xEnd; i++) {
+                float v = pixels[j*width+i];
+                mean += v;
+                sq_sum += v * v;
+            }
+        }
+
+        mean = mean / bWH;
+        var = sq_sum / bWH - mean * mean;
+
+        return new float[] {mean, var};
+    }
+
+    private float[] meanVarStd (float a[]){ // Single pass mean var
         int n = a.length;
         if (n == 0) return new float[]{0, 0, 0};
 

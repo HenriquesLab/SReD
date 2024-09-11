@@ -204,7 +204,7 @@ public class RelevanceMaskStack2D_ implements PlugIn {
         queue.putWriteBuffer(clRefPixels, true);
 
         // Create OpenCL program
-        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMap2D_.class, "kernelGetLocalMeans.cl");
+        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMap2D_.class, "kernelGetRelevanceMap2D.cl");
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$PATCH_SIZE$", "" + patchSize);
@@ -225,11 +225,10 @@ public class RelevanceMaskStack2D_ implements PlugIn {
         queue.putWriteBuffer(clLocalStds, true);
 
         // Create kernel and set kernel arguments
-        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetLocalMeans");
+        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetRelevanceMap2D");
 
         int argn = 0;
         kernelGetLocalStatistics.setArg(argn++, clRefPixels);
-        kernelGetLocalStatistics.setArg(argn++, clLocalMeans);
         kernelGetLocalStatistics.setArg(argn++, clLocalStds);
 
         // Calculate
