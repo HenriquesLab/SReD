@@ -44,17 +44,17 @@ public class BlockRedundancy2D_ implements PlugIn {
     static private CLContext context;
 
     static private CLProgram programGetPatchMeans, programGetPatchCosineSim, programGetPatchDiffStd, programGetPatchPearson,
-            programGetPatchHu, programGetPatchSsim, programGetRelevanceMap;
+            programGetPatchHu, programGetPatchSsim, programGetPatchRmse, programGetRelevanceMap;
 
     static private CLKernel kernelGetPatchMeans, kernelGetPatchDiffStd, kernelGetPatchPearson,
-            kernelGetPatchHu, kernelGetPatchSsim, kernelGetRelevanceMap, kernelGetPatchCosineSim;
+            kernelGetPatchHu, kernelGetPatchSsim, kernelGetRelevanceMap, kernelGetPatchCosineSim, kernelGetPatchRmse;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
     private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPatchPixels, clCosineSimMap, clDiffStdMap, clPearsonMap,
-            clHuMap, clSsimMap, clRelevanceMap, clGaussianWindow;
+            clHuMap, clSsimMap, clRelevanceMap, clRmseMap;
 
     @Override
     public void run(String s) {
@@ -610,62 +610,73 @@ public class BlockRedundancy2D_ implements PlugIn {
             programGetPatchSsim.release();
         }
 
-        if (metric == metrics[3]) { // SSIM
-            showStatus("Calculating SSIM...");
+        if (metric == metrics[3]) { // NRMSE (inverted)
+            showStatus("Calculating NRMSE...");
 
             // Build OpenCL program
-            String programStringGetPatchSsim = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchSsim2D.cl");
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$WIDTH$", "" + w);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$HEIGHT$", "" + h);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$PATCH_SIZE$", "" + patchSize);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BW$", "" + bW);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BH$", "" + bH);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BRW$", "" + bRW);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$BRH$", "" + bRH);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$PATCH_MEAN$", "" + patchMeanFloat);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$PATCH_STD$", "" + patchStdDev);
-            programStringGetPatchSsim = replaceFirst(programStringGetPatchSsim, "$EPSILON$", "" + EPSILON);
-            programGetPatchSsim = context.createProgram(programStringGetPatchSsim).build();
+            String programStringGetPatchRmse = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchRmse2D.cl");
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$WIDTH$", "" + w);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$HEIGHT$", "" + h);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$PATCH_SIZE$", "" + patchSize);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$BW$", "" + bW);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$BH$", "" + bH);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$BRW$", "" + bRW);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$BRH$", "" + bRH);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$PATCH_MEAN$", "" + patchMeanFloat);
+            programStringGetPatchRmse = replaceFirst(programStringGetPatchRmse, "$EPSILON$", "" + EPSILON);
+            programGetPatchRmse = context.createProgram(programStringGetPatchRmse).build();
             //System.out.println(programGetPatchSsim.getBuildLog()); // Print program build log to check for errors
 
             // Fill OpenCL buffers
             clPatchPixels = context.createFloatBuffer(patchSize, READ_ONLY);
             fillBufferWithFloatArray(clPatchPixels, patchPixelsFloat);
 
-            clSsimMap = context.createFloatBuffer(wh, READ_WRITE);
-            fillBufferWithFloatArray(clSsimMap, repetitionMap);
+            clRmseMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clRmseMap, repetitionMap);
 
             // Create kernel and set args
-            kernelGetPatchSsim = programGetPatchSsim.createCLKernel("kernelGetPatchSsim2D");
+            kernelGetPatchRmse = programGetPatchRmse.createCLKernel("kernelGetPatchRmse2D");
 
             argn = 0;
-            kernelGetPatchSsim.setArg(argn++, clPatchPixels);
-            kernelGetPatchSsim.setArg(argn++, clRefPixels);
-            kernelGetPatchSsim.setArg(argn++, clLocalMeans);
-            kernelGetPatchSsim.setArg(argn++, clLocalStds);
-            kernelGetPatchSsim.setArg(argn++, clSsimMap);
+            kernelGetPatchRmse.setArg(argn++, clPatchPixels);
+            kernelGetPatchRmse.setArg(argn++, clRefPixels);
+            kernelGetPatchRmse.setArg(argn++, clLocalMeans);
+            kernelGetPatchRmse.setArg(argn++, clRmseMap);
 
-            // Calculate SSIM
+            // Calculate RMSE
             queue.putWriteBuffer(clPatchPixels, true);
-            queue.putWriteBuffer(clSsimMap, true);
-            queue.put2DRangeKernel(kernelGetPatchSsim, 0, 0, w, h, 0, 0);
+            queue.putWriteBuffer(clRmseMap, true);
+            queue.put2DRangeKernel(kernelGetPatchRmse, 0, 0, w, h, 0, 0);
             queue.finish();
 
-            // Read SSIM back from the GPU
-            queue.putReadBuffer(clSsimMap, true);
+            // Read RMSE back from the GPU
+            queue.putReadBuffer(clRmseMap, true);
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
-                    repetitionMap[y * w + x] = clSsimMap.getBuffer().get(y * w + x);
+                    repetitionMap[y * w + x] = clRmseMap.getBuffer().get(y * w + x);
                     queue.finish();
                 }
             }
             queue.finish();
 
             // Release GPU resources
-            kernelGetPatchSsim.release();
+            kernelGetPatchRmse.release();
             clPatchPixels.release();
-            clSsimMap.release();
-            programGetPatchSsim.release();
+            clRmseMap.release();
+            programGetPatchRmse.release();
+
+            // Invert RMSE
+            for (int y = bRH; y < h-bRH; y++) {
+                for (int x = bRW; x < w-bRW; x++) {
+                    float rmse = repetitionMap[y*w+x];
+
+                    if(rmse == 0.0f){ // Special case where RMSE is 0, 1/rmse would be undefined but we want perfect similarity
+                        repetitionMap[y*w+x] = 1.0f;
+                    }else{
+                        repetitionMap[y*w+x] = 1.0f / rmse;
+                    }
+                }
+            }
         }
 
 
@@ -751,18 +762,18 @@ public class BlockRedundancy2D_ implements PlugIn {
                 // ----------------------------------------------------------------------- //
 
                 // Find min and max within the relevance mask
-                float pearsonMin = Float.MAX_VALUE;
-                float pearsonMax = -Float.MAX_VALUE;
+                float repetitionMin = Float.MAX_VALUE;
+                float repetitionMax = -Float.MAX_VALUE;
 
                 for (int j = bRH; j < h - bRH; j++) {
                     for (int i = bRW; i < w - bRW; i++) {
                         if (relevanceMap[j * w + i] > noiseMeanVar * filterConstant) {
                             float pixelValue = repetitionMap[j * w + i];
-                            if (pixelValue > pearsonMax) {
-                                pearsonMax = pixelValue;
+                            if (pixelValue > repetitionMax) {
+                                repetitionMax = pixelValue;
                             }
-                            if (pixelValue < pearsonMin) {
-                                pearsonMin = pixelValue;
+                            if (pixelValue < repetitionMin) {
+                                repetitionMin = pixelValue;
                             }
                         }
                     }
@@ -772,7 +783,7 @@ public class BlockRedundancy2D_ implements PlugIn {
                 for (int j = bRH; j < h - bRH; j++) {
                     for (int i = bRW; i < w - bRW; i++) {
                         if (relevanceMap[j * w + i] > noiseMeanVar * filterConstant) {
-                            repetitionMap[j * w + i] = (repetitionMap[j * w + i] - pearsonMin) / (pearsonMax - pearsonMin + EPSILON);
+                            repetitionMap[j * w + i] = (repetitionMap[j * w + i] - repetitionMin) / (repetitionMax - repetitionMin + EPSILON);
                         }
                     }
                 }
