@@ -12,9 +12,12 @@ import com.jogamp.opencl.*;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.measure.UserFunction;
+import ij.plugin.LutLoader;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
+import ij.process.LUT;
 
+import java.awt.image.IndexColorModel;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -382,7 +385,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
                 int yWorkSize = min(64, h - nYB * 64);
                 for (int nXB = 0; nXB < nXBlocks; nXB++) {
                     int xWorkSize = min(64, w - nXB * 64);
-                    showStatus("Calculating redundancy... blockX=" + nXB + "/" + nXBlocks + " blockY=" + nYB + "/" + nYBlocks);
+                    showStatus("Calculating global repetition... blockX=" + nXB + "/" + nXBlocks + " blockY=" + nYB + "/" + nYBlocks);
                     queue.put2DRangeKernel(kernelGetDiffStdMap, nXB * 64, nYB * 64, xWorkSize, yWorkSize, 0, 0);
                     queue.finish();
                 }
@@ -495,7 +498,32 @@ public class GlobalRedundancy implements Runnable, UserFunction{
 
         IJ.log("Preparing results for display...");
 
-        ImagePlus imp1 = new ImagePlus("Redundancy Map - Level "+level, fpFinal);
+        ImagePlus imp1 = new ImagePlus("Repetition Map - Level "+level, fpFinal);
+
+        // Apply SReD LUT
+        InputStream lutStream = getClass().getResourceAsStream("/luts/sred-jet.lut");
+        if (lutStream == null) {
+            IJ.error("Could not load SReD LUT. Using default LUT.");
+        }else{
+            try {
+                // Load LUT file
+                IndexColorModel icm = LutLoader.open(lutStream);
+                byte[] r = new byte[256];
+                byte[] g = new byte[256];
+                byte[] b = new byte[256];
+                icm.getReds(r);
+                icm.getGreens(g);
+                icm.getBlues(b);
+                LUT lut = new LUT(8, 256, r, g, b);
+
+                // Apply LUT to image
+                imp1.getProcessor().setLut(lut);
+                //imp1.updateAndDraw();
+            } catch (IOException e) {
+                IJ.error("Could not load SReD LUT");
+            }
+        }
+
         imp1.show();
 
 /*

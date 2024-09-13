@@ -32,7 +32,7 @@ public class VarianceStabilisingTransform3D_ implements PlugIn {
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Calculate VST...");
         gd.addNumericField("Gain guess:", 0);
         gd.addNumericField("Offset guess:", 0);
-        gd.addNumericField("Noise standard-deviation guess:", 100);
+        gd.addNumericField("Noise standard deviation guess:", 100);
         gd.addCheckbox("Estimate offset and StdDev from ROI?", false);
         gd.showDialog();
 

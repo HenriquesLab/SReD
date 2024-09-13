@@ -369,7 +369,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
-        IJ.log("Calculating redundancy...");
+        IJ.log("Calculating block repetition...");
 
 
         // ------------------------------- //
@@ -799,7 +799,7 @@ public class BlockRedundancy2D_ implements PlugIn {
         // ------------------------- //
 
         FloatProcessor fp1 = new FloatProcessor(w, h, repetitionMap);
-        ImagePlus imp1 = new ImagePlus("Block Redundancy Map", fp1);
+        ImagePlus imp1 = new ImagePlus("Block Repetition Map", fp1);
 
         // Apply SReD LUT
         InputStream lutStream = getClass().getResourceAsStream("/luts/sred-jet.lut");
