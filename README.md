@@ -7,7 +7,8 @@ SReD (Structural Repetition Detector) is an ImageJ and Fiji plugin for analyzing
 |:-:|
 | [![](https://github.com/user-attachments/assets/abec46ad-4723-4f04-bf5a-f34bc6030838)](https://youtu.be/85coxW4H7f4) | 
 
-<img width="1330" alt="image" src="https://github.com/user-attachments/assets/5e0e84c5-4d12-4304-83ec-0f9b09f95634">
+[<img width="1330" alt="image" src="https://github.com/user-attachments/assets/5e0e84c5-4d12-4304-83ec-0f9b09f95634">](https://youtu.be/85coxW4H7f4)
+
 
 ## Installation
 
