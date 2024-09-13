@@ -3,8 +3,9 @@
 <img src="https://github.com/HenriquesLab/SReD/blob/main/Docs/Logo/logo_small.png" align="right" width="200"/>
 
 SReD (Structural Repetition Detector) is an ImageJ and Fiji plugin for analyzing structural repetition in microscopy images. It introduces a novel approach utilising a custom sampling scheme and correlation metrics to compute Repetition Maps. These maps highlight and quantify the degree of structural repetition present within images, providing valuable insights for image analysis and structural studies.
-
-[![](https://github.com/user-attachments/assets/abec46ad-4723-4f04-bf5a-f34bc6030838)](https://youtu.be/85coxW4H7f4)
+| Starter's Guide |
+|:-:|
+| [![](https://github.com/user-attachments/assets/abec46ad-4723-4f04-bf5a-f34bc6030838)](https://youtu.be/85coxW4H7f4) | 
 
 ## Installation
 
