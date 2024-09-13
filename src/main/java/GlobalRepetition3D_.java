@@ -2,8 +2,12 @@ import com.jogamp.opencl.*;
 import ij.*;
 import ij.gui.NonBlockingGenericDialog;
 import ij.measure.Calibration;
+import ij.plugin.LutLoader;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
+import ij.process.LUT;
+
+import java.awt.image.IndexColorModel;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -632,8 +636,33 @@ public class GlobalRepetition3D_ implements PlugIn {
                 }
                 imsFinal.setProcessor(temp, n+1);
             }
-            ImagePlus impFinal = new ImagePlus("Block Redundancy Map", imsFinal);
+            ImagePlus impFinal = new ImagePlus("Global Repetition Map", imsFinal);
             impFinal.setCalibration(calibration);
+
+            // Apply SReD LUT
+            InputStream lutStream = getClass().getResourceAsStream("/luts/sred-jet.lut");
+            if (lutStream == null) {
+                IJ.error("Could not load SReD LUT. Using default LUT.");
+            }else{
+                try {
+                    // Load LUT file
+                    IndexColorModel icm = LutLoader.open(lutStream);
+                    byte[] r = new byte[256];
+                    byte[] g = new byte[256];
+                    byte[] b = new byte[256];
+                    icm.getReds(r);
+                    icm.getGreens(g);
+                    icm.getBlues(b);
+                    LUT lut = new LUT(8, 256, r, g, b);
+
+                    // Apply LUT to image
+                    impFinal.getProcessor().setLut(lut);
+                    //imp1.updateAndDraw();
+                } catch (IOException e) {
+                    IJ.error("Could not load SReD LUT");
+                }
+            }
+
             impFinal.show();
         }
 

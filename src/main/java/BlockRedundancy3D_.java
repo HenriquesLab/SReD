@@ -80,7 +80,7 @@ public class BlockRedundancy3D_ implements PlugIn {
         metrics[3] = "mSSIM";
 
         // Initialize dialog box
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Artificial Block Redundancy");
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Block Repetition (3D)");
         gd.addChoice("Patch:", titles, titles[0]);
         gd.addChoice("Image:", titles, titles[1]);
         gd.addSlider("Filter constant: ", 0.0f, 5.0f, 1.0f, 0.1f);
@@ -446,7 +446,7 @@ public class BlockRedundancy3D_ implements PlugIn {
         int localWorkSize = min(chosenDevice.getMaxWorkGroupSize(), 256);
         int globalWorkSize = roundUp(localWorkSize, elementCount);
 
-        IJ.log("Calculating redundancy...");
+        IJ.log("Calculating block repetition...");
 
 
         // ------------------------------- //
@@ -751,7 +751,7 @@ public class BlockRedundancy3D_ implements PlugIn {
                 }
                 imsFinal.setProcessor(temp, n+1);
             }
-            ImagePlus impFinal = new ImagePlus("Block Redundancy Map", imsFinal);
+            ImagePlus impFinal = new ImagePlus("Block Repetition Map", imsFinal);
             impFinal.setCalibration(calibration);
             impFinal.show();
         }
