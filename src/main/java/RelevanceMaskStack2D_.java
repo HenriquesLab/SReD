@@ -265,7 +265,7 @@ public class RelevanceMaskStack2D_ implements PlugIn {
         FloatProcessor fpInput = new FloatProcessor(w, h, refPixels);
 
         for(int i=0;i<nIter;i++){
-            relevanceMapTemp = OptimiseRelevanceMap_.getRelevanceMap(refPixels, w, h, wh, bRW, bRH, filterConstant, EPSILON, localStds);
+            relevanceMapTemp = OptimiseRelevanceMask_.getRelevanceMap(refPixels, w, h, wh, bRW, bRH, filterConstant, EPSILON, localStds);
             FloatProcessor ipOutput = new FloatProcessor(w, h, relevanceMapTemp);
             imsOutput.setProcessor(ipOutput, i+1);
             imsOutput.setSliceLabel(String.valueOf(filterConstant), i+1);

@@ -13,7 +13,7 @@ import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
 import static java.lang.Math.*;
 
-public class OptimiseRelevanceMap_ implements PlugIn {
+public class OptimiseRelevanceMask_ implements PlugIn {
 
     // OpenCL formats
     static private CLContext context;
