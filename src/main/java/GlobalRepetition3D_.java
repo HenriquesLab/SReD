@@ -400,11 +400,11 @@ public class GlobalRepetition3D_ implements PlugIn {
         impFinal2.show();
 
 
-        // --------------------------------- //
-        // ---- Calculate relevance map ---- //
-        // --------------------------------- //
+        // ---------------------------------- //
+        // ---- Calculate relevance mask ---- //
+        // ---------------------------------- //
 
-        showStatus("Calculating relevance map...");
+        showStatus("Calculating relevance mask...");
 
         // Define block dimensions for variance calculation
         int blockWidth, blockHeight, blockDepth;
@@ -460,7 +460,7 @@ public class GlobalRepetition3D_ implements PlugIn {
         noiseVar = abs(noiseVar/(float)nVars);
         noiseVar = (1.0f+0.001f*(noiseVar-40.0f)) * noiseVar;
 
-        // Build the relevance map
+        // Build the relevance mask
         float[] relevanceMap = new float[whz];
         Arrays.fill(relevanceMap, 0.0f);
 

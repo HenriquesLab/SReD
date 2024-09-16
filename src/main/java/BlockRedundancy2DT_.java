@@ -568,7 +568,7 @@ public class BlockRedundancy2DT_ implements PlugIn {
                     IJ.showProgress(f, nFrames);
 
                     // Create OpenCL program
-                    String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetRelevanceMap2D.cl");
+                    String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetRelevanceMask2D.cl");
                     programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$WIDTH$", "" + w);
                     programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$HEIGHT$", "" + h);
                     programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$PATCH_SIZE$", "" + patchSize);
@@ -585,7 +585,7 @@ public class BlockRedundancy2DT_ implements PlugIn {
                     queue.finish();
 
                     // Create OpenCL kernel and set args
-                    kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap2D");
+                    kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMask2D");
 
                     argn = 0;
                     kernelGetRelevanceMap.setArg(argn++, clRefPixels);
@@ -595,7 +595,7 @@ public class BlockRedundancy2DT_ implements PlugIn {
                     queue.put2DRangeKernel(kernelGetRelevanceMap, 0, 0, w, h, 0, 0);
                     queue.finish();
 
-                    // Read the relevance map back from the device
+                    // Read the relevance mask back from the device
                     queue.putReadBuffer(clRelevanceMap, true);
                     for (int y=0; y<h; y++) {
                         for (int x=0; x<w; x++) {

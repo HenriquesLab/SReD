@@ -13,7 +13,7 @@ import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
 import static ij.IJ.showStatus;
 import static java.lang.Math.*;
 
-public class RelevanceMap2D_ implements PlugIn {
+public class RelevanceMask2D_ implements PlugIn {
 
     // OpenCL formats
     static private CLContext context;
@@ -221,7 +221,7 @@ public class RelevanceMap2D_ implements PlugIn {
         queue.putWriteBuffer(clRefPixels, true);
 
         // Create OpenCL program
-        String programStringGetLocalStatistics = getResourceAsString(RelevanceMap2D_.class, "kernelGetLocalMeans.cl");
+        String programStringGetLocalStatistics = getResourceAsString(RelevanceMask2D_.class, "kernelGetLocalMeans.cl");
         programStringGetLocalStatistics = replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
         programStringGetLocalStatistics = replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
         programStringGetLocalStatistics = replaceFirst(programStringGetLocalStatistics, "$PATCH_SIZE$", "" + patchSize);
@@ -317,7 +317,7 @@ public class RelevanceMap2D_ implements PlugIn {
         noiseVar = abs(noiseVar/(float)nVars);
         noiseVar = (1.0f+0.001f*(noiseVar-40.0f)) * noiseVar;
 
-        // Build the relevance map
+        // Build the relevance mask
         float[] relevanceMap = new float[wh];
         float threshold;
         if(noiseVar == 0.0f){

@@ -146,9 +146,9 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         programGetLocalMeans.release();
 
 
-        // --------------------------------- //
-        // ---- Calculate Relevance Map ---- //
-        // --------------------------------- //
+        // ---------------------------------- //
+        // ---- Calculate Relevance Mask ---- //
+        // ---------------------------------- //
 
         // Define block dimensions for variance calculation
         int blockWidth, blockHeight;
@@ -201,7 +201,7 @@ public class GlobalRedundancy implements Runnable, UserFunction{
         noiseVar = abs(noiseVar/(float)nVars);
         noiseVar = (1.0f+0.001f*(noiseVar-40.0f)) * noiseVar;
 
-        // Build the relevance map
+        // Build the relevance mask
         float[] relevanceMap = new float[wh];
         Arrays.fill(relevanceMap, 0.0f);
 

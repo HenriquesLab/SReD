@@ -6,7 +6,7 @@
 #define bRH $BRH$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetRelevanceMap2D(
+kernel void kernelGetRelevanceMask2D(
 global float* ref_pixels,
 global float* relevance_map
 ){

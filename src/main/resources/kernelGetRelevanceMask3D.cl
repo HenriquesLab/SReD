@@ -8,7 +8,7 @@
 #define bRZ $BRZ$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetRelevanceMap3D(
+kernel void kernelGetRelevanceMask3D(
 global float* ref_pixels,
 global float* relevance_map
 ){

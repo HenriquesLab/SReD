@@ -600,7 +600,7 @@ public class BlockRedundancy3D_ implements PlugIn {
                 showStatus("Calculating relevance map...");
 
                 // Create OpenCL program
-                String programStringGetRelevanceMap3D = getResourceAsString(BlockRedundancy3D_.class, "kernelGetRelevanceMap3D.cl");
+                String programStringGetRelevanceMap3D = getResourceAsString(BlockRedundancy3D_.class, "kernelGetRelevanceMask3D.cl");
                 programStringGetRelevanceMap3D = replaceFirst(programStringGetRelevanceMap3D, "$WIDTH$", "" + w);
                 programStringGetRelevanceMap3D = replaceFirst(programStringGetRelevanceMap3D, "$HEIGHT$", "" + h);
                 programStringGetRelevanceMap3D = replaceFirst(programStringGetRelevanceMap3D, "$DEPTH$", "" + z);
@@ -619,7 +619,7 @@ public class BlockRedundancy3D_ implements PlugIn {
                 queue.finish();
 
                 // Create OpenCL kernel and set args
-                kernelGetRelevanceMap3D = programGetRelevanceMap3D.createCLKernel("kernelGetRelevanceMap3D");
+                kernelGetRelevanceMap3D = programGetRelevanceMap3D.createCLKernel("kernelGetRelevanceMask3D");
 
                 argn = 0;
                 kernelGetRelevanceMap3D.setArg(argn++, clRefPixels);
@@ -629,7 +629,7 @@ public class BlockRedundancy3D_ implements PlugIn {
                 queue.put3DRangeKernel(kernelGetRelevanceMap3D, 0, 0, 0, w, h, z, 0, 0, 0);
                 queue.finish();
 
-                // Read the relevance map back from the device
+                // Read the relevance mask back from the device
                 queue.putReadBuffer(clRelevanceMap, true);
                 for(int n=0; n<z; n++) {
                     for (int y=0; y<h; y++) {

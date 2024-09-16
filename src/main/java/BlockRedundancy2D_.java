@@ -685,10 +685,10 @@ public class BlockRedundancy2D_ implements PlugIn {
         // --------------------------------------- //
 
         if (filterConstant > 0.0f) {
-            showStatus("Calculating relevance map...");
+            showStatus("Calculating relevance mask...");
 
             // Create OpenCL program
-            String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2D_.class, "kernelGetRelevanceMap2D.cl");
+            String programStringGetRelevanceMap = getResourceAsString(BlockRedundancy2D_.class, "kernelGetRelevanceMask2D.cl");
             programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$WIDTH$", "" + w);
             programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$HEIGHT$", "" + h);
             programStringGetRelevanceMap = replaceFirst(programStringGetRelevanceMap, "$PATCH_SIZE$", "" + patchSize);
@@ -705,7 +705,7 @@ public class BlockRedundancy2D_ implements PlugIn {
             queue.finish();
 
             // Create OpenCL kernel and set args
-            kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMap2D");
+            kernelGetRelevanceMap = programGetRelevanceMap.createCLKernel("kernelGetRelevanceMask2D");
 
             argn = 0;
             kernelGetRelevanceMap.setArg(argn++, clRefPixels);

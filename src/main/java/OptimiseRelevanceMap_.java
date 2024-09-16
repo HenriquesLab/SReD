@@ -34,8 +34,8 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         // -------------------- //
 
         // Display dialog box
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Optimise relevance map");
-        gd.addMessage("Optimise relevance map!");
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Optimise relevance mask");
+        gd.addMessage("Optimise relevance mask!");
         gd.addNumericField("Block width (px): ", 3);
         gd.addNumericField("Block height (px): ", 3);
         gd.addNumericField("Relevance constant step: ", 1.0f);
@@ -210,7 +210,7 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         queue.putWriteBuffer(clRefPixels, true);
 
         // Create OpenCL program
-        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMap2D_.class, "kernelGetRelevanceMap2D.cl");
+        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMask2D_.class, "kernelGetRelevanceMask2D.cl");
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$PATCH_SIZE$", "" + patchSize);
@@ -231,7 +231,7 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         queue.putWriteBuffer(clLocalStds, true);
 
         // Create kernel and set kernel arguments
-        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetRelevanceMap2D");
+        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetRelevanceMask2D");
 
         int argn = 0;
         kernelGetLocalStatistics.setArg(argn++, clRefPixels);
@@ -256,16 +256,16 @@ public class OptimiseRelevanceMap_ implements PlugIn {
         System.out.println("context released");
 
 
-        // ------------------------------------------------------------ //
-        // ---- Calculate relevance maps to get optimised constant ---- //
-        // ------------------------------------------------------------ //
+        // ------------------------------------------------------------- //
+        // ---- Calculate relevance masks to get optimised constant ---- //
+        // ------------------------------------------------------------- //
 
-        showStatus("Optimising relevance map...");
+        showStatus("Optimising relevance mask...");
 
         float[] relevanceMapTemp = new float[wh];
         float filterConstant = 0.0f;
-        float allOnes = 0.0f; //  To store the last filter constant where relevance map is all 1s
-        float allZeros = 0.0f; //  To store the 1st filter constant where relevance map is all 0s
+        float allOnes = 0.0f; //  To store the last filter constant where relevance mask is all 1s
+        float allZeros = 0.0f; //  To store the 1st filter constant where relevance mask is all 0s
 
         do {
             relevanceMapTemp = getRelevanceMap(refPixels, w, h, wh, bRW, bRH, filterConstant, EPSILON, localStds);
@@ -295,9 +295,9 @@ public class OptimiseRelevanceMap_ implements PlugIn {
 
     public static float[] getRelevanceMap(float[] refPixels, int w, int h, int wh, int bRW, int bRH, float filterConstant, float EPSILON, float[] localStds) {
     // TODO: Try sampling with blocksize equal to the actual block size instead of CIF-based
-    // --------------------------------- //
-    // ---- Calculate Relevance Map ---- //
-    // --------------------------------- //
+    // ---------------------------------- //
+    // ---- Calculate Relevance mask ---- //
+    // ---------------------------------- //
 
     int blockWidth, blockHeight;
     int CIF = 352 * 288; // Resolution of a CIF file
@@ -348,7 +348,7 @@ public class OptimiseRelevanceMap_ implements PlugIn {
     noiseVar = abs(noiseVar / (float) nVars);
     noiseVar = (1.0f + 0.001f * (noiseVar - 40.0f)) * noiseVar;
 
-    // Build the relevance map
+    // Build the relevance mask
     float[] relevanceMap = new float[wh];
     Arrays.fill(relevanceMap, 0.0f);
 

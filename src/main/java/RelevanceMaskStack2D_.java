@@ -1,10 +1,9 @@
 import com.jogamp.opencl.*;
 import ij.*;
 import ij.gui.NonBlockingGenericDialog;
-import ij.plugin.ImageCalculator;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
+
 import java.nio.FloatBuffer;
 import static com.jogamp.opencl.CLMemory.Mem.READ_ONLY;
 import static com.jogamp.opencl.CLMemory.Mem.READ_WRITE;
@@ -204,7 +203,7 @@ public class RelevanceMaskStack2D_ implements PlugIn {
         queue.putWriteBuffer(clRefPixels, true);
 
         // Create OpenCL program
-        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMap2D_.class, "kernelGetRelevanceMap2D.cl");
+        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMask2D_.class, "kernelGetRelevanceMask2D.cl");
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
         programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$PATCH_SIZE$", "" + patchSize);
@@ -249,12 +248,12 @@ public class RelevanceMaskStack2D_ implements PlugIn {
         context.release();
 
 
-        // ---------------------------------- //
-        // ---- Calculate relevance maps ---- //
-        // ---------------------------------- //
+        // ----------------------------------- //
+        // ---- Calculate relevance masks ---- //
+        // ----------------------------------- //
 
-        showStatus("Calculating relevance maps...");
-        IJ.log("Calculating relevance maps...");
+        showStatus("Calculating relevance masks...");
+        IJ.log("Calculating relevance masks...");
 
         float[] relevanceMapTemp = new float[wh];
         float filterConstant = lowerLimit;

@@ -19,18 +19,15 @@ public class CalculateLocalMeans_ implements PlugIn {
 
     static private CLContext context;
 
-    static private CLProgram programGetPatchMeans, programGetPatchDiffStd, programGetPatchPearson,
-            programGetPatchHu, programGetPatchSsim, programGetRelevanceMap;
+    static private CLProgram programGetPatchMeans;
 
-    static private CLKernel kernelGetPatchMeans, kernelGetPatchDiffStd, kernelGetPatchPearson,
-            kernelGetPatchHu, kernelGetPatchSsim, kernelGetRelevanceMap;
+    static private CLKernel kernelGetPatchMeans;
 
     static private CLPlatform clPlatformMaxFlop;
 
     static private CLCommandQueue queue;
 
-    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds, clPatchPixels, clDiffStdMap, clPearsonMap,
-            clHuMap, clSsimMap, clRelevanceMap, clGaussianWindow;
+    private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds;
 
 
     @Override
