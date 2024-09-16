@@ -1,6 +1,5 @@
 # SReD: Structural Repetition Detector Plugin for ImageJ and Fiji
 
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/henriqueslab/SReD/total?style=flat&color=fuchsia)
 [![License](https://img.shields.io/github/license/HenriquesLab/SReD?color=green)](https://github.com/HenriquesLab/SReD/blob/main/LICENSE.txt)
 [![Contributors](https://img.shields.io/github/contributors-anon/HenriquesLab/SReD)](https://github.com/HenriquesLab/SReD/graphs/contributors)
 [![GitHub stars](https://img.shields.io/github/stars/HenriquesLab/SReD?style=social)](https://github.com/HenriquesLab/SReD/)
