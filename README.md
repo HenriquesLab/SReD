@@ -37,9 +37,9 @@ SReD (Structural Repetition Detector) is an ImageJ and Fiji plugin for analyzing
 
 3. Click "Add Unlisted Site" and add the SReD update site to the URL box (https://sites.imagej.net/SReD/)
 
-4. Repeat step 3 but this time add the eSRRF update site (https://sites.imagej.net/NanoJ-LiveSRRF/)
+4. Click "Add Unlisted Site" and add the eSRRF update site (https://sites.imagej.net/NanoJ-LiveSRRF/)
 
-5. Tick the checkboxes for both update sites.
+5. Tick the checkboxes to include both update sites.
 
 6. Click on "Apply Changes" and restart ImageJ/Fiji.
 
