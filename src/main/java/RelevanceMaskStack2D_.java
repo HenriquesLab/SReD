@@ -224,7 +224,7 @@ public class RelevanceMaskStack2D_ implements PlugIn {
         queue.putWriteBuffer(clLocalStds, true);
 
         // Create kernel and set kernel arguments
-        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetRelevanceMap2D");
+        kernelGetLocalStatistics = programGetLocalStatistics.createCLKernel("kernelGetRelevanceMask2D");
 
         int argn = 0;
         kernelGetLocalStatistics.setArg(argn++, clRefPixels);

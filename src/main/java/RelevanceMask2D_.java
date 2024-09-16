@@ -39,11 +39,11 @@ public class RelevanceMask2D_ implements PlugIn {
         // ---- Dialog box ---- //
         // -------------------- //
 
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Map noise");
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Relevance mask (2D)");
         gd.addMessage("Map structurally relevant positions in your image!");
         gd.addNumericField("Block width (px): ", 3);
         gd.addNumericField("Block height (px): ", 3);
-        gd.addSlider("Filter constant: ", 0.0f, 10.0f, 0.0, 0.1f);
+        gd.addSlider("Filter constant: ", 0.0f, 10.0f, 0.0, 1f);
         gd.addCheckbox("Use device from preferences?", false);
 
         gd.showDialog();
