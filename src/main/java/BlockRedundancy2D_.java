@@ -82,11 +82,12 @@ public class BlockRedundancy2D_ implements PlugIn {
         }
 
         // Define metric possibilities
-        String[] metrics = new String[4];
+        String[] metrics = new String[5];
         metrics[0] = "Pearson's R";
         metrics[1] = "Cosine similarity";
         metrics[2] = "SSIM";
         metrics[3] = "NRMSE (inverted)";
+        metrics[4] = "Abs. Diff. of StdDevs.";
 
         // Initialize dialog box
         NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Block Repetition (2D)");
@@ -677,6 +678,76 @@ public class BlockRedundancy2D_ implements PlugIn {
                     }
                 }
             }
+        }
+
+        if (metric == metrics[4]) { // Abs. Diff. of StdDevs
+            showStatus("Calculating Abs. Diff. of StdDevs...");
+
+            // Build OpenCL program
+            String programStringGetPatchDiffStd = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchDiffStd2D.cl");
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$WIDTH$", "" + w);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$HEIGHT$", "" + h);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRW$", "" + bRW);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$BRH$", "" + bRH);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$PATCH_STD$", "" + patchStdDev);
+            programStringGetPatchDiffStd = replaceFirst(programStringGetPatchDiffStd, "$EPSILON$", "" + EPSILON);
+            programGetPatchDiffStd = context.createProgram(programStringGetPatchDiffStd).build();
+
+            // Fill OpenCL buffers
+            clDiffStdMap = context.createFloatBuffer(wh, READ_WRITE);
+            fillBufferWithFloatArray(clDiffStdMap, repetitionMap);
+
+            // Create kernel and set args
+            kernelGetPatchDiffStd = programGetPatchDiffStd.createCLKernel("kernelGetPatchDiffStd2D");
+
+            argn = 0;
+            kernelGetPatchDiffStd.setArg(argn++, clLocalStds);
+            kernelGetPatchDiffStd.setArg(argn++, clDiffStdMap);
+
+            // Calculate absolute difference of StdDevs
+            queue.putWriteBuffer(clDiffStdMap, true);
+            queue.put2DRangeKernel(kernelGetPatchDiffStd, 0, 0, w, h, 0, 0);
+            queue.finish();
+
+            // Read results back from the OpenCL device
+            queue.putReadBuffer(clDiffStdMap, true);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    repetitionMap[y * w + x] = clDiffStdMap.getBuffer().get(y * w + x);
+                    queue.finish();
+                }
+            }
+            queue.finish();
+
+            // Release GPU resources
+            kernelGetPatchDiffStd.release();
+            clDiffStdMap.release();
+            programGetPatchDiffStd.release();
+
+            // Normalize between 0 and 1
+            float repMin = Float.MAX_VALUE;
+            float repMax = Float.MIN_VALUE;
+
+            for (int y = bRH; y < h-bRH; y++) {
+                for (int x = bRW; x < w-bRW; x++) {
+                   repMin = Math.min(repMin, repetitionMap[y*w+x]);
+                   repMax = Math.max(repMax, repetitionMap[y*w+x]);
+                }
+            }
+
+            for (int y = bRH; y < h-bRH; y++) {
+                for (int x = bRW; x < w-bRW; x++) {
+                    repetitionMap[y*w+x] = (repetitionMap[y*w+x] - repMin) / (repMax - repMin + EPSILON);
+                }
+            }
+
+            // Convert dissimilarity into similarity
+            for (int y = bRH; y < h-bRH; y++) {
+                for (int x = bRW; x < w-bRW; x++) {
+                    repetitionMap[y*w+x] = 1.0f - repetitionMap[y*w+x];
+                }
+            }
+
         }
 
 

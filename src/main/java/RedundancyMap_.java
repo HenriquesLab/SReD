@@ -54,7 +54,7 @@ public class RedundancyMap_ implements PlugIn {
         metrics[3] = "mSSIM";
 
         // Initialize dialog box
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Global Redundancy");
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("SReD: Global Repetition Detector");
         gd.addNumericField("Block width (px): ", 3, 2);
         gd.addNumericField("Box height (px): ", 3, 2);
         gd.addCheckbox("Time-lapse?", false);
@@ -219,7 +219,7 @@ public class RedundancyMap_ implements PlugIn {
         // ---- Calculate Redundancy Map ---- //
         // ---------------------------------- //
 
-        IJ.log("Calculating redundancy...please wait...");
+        IJ.log("Calculating global repetition...please wait...");
 
         int rounds = 5; // How many scale levels should be analyzed
         if(multiScale == 0){
