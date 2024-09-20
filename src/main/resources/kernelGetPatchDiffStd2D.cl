@@ -6,7 +6,7 @@
 #define ref_std $PATCH_STD$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetPatchCosineSim2D(
+kernel void kernelGetPatchDiffStd2D(
     global float* local_stds,
     global float* diff_std_map
 ){
