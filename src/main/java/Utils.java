@@ -420,7 +420,7 @@ public class Utils {
     }
 
     /**
-     * Custom object to hold a 2D input image along with its dimensions and statistics.
+     * Custom object to hold a 3D input image along with its dimensions and statistics.
      */
     public static class InputImage3D {
         private final float[] imageArray;
@@ -429,6 +429,9 @@ public class Utils {
         private final int depth;
         private final int size;
         private final Calibration calibration;
+        private final float gain;
+        private final float sigma;
+        private final float offset;
 
         /**
          * Constructs an InputImage2D object with the specified image data and dimensions.
@@ -438,13 +441,18 @@ public class Utils {
          * @param height The height of the image in pixels.
          * @param size The total number of pixels in the image.
          */
-        public InputImage3D(float[] imageArray, int width, int height, int depth, int size, Calibration calibration) {
+        public InputImage3D(float[] imageArray, int width, int height, int depth, int size, Calibration calibration,
+                            float gain, float sigma, float offset)
+        {
             this.imageArray = imageArray;
             this.width = width;
             this.height = height;
             this.depth = depth;
             this.size = size;
             this.calibration = calibration;
+            this.gain = gain;
+            this.sigma = sigma;
+            this.offset = offset;
         }
 
         /**
@@ -499,6 +507,33 @@ public class Utils {
          */
         public Calibration getCalibration(){
             return calibration;
+        }
+
+        /**
+         * Returns the optimised "gain" parameter used in the VST.
+         *
+         * @return The calibration object of the image.
+         */
+        public float getGain(){
+            return gain;
+        }
+
+        /**
+         * Returns the optimised "sigma" parameter used in the VST.
+         *
+         * @return The calibration object of the image.
+         */
+        public float getSigma(){
+            return sigma;
+        }
+
+        /**
+         * Returns the optimised "offset" parameter used in the VST.
+         *
+         * @return The calibration object of the image.
+         */
+        public float getOffset(){
+            return offset;
         }
     }
 
@@ -632,11 +667,19 @@ public class Utils {
         int size = width * height;
         IJ.log("Image dimensions: "+width+"x"+height);
 
+        float gain = 0.0f; // Placeholder
+        float sigma = 0.0f; // Placeholder
+        float offset = 0.0f; // Placeholder
+
         if (stabiliseNoiseVariance) {
             IJ.log("Stabilizing noise variance of the image...");
-            GATMinimizer2D minimizer = new GATMinimizer2D(imageArray, width, height, 0, 100, 0);
+            GATMinimizer2D minimizer = new GATMinimizer2D(imageArray, width, height, 1, 10, 100);
             minimizer.run();
-            imageArray = VarianceStabilisingTransform2D_.getGAT(imageArray, minimizer.gain, minimizer.sigma, minimizer.offset);
+            gain = (float) minimizer.gain;
+            sigma = (float) minimizer.sigma;
+            offset = (float) minimizer.offset;
+
+            imageArray = VarianceStabilisingTransform2D_.getGAT(imageArray, gain, sigma, offset);
         }
 
         if (normalizeOutput) {
@@ -656,6 +699,55 @@ public class Utils {
         }
 
         return new InputImage2D(imageArray, width, height, size);
+    }
+
+    /**
+     * Retrieves an InputImage2D object from a 2D image, optionally stabilizing noise variance
+     * and normalizing the output.
+     *
+     * NOTE: This is an OVERLOAD method that takes an image array instead of an ImageJ image ID uses specific GAT parameter values to calculate the VST.
+     *
+     * <p>If the imageID is invalid, the function will return {@code null}.</p>
+     *
+     * @param imageArray An image array (float).
+     * @param imageWidth The width of the image.
+     * @param imageHeight The height of the image.
+     * @param stabiliseNoiseVariance If {@code true}, applies variance stabilization to the image.
+     * @param gain The gain to be used in the VST
+     * @param sigma The sigma to be used in the VST
+     * @param offset The offset to be used in the VST
+     * @param normalizeOutput If {@code true}, normalizes the pixel values of the image.
+     * @return An InputImage2D object, or {@code null} if the input image is invalid (i.e., window not found).
+     */
+    public static InputImage2D getInputImage2D(float[] imageArray, int imageWidth, int imageHeight,
+                                               boolean stabiliseNoiseVariance, float gain, float sigma, float offset,
+                                               boolean normalizeOutput)
+    {
+
+        int imageSize = imageWidth * imageHeight;
+
+        if (stabiliseNoiseVariance) {
+            IJ.log("Stabilizing noise variance of the image...");
+            imageArray = VarianceStabilisingTransform2D_.getGAT(imageArray, gain, sigma, offset);
+        }
+
+        if (normalizeOutput) {
+            // Get min and max
+            float imageMin = Float.MAX_VALUE;
+            float imageMax = -Float.MAX_VALUE;
+            for (int i = 0; i < imageSize; i++) {
+                float pixelValue = imageArray[i];
+                imageMin = Math.min(imageMin, pixelValue);
+                imageMax = Math.max(imageMax, pixelValue);
+            }
+
+            // Normalize
+            for (int i = 0; i < imageSize; i++) {
+                imageArray[i] = (imageArray[i] - imageMin) / (imageMax - imageMin + EPSILON);
+            }
+        }
+
+        return new InputImage2D(imageArray, imageWidth, imageHeight, imageSize);
     }
 
 
@@ -1066,12 +1158,19 @@ public class Utils {
         }
 
         // Stabilise noise variance
+        float gain = 0.0f; // Placeholder
+        float sigma = 0.0f; // Placeholder
+        float offset = 0.0f; // Placeholder
+
         if (stabiliseNoiseVariance) {
             IJ.log("Stabilizing noise variance of the image...");
 
             // Optimise GAT parameters
             GATMinimizer3D minimizer = new GATMinimizer3D(stackArray, width, height, depth, 0, 100, 0);
             minimizer.run();
+            gain = (float) minimizer.gain;
+            sigma = (float) minimizer.sigma;
+            offset = (float) minimizer.offset;
 
             // Get variance-stabilised image with optimised parameters
             for (int z=0; z<depth; z++) {
@@ -1094,7 +1193,79 @@ public class Utils {
             normalizeArray(stackArray1D);
         }
 
-        return new InputImage3D(stackArray1D, width, height, depth, size, calibration);
+        return new InputImage3D(stackArray1D, width, height, depth, size, calibration, gain, sigma, offset);
+    }
+
+
+    /**
+     * Retrieves an InputImage3D object from a 3D image, optionally stabilizing noise variance
+     * and normalizing the output.
+     *
+     * NOTE: This is an OVERLOAD method that takes an image array instead of an ImageJ image ID.
+     *
+     * <p>If the imageID is invalid, the function will return {@code null}.</p>
+     *
+     * @param imageArray An image array of the image (float).
+     * @param stabiliseNoiseVariance If {@code true}, applies variance stabilization to the image.
+     * @param normalizeOutput If {@code true}, normalizes the pixel values of the image.
+     * @return An InputImage3D object, or {@code null} if the input image is invalid (i.e., window not found).
+     */
+    public static InputImage3D getInputImage3D(float[] imageArray, int width, int height, int depth, boolean stabiliseNoiseVariance, boolean normalizeOutput)
+    {
+
+        int size = width*height*depth;
+
+        // Stabilise noise variance
+        float gain = 0.0f; // Placeholder
+        float sigma = 0.0f; // Placeholder
+        float offset = 0.0f; // Placeholder
+
+        if (stabiliseNoiseVariance) {
+            IJ.log("Stabilizing noise variance of the image...");
+
+            // Get image stack array (float[z][wh])
+            float[][] stackArray = new float[depth][width*height];
+            for(int z=0; z<depth; z++) {
+                for (int y=0; y<height; y++) {
+                    for (int x=0; x<width; x++) {
+                        stackArray[z][y*width+x] = imageArray[width*height*z+y*width+x];
+                    }
+                }
+            }
+
+            // Optimise GAT parameters
+            GATMinimizer3D minimizer = new GATMinimizer3D(stackArray, width, height, depth, 0, 100, 0);
+            minimizer.run();
+            gain = (float) minimizer.gain;
+            sigma = (float) minimizer.sigma;
+            offset = (float) minimizer.offset;
+
+            // Get variance-stabilised image with optimised parameters
+            for (int z=0; z<depth; z++) {
+                stackArray[z] = VarianceStabilisingTransform3D_.getGAT(stackArray[z], minimizer.gain, minimizer.sigma, minimizer.offset);
+            }
+
+            // Get stack array (1D)
+            float[] stackArray1D = new float[size];
+            for(int z=0; z<depth; z++) {
+                for (int y=0; y<height; y++) {
+                    for (int x=0; x<width; x++) {
+                        imageArray[width*height*z+y*width+x] = stackArray[z][y*width+x];
+                    }
+                }
+            }
+
+            // Normalise to range
+            if (normalizeOutput) {
+                normalizeArray(stackArray1D);
+            }
+        } else if (normalizeOutput) {
+            normalizeArray(imageArray);
+        }
+
+        Calibration calibration = null;
+
+        return new InputImage3D(imageArray, width, height, depth, size, calibration, gain, sigma, offset);
     }
 
 
