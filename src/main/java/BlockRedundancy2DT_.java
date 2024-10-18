@@ -435,7 +435,7 @@ public class BlockRedundancy2DT_ implements PlugIn {
             clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
 
             // Create OpenCL program
-            String programStringGetPatchMeans = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetPatchMeans2D.cl");
+            String programStringGetPatchMeans = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetLocalStatistics2D.cl");
             programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
             programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
             programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
@@ -503,7 +503,7 @@ public class BlockRedundancy2DT_ implements PlugIn {
                 IJ.showProgress(f, nFrames);
 
                 // Build OpenCL program
-                String programStringGetPatchPearson = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetPatchPearson2D.cl");
+                String programStringGetPatchPearson = getResourceAsString(BlockRedundancy2DT_.class, "kernelGetBlockPearson2D.cl");
                 programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$WIDTH$", "" + w);
                 programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$HEIGHT$", "" + h);
                 programStringGetPatchPearson = replaceFirst(programStringGetPatchPearson, "$PATCH_SIZE$", "" + patchSize);

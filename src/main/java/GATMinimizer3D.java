@@ -10,6 +10,8 @@
 
 import ij.measure.Minimizer;
 import ij.measure.UserFunction;
+
+import static java.lang.Math.max;
 import static java.lang.Math.sqrt;
 
 
@@ -95,8 +97,9 @@ public class GATMinimizer3D implements UserFunction {
         }
 
         // Define the dimensions of the window used to estimate the noise variance (adjusted to image size to avoid out of bounds)
-        int blockWidth = width/6; // bounding box width
-        int blockHeight = height/6; // bounding box height
+        // max() is used to prevent block dimensions == 0
+        int blockWidth = max(width/6, 1); // bounding box width
+        int blockHeight = max(height/6, 1); // bounding box height
 
         // Get number of blocks
         int nBlocksX = width / blockWidth;

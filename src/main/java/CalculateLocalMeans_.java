@@ -261,7 +261,7 @@ public class CalculateLocalMeans_ implements PlugIn {
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
 
         // Create OpenCL program
-        String programStringGetPatchMeans = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchMeans2D.cl");
+        String programStringGetPatchMeans = getResourceAsString(BlockRepetition2D_.class, "kernelGetLocalStatistics2D.cl");
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);
