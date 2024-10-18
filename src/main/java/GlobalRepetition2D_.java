@@ -114,7 +114,7 @@ public class GlobalRepetition2D_ implements PlugIn {
                 blockWidth, blockHeight, Utils.EPSILON);
 
         // Calculate relevance mask
-        Utils.RelevanceMask2D relevanceMask = Utils.getRelevanceMask2D(inputImage.getImageArray(),
+        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage.getImageArray(),
                 inputImage.getWidth(), inputImage.getHeight(), blockRadiusWidth, blockRadiusHeight,
                 localStatistics.getLocalStds(), relevanceConstant);
 

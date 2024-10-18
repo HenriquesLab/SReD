@@ -7,7 +7,6 @@ import ij.plugin.LutLoader;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import ij.process.LUT;
-
 import java.awt.image.IndexColorModel;
 import java.io.IOException;
 import java.io.InputStream;
@@ -1423,9 +1422,6 @@ public class Utils {
         }
         return normalizedArray;
     }
-
-
-
 
 
     public static double getInvariant(float[] patch, int w, int h, int p, int q){
