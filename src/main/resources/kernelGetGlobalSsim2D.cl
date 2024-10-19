@@ -60,7 +60,6 @@ kernel void kernelGetGlobalSsim2D(
     for(int y=bRH; y<image_height-bRH; y++){
         for(int x=bRW; x<image_width-bRW; x++){
 
-
             // Get test block pixels, checking to avoid blocks with no structural relevance
             float test_std = local_stds[y*image_width+x];
             float test_var = (float)test_std*(float)test_std;
