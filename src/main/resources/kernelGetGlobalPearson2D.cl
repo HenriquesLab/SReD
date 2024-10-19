@@ -22,6 +22,7 @@ kernel void kernelGetGlobalPearson2D(
 
     // Bound check to avoid borders
     if(gx<bRW || gx>=image_width-bRW || gy<bRH || gy>=image_height-bRH){
+        pearson_map[gy*image_width+gx] = 0.0f;
         return;
     }
 
@@ -33,7 +34,6 @@ kernel void kernelGetGlobalPearson2D(
         pearson_map[gy*image_width+gx] = 0.0f; // Set pixel to zero to avoid retaining spurious values already in memory
         return;
     }
-
 
     // Get reference block
     float ref_block[block_size] = {0.0f};
@@ -50,7 +50,6 @@ kernel void kernelGetGlobalPearson2D(
         }
     }
 
-
     // Mean-subtract reference block
     float ref_mean = local_means[gy*image_width+gx];
     for(int i=0; i<block_size; i++){
@@ -60,7 +59,6 @@ kernel void kernelGetGlobalPearson2D(
     // Calculate similarity between the reference and test blocks
     for(int y=bRH; y<image_height-bRH; y++){
         for(int x=bRW; x<image_width-bRW; x++){
-
 
             // Get test block pixels, checking to avoid blocks with no structural relevance
             float test_std = local_stds[y*image_width+x];

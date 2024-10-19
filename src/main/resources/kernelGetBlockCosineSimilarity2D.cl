@@ -16,6 +16,7 @@ kernel void kernelGetBlockCosineSimilarity2D(
 
     // Bound check (avoids borders dynamically based on block dimensions)
     if(gx<bRW || gx>=w-bRW || gy<bRH || gy>=h-bRH){
+        cosine_similarity_map[gy*w+gx] = 0.0f;
         return;
     }
 

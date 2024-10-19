@@ -25,9 +25,9 @@ kernel void kernelGetGlobalPearson3D(
 
     // Bound check to avoid borders
     if(gx<bRW || gx>=image_width-bRW || gy<bRH || gy>=image_height-bRH || gz<bRZ || gz>=image_depth-bRZ){
+        pearson_map[image_width*image_height*gz+gy*image_width+gx] = 0.0f;
         return;
     }
-
 
     // Check to avoid blocks with no structural relevance
     int ref_index = image_width*image_height*gz+gy*image_width+gx;

@@ -1,7 +1,7 @@
 //#pragma OPENCL EXTENSION cl_khr_fp64 : enable
-#define imageWidth $WIDTH$
-#define imageHeight $HEIGHT$
-#define imageDepth $DEPTH$
+#define image_width $WIDTH$
+#define image_height $HEIGHT$
+#define image_depth $DEPTH$
 #define block_size $BLOCK_SIZE$
 #define bW $BW$
 #define bH $BH$
@@ -26,7 +26,8 @@ kernel void kernelGetBlockSsim3D(
     int gz = get_global_id(2);
 
     // Bound check (avoids borders dynamically based on block dimensions)
-    if(gx<bRW || gx>=imageWidth-bRW || gy<bRH || gy>=imageHeight-bRH || gz<bRZ || gz>=imageDepth-bRZ){
+    if(gx<bRW || gx>=image_width-bRW || gy<bRH || gy>=image_height-bRH || gz<bRZ || gz>=image_depth-bRZ){
+        ssim_map[image_width*image_height*gz+gy*image_width+gx] = 0.0f;
         return;
     }
 
@@ -55,7 +56,7 @@ kernel void kernelGetBlockSsim3D(
                 float dy = (float)(y-gy);
                 float dz = (float)(z-gz);
                 if(((dx*dx)/(float)(bRW*bRW))+((dy*dy)/(float)(bRH*bRH)+((dz*dz)/(float)(bRZ*bRZ))) <= 1.0f){
-                    comp_block[index] = ref_pixels[imageWidth*imageHeight*z+y*imageWidth+x];
+                    comp_block[index] = ref_pixels[image_width*image_height*z+y*image_width+x];
                     index++;
                 }
             }
@@ -63,7 +64,7 @@ kernel void kernelGetBlockSsim3D(
     }
 
     // Mean-subtract comparison block
-    float comp_mean = local_means[imageWidth*imageHeight*gz+gy*imageWidth+gx];
+    float comp_mean = local_means[image_width*image_height*gz+gy*image_width+gx];
     for(int i=0; i<block_size; i++){
         comp_block[i] = comp_block[i] - comp_mean;
     }
@@ -90,14 +91,14 @@ kernel void kernelGetBlockSsim3D(
     float c2 = 0.0009f;
     //float c3 = c2/2.0f;
     float c3 = 0.00045f;
-    float comp_std = local_stds[imageWidth*imageHeight*gz+gy*imageWidth+gx];
+    float comp_std = local_stds[image_width*image_height*gz+gy*image_width+gx];
 
     if(ref_std == 0.0 && comp_std == 0.0){
-        ssim_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = 1.0f; // Special case when both blocks are flat, correlation is 1
+        ssim_map[image_width*image_height*gz+gy*image_width+gx] = 1.0f; // Special case when both blocks are flat, correlation is 1
     }else if(ref_std == 0.0 || comp_std == 0.0){
-        ssim_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = 0.0f; // Special case when one block is flat, correlation is 0
+        ssim_map[image_width*image_height*gz+gy*image_width+gx] = 0.0f; // Special case when one block is flat, correlation is 0
     }else{
         float ssim = (float) ((2.0f*ref_mean*comp_mean+c1)*(2.0f*covariance+c2))/(((ref_mean*ref_mean)+(comp_mean*comp_mean)+c1)*((ref_std*ref_std)+(comp_std*comp_std)+c2));
-        ssim_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = (float) fmax(0.0f, ssim);
+        ssim_map[image_width*image_height*gz+gy*image_width+gx] = (float) fmax(0.0f, ssim);
     }
 }

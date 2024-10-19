@@ -22,6 +22,7 @@ kernel void kernelGetGlobalSsim2D(
 
     // Bound check to avoid borders
     if(gx<bRW || gx>=image_width-bRW || gy<bRH || gy>=image_height-bRH){
+        ssim_map[gy*image_width+gx] = 0.0f;
         return;
     }
 
@@ -80,7 +81,6 @@ kernel void kernelGetGlobalSsim2D(
                     }
                 }
 
-
                 // Mean-subtract test block
                 float test_mean = local_means[y*image_width+x];
                 for(int i=0; i<block_size; i++){
@@ -93,7 +93,6 @@ kernel void kernelGetGlobalSsim2D(
                     covariance += ref_block[i] * test_block[i];
                 }
                 covariance /= (float)(block_size-1);
-
 
                 // Calculate weight
                 float weight = (float)exp((float)(-1.0f)*(float)(((ref_std-test_std)*(ref_std-test_std))/(filter_param+EPSILON)));

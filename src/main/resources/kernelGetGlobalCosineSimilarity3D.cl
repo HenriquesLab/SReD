@@ -21,9 +21,9 @@ kernel void kernelGetGlobalCosineSimilarity3D(
     int gy = get_global_id(1);
     int gz = get_global_id(2);
 
-
     // Bound check to avoid borders
     if(gx<bRW || gx>=image_width-bRW || gy<bRH || gy>=image_height-bRH || gz<bRZ || gz>=image_depth-bRZ){
+        cosine_sim_map[image_width*image_height*gz+gy*image_width+gx] = 0.0f;
         return;
     }
 

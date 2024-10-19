@@ -21,6 +21,7 @@ kernel void kernelGetBlockNrmse3D(
 
     // Bound check (avoids borders dynamically based on block dimensions)
     if(gx<bRW || gx>=image_width-bRW || gy<bRH || gy>=image_height-bRH || gz<bRZ || gz>=image_depth-bRZ){
+        rmse_map[image_width*image_height*gz+gy*image_width+gx] = 0.0f;
         return;
     }
 

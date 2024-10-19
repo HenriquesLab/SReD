@@ -510,8 +510,6 @@ public class CLUtils {
                 blockWidth, blockHeight, Utils.EPSILON);
 
         // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
         CLBuffer<FloatBuffer> clBlockPixels = CLUtils.createAndFillCLBuffer(context, blockSize, READ_ONLY,
                 referenceBlock2D.getPixels());
         queue.putWriteBuffer(clBlockPixels, true);
@@ -735,8 +733,6 @@ public class CLUtils {
 
 
         // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
         CLBuffer<FloatBuffer> clBlockPixels = CLUtils.createAndFillCLBuffer(context, blockSize, READ_ONLY,
                 referenceBlock2D.getPixels());
         queue.putWriteBuffer(clBlockPixels, true);
@@ -852,8 +848,6 @@ public class CLUtils {
                 blockWidth, blockHeight, Utils.EPSILON);
 
         // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
         CLBuffer<FloatBuffer> clBlockPixels = CLUtils.createAndFillCLBuffer(context, blockSize, READ_ONLY,
                 referenceBlock2D.getPixels());
         queue.putWriteBuffer(clBlockPixels, true);
@@ -988,8 +982,6 @@ public class CLUtils {
                 blockWidth, blockHeight, Utils.EPSILON);
 
         // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
         CLBuffer<FloatBuffer> clBlockPixels = CLUtils.createAndFillCLBuffer(context, blockSize, READ_ONLY,
                 referenceBlock2D.getPixels());
         queue.putWriteBuffer(clBlockPixels, true);
@@ -1259,8 +1251,6 @@ public class CLUtils {
                 blockRadiusWidth, blockRadiusHeight, blockRadiusDepth, Utils.EPSILON);
 
         // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
         CLBuffer<FloatBuffer> clBlockPixels = CLUtils.createAndFillCLBuffer(context, blockSize, READ_ONLY,
                 referenceBlock3D.getPixels());
         queue.putWriteBuffer(clBlockPixels, true);
@@ -1502,8 +1492,6 @@ public class CLUtils {
                 blockRadiusWidth, blockRadiusHeight, blockRadiusDepth, Utils.EPSILON);
 
         // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
         CLBuffer<FloatBuffer> clBlockPixels = CLUtils.createAndFillCLBuffer(context, blockSize, READ_ONLY,
                 referenceBlock3D.getPixels());
         queue.putWriteBuffer(clBlockPixels, true);
@@ -1623,8 +1611,6 @@ public class CLUtils {
                 blockRadiusWidth, blockRadiusHeight, blockRadiusDepth, Utils.EPSILON);
 
         // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
         CLBuffer<FloatBuffer> clBlockPixels = CLUtils.createAndFillCLBuffer(context, blockSize, READ_ONLY,
                 referenceBlock3D.getPixels());
         queue.putWriteBuffer(clBlockPixels, true);

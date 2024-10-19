@@ -19,16 +19,13 @@ kernel void kernelGetBlockCosineSimilarity3D(
 
     // Bound check (avoids borders dynamically based on block dimensions)
     if(gx<bRW || gx>=imageWidth-bRW || gy<bRH || gy>=imageHeight-bRH || gz<bRZ || gz>=imageDepth-bRZ){
+        cosine_similarity_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = 0.0f;
         return;
     }
 
 
-    // ------------------------------------- //
-    // ---- Calculate cosine similarity ---- //
-    // ------------------------------------- //
-
+    // Calculate cosine similarity
     float test_std = local_stds[imageWidth*imageHeight*gz+gy*imageWidth+gx];
-
     float similarity = (ref_std*test_std) / (sqrt(ref_std*ref_std)*sqrt(test_std*test_std)+EPSILON);
     cosine_similarity_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = (float)fmax(0.0f, similarity);
 }
