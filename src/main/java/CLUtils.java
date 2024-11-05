@@ -322,8 +322,12 @@ public class CLUtils {
      * @return a new string with the first occurrence of the target substring replaced by the replacement string;
      *         if the target substring is not found, the original string is returned unchanged
      */
-    public static String replaceFirst(String source, String target, String replacement)
-    {
+    public static String replaceFirst(String source, String target, String replacement) {
+        // Return the original string if the target is empty
+        if (target == null || target.isEmpty()) {
+            return source;
+        }
+
         int index = source.indexOf(target);
         if (index == -1) {
             return source;
@@ -331,7 +335,7 @@ public class CLUtils {
 
         return source.substring(0, index)
                 .concat(replacement)
-                .concat(source.substring(index+target.length()));
+                .concat(source.substring(index + target.length()));
     }
 
 
@@ -342,7 +346,7 @@ public class CLUtils {
      * @param globalSize the total size to be rounded up
      * @return the rounded-up value of globalSize to the nearest multiple of groupSize
      */
-    private static int roundUp(int groupSize, int globalSize)
+    public static int roundUp(int groupSize, int globalSize)
     {
         int r = globalSize % groupSize;
         if (r == 0) {
@@ -527,7 +531,6 @@ public class CLUtils {
         programStringGetBlockPearson2D = replaceFirst(programStringGetBlockPearson2D, "$BLOCK_HEIGHT$", "" + blockHeight);
         programStringGetBlockPearson2D = replaceFirst(programStringGetBlockPearson2D, "$BRW$", "" + bRW);
         programStringGetBlockPearson2D = replaceFirst(programStringGetBlockPearson2D, "$BRH$", "" + bRH);
-        programStringGetBlockPearson2D = replaceFirst(programStringGetBlockPearson2D, "$BLOCK_MEAN$", "" + referenceBlock2D.getMean());
         programStringGetBlockPearson2D = replaceFirst(programStringGetBlockPearson2D, "$BLOCK_STD$", "" + referenceBlock2D.getStd());
         programStringGetBlockPearson2D = replaceFirst(programStringGetBlockPearson2D, "$EPSILON$", "" + Utils.EPSILON);
         CLProgram programGetBlockPearson2D = context.createProgram(programStringGetBlockPearson2D).build();
@@ -559,15 +562,18 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(),
-                imageWidth, imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMask.getRelevanceMask());
+            Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
+                    imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
+            relevanceMaskArray = relevanceMask.getRelevanceMask();
+            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
-            repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH, relevanceMask.getRelevanceMask());
+            repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH,
+                    relevanceMaskArray);
         }
 
         // Release memory
@@ -666,16 +672,18 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
-                imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMask.getRelevanceMask());
+        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
+                    imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
+        relevanceMaskArray = relevanceMask.getRelevanceMask();
+        repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
             repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH,
-                    relevanceMask.getRelevanceMask());
+                    relevanceMaskArray);
         }
 
         // Release memory
@@ -782,17 +790,18 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
-                imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
-
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMask.getRelevanceMask());
+            Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
+                    imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
+            relevanceMaskArray = relevanceMask.getRelevanceMask();
+            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
             repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH,
-                    relevanceMask.getRelevanceMask());
+                    relevanceMaskArray);
         }
 
         // Release memory
@@ -896,22 +905,23 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
-                imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
-
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMask.getRelevanceMask());
+            Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
+                    imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
+            relevanceMaskArray = relevanceMask.getRelevanceMask();
+            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH,
-                relevanceMask.getRelevanceMask());
+                relevanceMaskArray);
 
         // Invert NRMSE
         for (int y=bRH; y<imageHeight-bRH; y++) {
             for (int x=bRW; x<imageWidth-bRW; x++) {
                 int index = y*imageWidth+x;
-                if(relevanceMask.getRelevanceMask()[index]>0.0f) {
+                if(relevanceMaskArray[index]>0.0f) {
                     float rmse = repetitionMap[index];
                     if (rmse == 0.0f) { // Special case where RMSE is 0, 1/rmse would be undefined but we want perfect similarity
                         repetitionMap[index] = 1.0f;
@@ -925,7 +935,7 @@ public class CLUtils {
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
             repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH,
-                    relevanceMask.getRelevanceMask());
+                    relevanceMaskArray);
         }
 
         // Release memory
@@ -1048,19 +1058,19 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
-                imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
-
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMask.getRelevanceMask());
+            Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
+                    imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
+            relevanceMaskArray = relevanceMask.getRelevanceMask();
+            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
             repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH,
-                    relevanceMask.getRelevanceMask());
+                    relevanceMaskArray);
         }
-
 
         // Release memory
         context.release();
@@ -1308,17 +1318,18 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        float[] relevanceMask = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
-
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMask);
+            relevanceMaskArray = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
+                    blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
+
+            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
             repetitionMap = Utils.normalizeImage3D(repetitionMap, imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                    blockRadiusHeight, blockRadiusDepth, relevanceMask);
+                    blockRadiusHeight, blockRadiusDepth, relevanceMaskArray);
         }
 
         // Release memory
@@ -1425,17 +1436,18 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        float[] relevanceMask = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
-
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMask);
+            relevanceMaskArray = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
+                    blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
+
+            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
             repetitionMap = Utils.normalizeImage3D(repetitionMap, imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                    blockRadiusHeight, blockRadiusDepth, relevanceMask);
+                    blockRadiusHeight, blockRadiusDepth, relevanceMaskArray);
         }
 
         // Release memory
@@ -1548,17 +1560,18 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        float[] relevanceMask = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
-
+        float[] relevanceMaskArray = null;
         if(relevanceConstant>0.0f) {
-            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMask);
+            relevanceMaskArray = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
+                    blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
+
+            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMaskArray);
         }
 
         // Normalize repetition map (avoiding masked pixels)
         if(normalizeOutput) {
-            repetitionMap = Utils.normalizeImage3D(repetitionMap, imageWidth, imageHeight, imageDepth,
-                    blockRadiusWidth, blockRadiusHeight, blockRadiusDepth, relevanceMask);
+            repetitionMap = Utils.normalizeImage3D(repetitionMap, imageWidth, imageHeight, imageDepth, blockRadiusWidth,
+                    blockRadiusHeight, blockRadiusDepth, relevanceMaskArray);
         }
 
         // Release memory

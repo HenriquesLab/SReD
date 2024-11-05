@@ -91,8 +91,6 @@ public class Utils {
         public float getNoiseMeanVariance() {
             return noiseMeanVariance;
         }
-
-
     }
 
 
@@ -219,7 +217,8 @@ public class Utils {
     /**
      * Custom object to hold a 2D input image along with its dimensions and statistics.
      */
-    public static class InputImage2D {
+    public static class InputImage2D
+    {
         private final float[] imageArray;
         private final int width;
         private final int height;
@@ -287,7 +286,8 @@ public class Utils {
      * Processing involves discarding pixels outside the inbound spheroid and normalizing the range.
      * It provides accessor methods to retrieve block dimensions and statistical information.
      */
-    public static class ReferenceBlock3D {
+    public static class ReferenceBlock3D
+    {
         private final float[] pixels;
         private final int width;
         private final int height;
@@ -422,7 +422,8 @@ public class Utils {
     /**
      * Custom object to hold a 3D input image along with its dimensions and statistics.
      */
-    public static class InputImage3D {
+    public static class InputImage3D
+    {
         private final float[] imageArray;
         private final int width;
         private final int height;
@@ -854,7 +855,6 @@ public class Utils {
     }
 
 
-
     /**
      * Apply a mask to an image (in-place).
      *
@@ -954,7 +954,10 @@ public class Utils {
         }else{
             for (int y=borderHeight; y<imageHeight-borderHeight; y++) {
                 for (int x=borderWidth; x<imageWidth-borderWidth; x++) {
-                    if (mask[y*imageWidth+x]>0.0f) {
+                    if (mask[y*imageWidth+x] != 0.0f && mask[y*imageWidth+x] != 1.0f) {
+                        throw new IllegalArgumentException("Relevance mask must be binary (0.0f or 1.0f)");
+                    }
+                    if (mask[y*imageWidth+x] > 0.0f) {
                         imageMin = min(imageArray[y*imageWidth+x], imageMin);
                         imageMax = max(imageArray[y*imageWidth+x], imageMax);
                     }
@@ -1190,7 +1193,7 @@ public class Utils {
 
         // Normalise to range
         if (normalizeOutput) {
-            normalizeArray(stackArray1D);
+            stackArray1D = normalizeArray(stackArray1D);
         }
 
         return new InputImage3D(stackArray1D, width, height, depth, size, calibration, gain, sigma, offset);
@@ -1257,10 +1260,10 @@ public class Utils {
 
             // Normalise to range
             if (normalizeOutput) {
-                normalizeArray(stackArray1D);
+                imageArray = normalizeArray(stackArray1D);
             }
         } else if (normalizeOutput) {
-            normalizeArray(imageArray);
+            imageArray = normalizeArray(imageArray);
         }
 
         Calibration calibration = null;
@@ -1576,18 +1579,18 @@ public class Utils {
     {
 
         // Cache variables
-        int arrayLenght = array.length;
+        int arrayLength = array.length;
 
         // Get min max
         float arrayMin = Float.MAX_VALUE;
         float arrayMax = -Float.MAX_VALUE;
-        for(int i=0; i<arrayLenght; i++){
+        for(int i=0; i<arrayLength; i++){
             arrayMin = min(array[i], arrayMin);
             arrayMax = max(array[i], arrayMax);
         }
 
         // Remap values
-        float[] normalizedArray = new float[arrayLenght];
+        float[] normalizedArray = new float[arrayLength];
         for(int i=0; i< array.length; i++){
             normalizedArray[i] = (array[i]-arrayMin) / (arrayMax-arrayMin+EPSILON);
         }
@@ -1664,10 +1667,10 @@ public class Utils {
     public static int getImageIDByTitle(String[] titles, int[] ids, String title) {
         for (int i = 0; i < titles.length; i++) {
             if (titles[i].equals(title)) {
-                return ids[i];
+                return ids[i]; // Return the corresponding ID if title matches
             }
         }
-        return 0; // Return 0 if not found
+        throw new IllegalArgumentException("Title not found: " + title); // Throw exception if title not found
     }
 
 

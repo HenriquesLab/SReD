@@ -6,7 +6,6 @@
 #define bH $BH$
 #define bRW $BRW$
 #define bRH $BRH$
-#define ref_mean $BLOCK_MEAN$
 #define ref_std $BLOCK_STD$
 #define EPSILON $EPSILON$
 
