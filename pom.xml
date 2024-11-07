@@ -130,36 +130,4 @@
             <url>https://maven.scijava.org/content/groups/public</url>
         </repository>
     </repositories>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.7.1</version>
-                <executions>
-                    <execution>
-                        <phase>prepare-package</phase>
-                        <goals>
-                            <goal>unpack</goal>
-                        </goals>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.jogamp.jocl</groupId>
-                                    <artifactId>jocl-main</artifactId>
-                                    <version>2.3.2</version>
-                                    <type>jar</type>
-                                    <outputDirectory>${project.build.directory}/natives</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-
-
-
 </project>
