@@ -92,6 +92,11 @@
         </dependency>
         <dependency>
             <groupId>org.jogamp.jocl</groupId>
+            <artifactId>jocl</artifactId>
+            <version>2.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jogamp.jocl</groupId>
             <artifactId>jocl-main</artifactId>
             <version>2.3.2</version>
         </dependency>
@@ -108,7 +113,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
-            <version>5.10.0</version> <!-- Or the latest stable version -->
+            <version>5.10.2</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
