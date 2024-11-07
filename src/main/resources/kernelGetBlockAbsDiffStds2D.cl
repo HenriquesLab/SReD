@@ -27,5 +27,5 @@ kernel void kernelGetBlockAbsDiffStds2D(
 
     float test_std = local_stds[gy*w+gx];
 
-    diff_std_map[gy*w+gx] = fabs(ref_std - test_std);
+    diff_std_map[gy*w+gx] = fabs((float)ref_std - (float)test_std);
 }

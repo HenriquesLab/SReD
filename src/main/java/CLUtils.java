@@ -905,8 +905,19 @@ public class CLUtils {
         }
 
         // Calculate and apply relevance mask
-        float[] relevanceMaskArray = null;
-        if(relevanceConstant>0.0f) {
+        float[] relevanceMaskArray = new float[imageSize];
+
+        if(relevanceConstant == 0.0f){
+            Arrays.fill(relevanceMaskArray, 0.0f);
+            for(int y=bRH; y<imageHeight-bRH; y++){
+                for(int x=bRW; x<imageWidth-bRW; x++){
+                    relevanceMaskArray[y*imageWidth+x] = 1.0f;
+                }
+            }
+            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMaskArray);
+        }
+
+        if(relevanceConstant != 0.0f) {
             Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
                     imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
             relevanceMaskArray = relevanceMask.getRelevanceMask();
