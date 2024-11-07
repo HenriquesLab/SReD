@@ -1,20 +1,9 @@
 import static java.lang.Math.*;
 import static org.junit.jupiter.api.Assertions.*;
-
 import com.jogamp.opencl.*;
-
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.FloatBuffer;
-import java.util.Arrays;
-import java.util.Random;
-
-import ij.ImagePlus;
-import ij.ImageStack;
-import ij.WindowManager;
-import ij.measure.Calibration;
-import ij.process.FloatProcessor;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
