@@ -86,7 +86,6 @@ public class CLUtilsTest {
     }
 
 
-
     // ------------------------------------------------------------------ //
     // ---- METHODS FOR OPENCL INITIALISATION AND RESOURCE MANAGEMENT---- //
     // ------------------------------------------------------------------ //
@@ -96,6 +95,10 @@ public class CLUtilsTest {
 
         @Test
         public void testGetOpenCLResources() {
+
+            System.out.println("Library path: " + System.getProperty("java.library.path"));
+
+
             // Call the method to get OpenCL resources
             CLUtils.OpenCLResources resources = null;
             boolean useDevice = false; // You can change this to true if you want to test user-defined device preferences
