@@ -21,8 +21,14 @@
 // -------------------------- //
 
 input = "input_normalize.tif"
-blockStack = "block_stack.tif"
-outputDir = File.separator + "Users/ammendes/Library/CloudStorage/OneDrive-igc.gulbenkian.pt/Mendes_2023/Data_Leterrier_spectrin/Analysis/CTRL/4/inputs_padded_rotated";
+blockStack = "line_stack.tif"
+selectWindow(blockStack);
+blockW = getWidth(); // Block width
+blockH = getHeight(); // Block height
+blockRW = round(blockW/2); // Block radius width
+blockRH = round(blockH/2); // Block radius height
+
+outputDir = File.separator + "C:/Users/Actions/Desktop/AFONSO/spectrin_test/input_padded";
 
 
 // --------------------------------- //
@@ -55,6 +61,15 @@ for(y=0; y<h; y++){
 	}
 }
 
+// ------------------------------ //
+// ---- Get final dimensions ---- //
+// ------------------------------ //
+
+diagonal = sqrt(w*w + h*h);
+paddingW = Math.ceil((diagonal-w+1)+blockRW);
+paddingH = Math.ceil((diagonal-h+1)+blockRH);
+newW = w+paddingW;
+newH = h+paddingH;
 
 // ------------------------------ //
 // ---- Build rotated inputs ---- //
@@ -71,7 +86,7 @@ for(i=0; i<nAngles; i++){
 	tempTitle=getTitle();
 	
 	// Add padding (to not lose information outside bounds when rotating
-	run("Canvas Size...", "width=3620 height=3620 position=Center zero");
+	run("Canvas Size...", "width=" + newW + " height="+ newH +" position=Center zero");
 	
 	// Rotate
 	run("Rotate... ", "angle="+ angles[i] +" grid=1 interpolation=Bicubic");
