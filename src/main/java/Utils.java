@@ -706,7 +706,8 @@ public class Utils {
      * Retrieves an InputImage2D object from a 2D image, optionally stabilizing noise variance
      * and normalizing the output.
      *
-     * NOTE: This is an OVERLOAD method that takes an image array instead of an ImageJ image ID uses specific GAT parameter values to calculate the VST.
+     * NOTE: This is an OVERLOAD method that takes an image array instead of an ImageJ image ID and uses predefined
+     * GAT parameter values to calculate the VST.
      *
      * <p>If the imageID is invalid, the function will return {@code null}.</p>
      *
@@ -829,29 +830,51 @@ public class Utils {
      * @return A float array where the first element is the mean and the second element is the variance of the block.
      */
     public static float[] getMeanAndVarBlock2D(float[] imageArray, int imageWidth, int xStart, int yStart, int xEnd,
-                                               int yEnd)
-    {
+                                               int yEnd) {
+        // Validate block dimensions
+        int blockWidth = xEnd - xStart;
+        int blockHeight = yEnd - yStart;
+        int blockSize = blockWidth * blockHeight;
+
+        if (blockWidth <= 0 || blockHeight <= 0) {
+            throw new IllegalArgumentException("Block dimensions must be positive.");
+        }
+        if (blockSize <= 0) {
+            throw new IllegalArgumentException("Block size cannot be zero.");
+        }
+
+        // Validate input array dimensions
+        if (xStart < 0 || yStart < 0 || xEnd > imageWidth || yEnd > imageArray.length / imageWidth) {
+            throw new IllegalArgumentException("Block coordinates are out of bounds.");
+        }
+
+        // Initialize variables
         float mean = 0.0f;
-        float var;
         float sq_sum = 0.0f;
 
-        int blockWidth = xEnd - xStart; // Block width
-        int blockHeight = yEnd - yStart; // Block height
-        int blockSize = blockWidth * blockHeight; // Total number of pixels in the block
-
-        // Calculate the sum of pixel values and the sum of squared pixel values
-        for (int y=yStart; y<yEnd; y++) {
-            for (int x=xStart; x<xEnd; x++) {
-                float v = imageArray[y*imageWidth+x]; // Get the pixel value
-                mean += v; // Accumulate the sum
-                sq_sum += v * v; // Accumulate the sum of squares
+        // Compute mean and sum of squares
+        for (int y = yStart; y < yEnd; y++) {
+            for (int x = xStart; x < xEnd; x++) {
+                float v = imageArray[y * imageWidth + x];
+                // Validate input pixel value
+                if (Float.isNaN(v) || Float.isInfinite(v)) {
+                    throw new IllegalArgumentException("Input contains invalid (NaN or Infinite) values.");
+                }
+                mean += v;
+                sq_sum += v * v;
             }
         }
 
-        mean = mean / blockSize; // Calculate the mean
-        var = sq_sum / blockSize - mean * mean; // Calculate the variance
+        // Compute final mean and variance
+        mean /= blockSize; // Prevent division by zero
+        float var = sq_sum / blockSize - mean * mean; // Variance formula
 
-        return new float[]{mean, var}; // Return mean and variance
+        // Ensure result is valid
+        if (Float.isNaN(var)) {
+            throw new IllegalStateException("Computed variance is NaN. Check inputs and computations.");
+        }
+
+        return new float[]{mean, var};
     }
 
 
@@ -1763,6 +1786,9 @@ public class Utils {
         // Display results
         imp.show();
     }
+
+    // Quadtree functions
+
 }
 
 

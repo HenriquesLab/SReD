@@ -2510,7 +2510,7 @@ public class CLUtils {
                     openCLResources.getQueue().put3DRangeKernel(kernelGetGlobalPearson3D,
                             nXB * 64, nYB * 64, nZB * blockDepth,
                             xWorkSize, yWorkSize, zWorkSize, 0, 0, 0);
-                    openCLResources.getQueue().finish();
+                    //openCLResources.getQueue().finish();
                 }
             }
         }
