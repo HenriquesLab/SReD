@@ -59,8 +59,11 @@ public class OpenCLPreferences_ implements PlugIn {
         // ---- Dialog box ---- //
         // -------------------- //
 
+        String[] sizes = {"64", "128", "256", "512", "1024" , "2048"}; // Define compute block sizes
+
         GenericDialog gd = new GenericDialog("OpenCL Preferences");
         gd.addChoice("Preferred device", deviceNames, deviceNames[0]);
+        gd.addChoice("Max. compute block size", sizes, sizes[0]);
         gd.showDialog();
 
 
@@ -68,11 +71,18 @@ public class OpenCLPreferences_ implements PlugIn {
         // ---- Set preference ---- //
         // ------------------------ //
 
-        String choice = gd.getNextChoice();
-
+        String prefDevice = gd.getNextChoice();
         for (int i=0; i<deviceNames.length; i++) {
-            if (deviceNames[i].equals(choice)) {
+            if (deviceNames[i].equals(prefDevice)) {
                 Prefs.set("SReD.OpenCL.device", deviceNames[i]);
+            }
+        }
+
+        String prefBlockSize = gd.getNextChoice();
+        for (int i=0; i<sizes.length; i++) {
+            if (sizes[i].equals(prefBlockSize)) {
+                int number = Integer.parseInt(prefBlockSize);
+                Prefs.set("SReD.OpenCL.blockSize", number);
             }
         }
 
