@@ -60,10 +60,12 @@ public class OpenCLPreferences_ implements PlugIn {
         // -------------------- //
 
         String[] sizes = {"64", "128", "256", "512", "1024" , "2048"}; // Define compute block sizes
+        String[] gatOptions = {"Simplex", "Quadtree/Octree"}; // Define methods to estimate GAT parameters
 
         GenericDialog gd = new GenericDialog("OpenCL Preferences");
         gd.addChoice("Preferred device", deviceNames, deviceNames[0]);
         gd.addChoice("Max. compute block size", sizes, sizes[0]);
+        gd.addChoice("GAT parameters estimation", gatOptions, gatOptions[1]);
         gd.showDialog();
 
 
@@ -71,6 +73,7 @@ public class OpenCLPreferences_ implements PlugIn {
         // ---- Set preference ---- //
         // ------------------------ //
 
+        // Prefered OpenCL device
         String prefDevice = gd.getNextChoice();
         for (int i=0; i<deviceNames.length; i++) {
             if (deviceNames[i].equals(prefDevice)) {
@@ -78,11 +81,20 @@ public class OpenCLPreferences_ implements PlugIn {
             }
         }
 
+        // Prefered compute block size
         String prefBlockSize = gd.getNextChoice();
         for (int i=0; i<sizes.length; i++) {
             if (sizes[i].equals(prefBlockSize)) {
                 int number = Integer.parseInt(prefBlockSize);
                 Prefs.set("SReD.OpenCL.blockSize", number);
+            }
+        }
+
+        // Prefered method to estimate GAT parameters
+        String prefGATMethod = gd.getNextChoice();
+        for(int i=0; i<gatOptions.length; i++){
+            if(gatOptions[i].equals(prefGATMethod)){
+                Prefs.set("SReD.OpenCL.gatMethod", gatOptions[i]);
             }
         }
 

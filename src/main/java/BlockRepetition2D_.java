@@ -57,7 +57,7 @@ public class BlockRepetition2D_ implements PlugIn {
         gd.addChoice("Metric:", METRICS, METRICS[0]);
         gd.addCheckbox("Timelapse?", false);
         gd.addCheckbox("Normalize output?", true);
-        gd.addCheckbox("Use device from preferences?", false);
+        gd.addCheckbox("Use OpenCL device from preferences?", false);
         gd.addHelp("https://github.com/HenriquesLab/SReD/wiki");
         gd.showDialog();
         if (gd.wasCanceled()) return;

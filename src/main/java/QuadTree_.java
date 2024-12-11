@@ -6,7 +6,11 @@ import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import org.apache.commons.math3.distribution.FDistribution;
+import org.apache.commons.math3.stat.regression.SimpleRegression;
+
+import static java.lang.Math.sqrt;
 
 public class QuadTree_ implements PlugIn {
 
@@ -16,6 +20,7 @@ public class QuadTree_ implements PlugIn {
     private int imageWidth; // Width of the image (for pixel indexing)
     private int imageHeight; // Height of the image
     private int d; // Number of dimensions in the data (e.g., 2 for 2D data)
+    private int maxIterations; // Maximum iterations for robust means calculations
 
     @Override
     public void run(String arg) {
@@ -35,8 +40,9 @@ public class QuadTree_ implements PlugIn {
 
         // Quadtree parameters
         minSize = 4; // Minimum length of the squares
-        alpha = 0.05f; // Significance level for the F-distribution
+        alpha = 0.01f; // Significance level for the F-distribution. Smaller values results less stringency (larger regions).
         d = 2;
+        maxIterations = 50;
 
         // Create and build the quadtree
         IJ.log("Building QuadTree...");
@@ -45,7 +51,19 @@ public class QuadTree_ implements PlugIn {
 
         // Get robust mean and variance estimations from the QuadTree nodes
         IJ.log("Calculating GAT parameters...");
+        quadTree.calculateRobustMeans(imageData, maxIterations);
+        quadTree.calculateLTSVariances(imageData, 0.75f); // Using 75% of data for variance estimation
 
+        // Collect (mean, variance) pairs
+        List<double[]> meanVariancePairs = quadTree.collectMeanVariancePairs();
+
+        // Perform linear regression and calculate g0 and eDC
+        float[] results = performLinearRegression(meanVariancePairs);
+        float g0 = results[0];
+        float eDC = results[1];
+
+        IJ.log("g0: " + g0);
+        IJ.log("eDC: " + eDC);
 
         // Create and add the overlay to the active image
         Overlay overlay = quadTree.createOverlay();
@@ -53,6 +71,13 @@ public class QuadTree_ implements PlugIn {
 
         // Show the updated image with the overlay
         image.updateAndDraw();
+
+        // SHOW GAT
+        float[] gat = applyGATtree(imageData, imageWidth*imageHeight, g0, eDC);
+        FloatProcessor ipFinal = new FloatProcessor(imageWidth, imageHeight, gat);
+        ImagePlus impFinal = new ImagePlus("output", ipFinal);
+        impFinal.show();
+
     }
 
 
@@ -64,12 +89,13 @@ public class QuadTree_ implements PlugIn {
     public QuadTree_() {
     }
 
-
     // Constructor class for the QuadTree node
     private class Node {
         int x, y, width, height; // Region bounds
         Node topLeft, topRight, bottomLeft, bottomRight; // Children nodes
         boolean isLeaf; // True if this is a leaf node
+        float robustMean; // Robust mean for the block
+        float ltsVariance; // Variance estimated using the LTS
 
         // Constructor for a quadtree node
         public Node(int x, int y, int width, int height) {
@@ -78,9 +104,10 @@ public class QuadTree_ implements PlugIn {
             this.width = width;
             this.height = height;
             this.isLeaf = true; // Initially, a node is a leaf
+            this.robustMean = 0.0f;
+            this.ltsVariance = 0.0f;
         }
     }
-
 
     // Constructor for the quadtree
     public QuadTree_(int imageWidth, int imageHeight, int minSize, float alpha) {
@@ -152,7 +179,7 @@ public class QuadTree_ implements PlugIn {
 
         //int l = 2 * d + 1; // For 2D, l = 5 (2D neighborhood with center pixel)
         float l = 5.0f;
-        float scaleFactor = (float) (1.0 / Math.sqrt((double)(l * l + l))); // Scaling factor for pseudo-residuals
+        float scaleFactor = (float) (1.0 / sqrt((double)(l * l + l))); // Scaling factor for pseudo-residuals
 
         // Compute pseudo-residuals
         List<Float> residuals = new ArrayList<>(); // List to store pseudo-residuals
@@ -211,28 +238,182 @@ public class QuadTree_ implements PlugIn {
     // Method to create an overlay for the quadtree
     public Overlay createOverlay() {
         Overlay overlay = new Overlay();
-        addNodeToOverlay(root, overlay);
+        traverseTree(root, node -> {
+            if (node.isLeaf) {
+                Roi rectangle = new Roi(node.x, node.y, node.width, node.height);
+                rectangle.setStrokeColor(java.awt.Color.RED);
+                rectangle.setStrokeWidth(1);
+                overlay.add(rectangle);
+            }
+        });
         return overlay;
     }
 
-    // Recursive helper method to add nodes to the overlay
-    private void addNodeToOverlay(Node node, Overlay overlay) {
-        if (node.isLeaf) {
-            // Create a rectangle for the leaf node
-            Roi rectangle = new Roi(node.x, node.y, node.width, node.height);
-            rectangle.setStrokeColor(java.awt.Color.RED); // Set rectangle color
-            rectangle.setStrokeWidth(1); // Set rectangle stroke width
-            overlay.add(rectangle);
-        } else {
-            // Recursively process children
-            addNodeToOverlay(node.topLeft, overlay);
-            addNodeToOverlay(node.topRight, overlay);
-            addNodeToOverlay(node.bottomLeft, overlay);
-            addNodeToOverlay(node.bottomRight, overlay);
+
+    // Calculate robust mean of a QuadTree Node using a Leclerc influence function
+    private float calculateRobustMean(Node node, float[] imageData, int maxIterations) {
+        int xStart = node.x;
+        int yStart = node.y;
+        int xEnd = node.x+node.width;
+        int yEnd = node.y+ node.height;
+
+        // Initialize parameters
+        float mean = 0.0f;
+        float variance = 0.0f;
+        int nPixels = 0;
+
+        // Compute initial naive mean and variance
+        for (int y=yStart; y<yEnd; y++) {
+            for (int x=xStart; x<xEnd; x++) {
+                float value = imageData[y*imageWidth+x];
+                mean += value;
+                variance += (value - mean) * (value - mean);
+                nPixels++;
+            }
+        }
+        mean /= (float)nPixels;
+        variance /= (float)(nPixels - 1);
+        variance = Math.max(variance, Utils.EPSILON); // Ensure variance is non-zero to avoid the exponential term below blowing up to infinity or become undefined
+
+        // Iteratively compute the robust mean
+        float prevMean;
+        int iteration = 0;
+
+        do {
+            prevMean = mean;
+            float weightSum = 0.0f;
+            float weightedSum = 0.0f;
+
+            for (int y = yStart; y < yEnd; y++) {
+                for (int x = xStart; x < xEnd; x++) {
+                    float value = imageData[y * imageWidth + x];
+                    float weight = (float) Math.exp(-((double)(value - mean) * (double)(value - mean)) / (2.0d * (double)variance));
+                    weightSum += weight;
+                    weightedSum += weight * value;
+                }
+            }
+
+            // Update mean
+            mean = weightedSum / Math.max(weightSum, Utils.EPSILON); // Ensure weightSum is nonzero to avoid division by zero
+            iteration++;
+        } while (Math.abs(mean - prevMean) > 1e-5 && iteration < maxIterations);
+
+        return mean;
+    }
+
+
+    public void calculateRobustMeans(float[] imageData, int maxIterations) {
+        final int[] leafCount = {0};
+        traverseTree(root, node -> {
+            if (node.isLeaf) {
+                node.robustMean = calculateRobustMean(node, imageData, maxIterations);
+                leafCount[0]++;
+            }
+        });
+        IJ.log("nLEAVES: " + leafCount[0]);
+    }
+
+
+
+    private float calculateLTSVariance(Node node, float[] imageData, float robustMean, float alpha) {
+        int xStart = node.x;
+        int yStart = node.y;
+        int xEnd = xStart + node.width;
+        int yEnd = yStart + node.height;
+
+        // Collect squared residuals
+        List<Float> residuals = new ArrayList<>();
+        for (int y = yStart; y < yEnd; y++) {
+            for (int x = xStart; x < xEnd; x++) {
+                float z = imageData[y * imageWidth + x];
+                float residual = (z - robustMean) * (z - robustMean);
+                residuals.add(residual);
+            }
+        }
+
+        // Sort residuals
+        residuals.sort(Float::compare);
+
+        // Compute the number of residuals to trim based on alpha
+        int n = residuals.size();
+        int h = (int) Math.floor(alpha * (float)n); // Retain alpha fraction of residuals
+
+        // Sum the smallest "h" residuals
+        float trimmedSum = 0.0f;
+        for (int i = 0; i < h; i++) {
+            trimmedSum += residuals.get(i);
+        }
+
+        // Return the trimmed variance
+        return trimmedSum / ((float)h+Utils.EPSILON);
+    }
+
+    public void calculateLTSVariances(float[] imageData, float alpha) {
+        traverseTree(root, node -> {
+            if (node.isLeaf) {
+                node.ltsVariance = calculateLTSVariance(node, imageData, node.robustMean, alpha);
+            }
+        });
+    }
+
+    // Traverse tree
+    private void traverseTree(Node node, Consumer<Node> action) {
+        if (node == null) return;
+
+        // Perform the action on the current node
+        action.accept(node);
+
+        // Recursively traverse children if they exist
+        if (!node.isLeaf) {
+            traverseTree(node.topLeft, action);
+            traverseTree(node.topRight, action);
+            traverseTree(node.bottomLeft, action);
+            traverseTree(node.bottomRight, action);
         }
     }
 
-    // Calculate robust mean of a QuadTree Node using a Leclerc influence function
-    //private float calculateRobusMean(Node node, float[] imageData, float sigma)
+    // Collect mean and variance pairs from QuadTree
+    private List<double[]> collectMeanVariancePairs(){
+        List<double[]> pairs = new ArrayList<>();
+        traverseTree(root, node -> {
+            if(node.isLeaf){
+                pairs.add(new double[]{(double) node.robustMean, (double) node.ltsVariance});
+                IJ.log("mean: " + node.robustMean);
+                IJ.log("var: " + node.ltsVariance);
+            }
+        });
 
+        return pairs;
+    }
+
+
+    // Do linear regression
+    private float[] performLinearRegression(List<double[]> pairs){
+        SimpleRegression regression = new SimpleRegression();
+        for(double[] pair : pairs){
+            regression.addData(pair[0], pair[1]);
+        }
+        regression.regress();
+
+        float g0 = (float)regression.getSlope();
+        float eDC = (float)regression.getIntercept();
+
+        return new float[]{g0, eDC};
+    }
+
+    private float[] applyGATtree(float[] imageData, int nPixels, float g0, float eDC){
+
+        float[] gat = new float[nPixels];
+        double refConstant = 3.0d/8.0d * (double)g0 * (double)g0 + (double)eDC; //threshold to avoid taking the square root of negative values.
+        for(int i =0; i<nPixels; i++) {
+            double v = (double)imageData[i];
+            if(v<-refConstant/g0){
+                v = 0.0d;
+            }else{
+                v = ((2.0d/(double)g0) * sqrt((double)g0 * v + refConstant));
+            }
+            gat[i] = (float) v;
+        }
+        return gat;
+    }
 }
