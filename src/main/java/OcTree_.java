@@ -26,6 +26,13 @@ public class OcTree_ implements PlugIn {
 
     @Override
     public void run(String arg) {
+
+        // Quadtree parameters
+        minSize = 4; // Minimum length of the squares
+        alpha = 0.01f; // Significance level for the F-distribution. Smaller values results less stringency (larger regions).
+        d = 2;
+        maxIterations = 50;
+
         // Get the active image
         ImagePlus image = ij.WindowManager.getCurrentImage();
 
@@ -34,33 +41,45 @@ public class OcTree_ implements PlugIn {
             return;
         }
 
-        // Get image dimensions and pixel data
-        ImageStack ims = image.getStack();
-        imageWidth = ims.getWidth();
-        imageHeight = ims.getHeight();
-        imageDepth = ims.getSize();
-        FloatProcessor processor = image.getProcessor().convertToFloatProcessor();
-        float[] imageData = (float[])processor.getPixels();
 
-        // TODO: NOT CODED FROM HERE ON
-        // Quadtree parameters
-        minSize = 4; // Minimum length of the squares
-        alpha = 0.01f; // Significance level for the F-distribution. Smaller values results less stringency (larger regions).
-        d = 2;
-        maxIterations = 50;
+
+        // Get image dimensions and pixel data
+        ImageStack stack = image.getStack();
+        imageWidth = stack.getWidth();
+        imageHeight = stack.getHeight();
+        imageDepth = stack.getSize();
+
+        // Check if image has at least 3 slices, otherwise kill program
+        if (imageDepth < 3) {
+            IJ.error("Image must have at least 3 slices. Please try again.");
+            return;
+        }
+
+        // Get image array
+        float[] imageData = new float[imageWidth*imageHeight*imageDepth];
+        for(int z=0; z<imageDepth; z++){
+            FloatProcessor fp = stack.getProcessor(z+1).convertToFloatProcessor();
+            for(int y=0; y<imageHeight; y++){
+                for(int x=0; x<imageWidth; x++){
+                    imageData[imageWidth*imageHeight*z+y*imageWidth+x] = fp.getf(y*imageWidth+x);
+                }
+            }
+        }
+
+
 
         // Create and build the quadtree
         IJ.log("Building QuadTree...");
-        QuadTree_ quadTree = new QuadTree_(imageWidth, imageHeight, minSize, alpha);
-        quadTree.buildTree(imageData);
+        OcTree_ ocTree = new OcTree_(imageWidth, imageHeight, imageDepth, minSize, alpha);
+        ocTree.buildTree(imageData);
 
         // Get robust mean and variance estimations from the QuadTree nodes
         IJ.log("Calculating GAT parameters...");
-        quadTree.calculateRobustMeans(imageData, maxIterations);
-        quadTree.calculateLTSVariances(imageData, 0.75f); // Using 75% of data for variance estimation
+        ocTree.calculateRobustMeans(imageData, maxIterations);
+        ocTree.calculateLTSVariances(imageData, 0.75f); // Using 75% of data for variance estimation
 
         // Collect (mean, variance) pairs
-        List<double[]> meanVariancePairs = quadTree.collectMeanVariancePairs();
+        List<double[]> meanVariancePairs = ocTree.collectMeanVariancePairs();
 
         // Perform linear regression and calculate g0 and eDC
         float[] results = performLinearRegression(meanVariancePairs);
@@ -71,16 +90,27 @@ public class OcTree_ implements PlugIn {
         IJ.log("eDC: " + eDC);
 
         // Create and add the overlay to the active image
-        Overlay overlay = quadTree.createOverlay();
-        image.setOverlay(overlay);
+        //Overlay overlay = ocTree.createOverlay();
+        //image.setOverlay(overlay);
 
         // Show the updated image with the overlay
-        image.updateAndDraw();
+        //image.updateAndDraw();
 
         // SHOW GAT
-        float[] gat = applyGATtree(imageData, imageWidth*imageHeight, g0, eDC);
-        FloatProcessor ipFinal = new FloatProcessor(imageWidth, imageHeight, gat);
-        ImagePlus impFinal = new ImagePlus("output", ipFinal);
+        float[] gat = applyGATtree(imageData, imageWidth*imageHeight*imageDepth, g0, eDC);
+
+        ImageStack imsFinal = new ImageStack(imageWidth, imageHeight, imageDepth);
+        for(int z=0; z<imageDepth; z++){
+            float[] temp = new float[imageWidth*imageHeight];
+            for(int y=0; y<imageHeight; y++){
+                for(int x=0; x<imageWidth; x++){
+                    temp[y*imageWidth+x] = gat[imageWidth*imageHeight*z+y*imageWidth+x];
+                }
+            }
+            FloatProcessor fp = new FloatProcessor(imageWidth, imageHeight, temp);
+            imsFinal.setProcessor(fp, z+1);
+        }
+        ImagePlus impFinal = new ImagePlus("Variance-stabilised image", imsFinal);
         impFinal.show();
 
     }
@@ -91,23 +121,25 @@ public class OcTree_ implements PlugIn {
     // ---------------------- //
 
     // Default constructor required by ImageJ
-    public void QuadTree_() {
+    public OcTree_() {
     }
 
     // Constructor class for the QuadTree node
     private class Node {
-        int x, y, width, height; // Region bounds
-        Node topLeft, topRight, bottomLeft, bottomRight; // Children nodes
+        int x, y, z, width, height, depth; // Region bounds
+        Node[] children = new Node[8]; // Children nodes
         boolean isLeaf; // True if this is a leaf node
         float robustMean; // Robust mean for the block
         float ltsVariance; // Variance estimated using the LTS
 
         // Constructor for a quadtree node
-        public Node(int x, int y, int width, int height) {
+        public Node(int x, int y, int z, int width, int height, int depth) {
             this.x = x;
             this.y = y;
+            this.z = z;
             this.width = width;
             this.height = height;
+            this.depth = depth;
             this.isLeaf = true; // Initially, a node is a leaf
             this.robustMean = 0.0f;
             this.ltsVariance = 0.0f;
@@ -115,10 +147,11 @@ public class OcTree_ implements PlugIn {
     }
 
     // Constructor for the quadtree
-    public void QuadTree_(int imageWidth, int imageHeight, int minSize, float alpha) {
-        this.root = new Node(0, 0, imageWidth, imageHeight);
+    public OcTree_(int imageWidth, int imageHeight, int imageDepth, int minSize, float alpha) {
+        this.root = new Node(0, 0, 0, imageWidth, imageHeight, imageDepth);
         this.imageWidth = imageWidth;
         this.imageHeight = imageHeight;
+        this.imageDepth = imageDepth;
         this.minSize = minSize;
         this.alpha = alpha;
     }
@@ -133,7 +166,7 @@ public class OcTree_ implements PlugIn {
         // Check if we should stop splitting
         boolean divide = computeCriterion(node, imageData);
 
-        if (node.width <= minSize || node.height <= minSize || !divide) {
+        if (node.width <= minSize || node.height <= minSize  || node.depth<= minSize || !divide) {
             node.isLeaf = true;
             return;
         }
@@ -142,33 +175,42 @@ public class OcTree_ implements PlugIn {
         splitNode(node);
 
         // Recursively process each child
-        buildTreeRecursive(node.topLeft, imageData);
-        buildTreeRecursive(node.topRight, imageData);
-        buildTreeRecursive(node.bottomLeft, imageData);
-        buildTreeRecursive(node.bottomRight, imageData);
+        buildTreeRecursive(node.children[0], imageData);
+        buildTreeRecursive(node.children[1], imageData);
+        buildTreeRecursive(node.children[2], imageData);
+        buildTreeRecursive(node.children[3], imageData);
+        buildTreeRecursive(node.children[4], imageData);
+        buildTreeRecursive(node.children[5], imageData);
+        buildTreeRecursive(node.children[6], imageData);
+        buildTreeRecursive(node.children[7], imageData);
     }
 
     // Split a node into 4 children
     private void splitNode(Node node) {
         int halfWidth = node.width / 2;
         int halfHeight = node.height / 2;
+        int halfDepth = node.depth/2;
 
-        node.topLeft = new Node(node.x, node.y, halfWidth, halfHeight);
-        node.topRight = new Node(node.x + halfWidth, node.y, halfWidth, halfHeight);
-        node.bottomLeft = new Node(node.x, node.y + halfHeight, halfWidth, halfHeight);
-        node.bottomRight = new Node(node.x + halfWidth, node.y + halfHeight, halfWidth, halfHeight);
+        node.children[0] = new Node(node.x, node.y, node.z, halfWidth, halfHeight, halfDepth);
+        node.children[1] = new Node(node.x + halfWidth, node.y, node.z, halfWidth, halfHeight, halfDepth);
+        node.children[2] = new Node(node.x, node.y + halfHeight, node.z, halfWidth, halfHeight, halfDepth);
+        node.children[3] = new Node(node.x + halfWidth, node.y + halfHeight, node.z, halfWidth, halfHeight, halfDepth);
+        node.children[4] = new Node(node.x, node.y, node.z + halfDepth, halfWidth, halfHeight, halfDepth);
+        node.children[5] = new Node(node.x + halfWidth, node.y, node.z + halfDepth, halfWidth, halfHeight, halfDepth);
+        node.children[6] = new Node(node.x, node.y + halfHeight, node.z + halfDepth, halfWidth, halfHeight, halfDepth);
+        node.children[7] = new Node(node.x + halfWidth, node.y + halfHeight, node.z + halfDepth, halfWidth, halfHeight, halfDepth);
 
-        node.isLeaf = false; // This node is no longer a leaf
+        node.isLeaf = false;
     }
 
     // Compute the splitting criterion (example: variance of pixel intensities)
     private boolean computeCriterion(Node node, float[] imageData) {
 
         // Calculate node variance
-        float blockVariance = Utils.getMeanAndVarBlock2D(imageData, imageWidth, node.x, node.y, node.x+node.width, node.y+node.height)[1];
+        float blockVariance = Utils.getMeanAndVarBlock3D(imageData, imageWidth, imageHeight, node.x, node.y, node.z, node.x+node.width, node.y+node.height, node.z+node.depth)[1];
 
         // Calculate noise variance
-        float noiseVariance = calculateNoiseVariance(node, imageData);
+        float noiseVariance = calculateNoiseVariance3D(node, imageData);
 
         // Calculate F-statistic
         boolean result = performFisherTest(blockVariance, noiseVariance, node.width*node.height, alpha);
@@ -176,34 +218,40 @@ public class OcTree_ implements PlugIn {
         return result;
     }
 
-    private float calculateNoiseVariance(Node node, float[] imageData) {
+    private float calculateNoiseVariance3D(Node node, float[] imageData) {
         int xStart = node.x;
         int yStart = node.y;
+        int zStart = node.z;
         int xEnd = Math.min(node.x + node.width, imageWidth);
         int yEnd = Math.min(node.y + node.height, imageHeight);
+        int zEnd = Math.min(node.z + node.depth, imageDepth);
 
         //int l = 2 * d + 1; // For 2D, l = 5 (2D neighborhood with center pixel)
-        float l = 5.0f;
+        float l = 7.0f; // For 3D, d=3 thus l = 2*d+1 = 2*3+1 = 7
         float scaleFactor = (float) (1.0 / sqrt((double)(l * l + l))); // Scaling factor for pseudo-residuals
 
         // Compute pseudo-residuals
         List<Float> residuals = new ArrayList<>(); // List to store pseudo-residuals
-        for (int y = yStart; y < yEnd; y++) {
-            for (int x = xStart; x < xEnd; x++) {
-                float z = imageData[y * imageWidth + x];
+        for(int z = zStart; z < zEnd; z++) {
+            for (int y = yStart; y < yEnd; y++) {
+                for (int x = xStart; x < xEnd; x++) {
+                    float v = imageData[imageWidth*imageHeight*z+y*imageWidth+x];
 
-                // Calculate Laplacian ∆Zi
-                float laplacian = l * z;
-                if (x > 0) laplacian -= imageData[y * imageWidth + (x - 1)]; // Left neighbor
-                if (x < imageWidth - 1) laplacian -= imageData[y * imageWidth + (x + 1)]; // Right neighbor
-                if (y > 0) laplacian -= imageData[(y - 1) * imageWidth + x]; // Top neighbor
-                if (y < imageHeight - 1) laplacian -= imageData[(y + 1) * imageWidth + x]; // Bottom neighbor
+                    // Calculate Laplacian ∆Zi
+                    float laplacian = l * v;
+                    if (x > 0) laplacian -= imageData[imageWidth*imageHeight*z + y * imageWidth + (x - 1)];
+                    if (x < imageWidth - 1) laplacian -= imageData[imageWidth*imageHeight*z + y * imageWidth + (x + 1)];
+                    if (y > 0) laplacian -= imageData[imageWidth*imageHeight*z + (y - 1) * imageWidth + x];
+                    if (y < imageHeight - 1) laplacian -= imageData[imageWidth*imageHeight*z + (y + 1) * imageWidth + x];
+                    if (z > 0) laplacian -= imageData[imageWidth*imageHeight*(z-1) + y * imageWidth + x];
+                    if (z < imageDepth - 1) laplacian -= imageData[imageWidth*imageHeight*(z+1) + y * imageWidth + x];
 
-                // Compute pseudo-residual
-                float residual = laplacian * scaleFactor;
+                    // Compute pseudo-residual
+                    float residual = laplacian * scaleFactor;
 
-                // Add residual to residuals list
-                residuals.add(residual);
+                    // Add residual to residuals list
+                    residuals.add(residual);
+                }
             }
         }
 
@@ -240,7 +288,7 @@ public class OcTree_ implements PlugIn {
         return ratio < threshold; // If ratio (F-statistic) is smaller than threshold, variance is significantly different than noise variance and we should divide more
     }
 
-    // Method to create an overlay for the quadtree
+    // Method to create an overlay for the quadtree NOT UPDATED
     public Overlay createOverlay() {
         Overlay overlay = new Overlay();
         traverseTree(root, node -> {
@@ -259,8 +307,10 @@ public class OcTree_ implements PlugIn {
     private float calculateRobustMean(Node node, float[] imageData, int maxIterations) {
         int xStart = node.x;
         int yStart = node.y;
+        int zStart = node.z;
         int xEnd = node.x+node.width;
-        int yEnd = node.y+ node.height;
+        int yEnd = node.y + node.height;
+        int zEnd = node.z + node.depth;
 
         // Initialize parameters
         float mean = 0.0f;
@@ -268,12 +318,14 @@ public class OcTree_ implements PlugIn {
         int nPixels = 0;
 
         // Compute initial naive mean and variance
-        for (int y=yStart; y<yEnd; y++) {
-            for (int x=xStart; x<xEnd; x++) {
-                float value = imageData[y*imageWidth+x];
-                mean += value;
-                variance += (value - mean) * (value - mean);
-                nPixels++;
+        for(int z = zStart; z< zEnd; z++) {
+            for (int y = yStart; y < yEnd; y++) {
+                for (int x = xStart; x < xEnd; x++) {
+                    float value = imageData[imageWidth*imageHeight*z + y * imageWidth + x];
+                    mean += value;
+                    variance += (value - mean) * (value - mean);
+                    nPixels++;
+                }
             }
         }
         mean /= (float)nPixels;
@@ -289,12 +341,14 @@ public class OcTree_ implements PlugIn {
             float weightSum = 0.0f;
             float weightedSum = 0.0f;
 
-            for (int y = yStart; y < yEnd; y++) {
-                for (int x = xStart; x < xEnd; x++) {
-                    float value = imageData[y * imageWidth + x];
-                    float weight = (float) Math.exp(-((double)(value - mean) * (double)(value - mean)) / (2.0d * (double)variance));
-                    weightSum += weight;
-                    weightedSum += weight * value;
+            for(int z = zStart; z< zEnd; z++) {
+                for (int y = yStart; y < yEnd; y++) {
+                    for (int x = xStart; x < xEnd; x++) {
+                        float value = imageData[imageWidth*imageHeight*z + y * imageWidth + x];
+                        float weight = (float) Math.exp(-((double) (value - mean) * (double) (value - mean)) / (2.0d * (double) variance));
+                        weightSum += weight;
+                        weightedSum += weight * value;
+                    }
                 }
             }
 
@@ -308,14 +362,11 @@ public class OcTree_ implements PlugIn {
 
 
     public void calculateRobustMeans(float[] imageData, int maxIterations) {
-        final int[] leafCount = {0};
         traverseTree(root, node -> {
             if (node.isLeaf) {
                 node.robustMean = calculateRobustMean(node, imageData, maxIterations);
-                leafCount[0]++;
             }
         });
-        IJ.log("nLEAVES: " + leafCount[0]);
     }
 
 
@@ -323,16 +374,21 @@ public class OcTree_ implements PlugIn {
     private float calculateLTSVariance(Node node, float[] imageData, float robustMean, float alpha) {
         int xStart = node.x;
         int yStart = node.y;
+        int zStart = node.z;
+
         int xEnd = xStart + node.width;
         int yEnd = yStart + node.height;
+        int zEnd = zStart + node.depth;
 
         // Collect squared residuals
         List<Float> residuals = new ArrayList<>();
-        for (int y = yStart; y < yEnd; y++) {
-            for (int x = xStart; x < xEnd; x++) {
-                float z = imageData[y * imageWidth + x];
-                float residual = (z - robustMean) * (z - robustMean);
-                residuals.add(residual);
+        for(int z = zStart; z < zEnd; z++) {
+            for (int y = yStart; y < yEnd; y++) {
+                for (int x = xStart; x < xEnd; x++) {
+                    float v = imageData[imageWidth*imageHeight*z + y * imageWidth + x];
+                    float residual = (v - robustMean) * (v - robustMean);
+                    residuals.add(residual);
+                }
             }
         }
 
@@ -370,21 +426,18 @@ public class OcTree_ implements PlugIn {
 
         // Recursively traverse children if they exist
         if (!node.isLeaf) {
-            traverseTree(node.topLeft, action);
-            traverseTree(node.topRight, action);
-            traverseTree(node.bottomLeft, action);
-            traverseTree(node.bottomRight, action);
+            for(Node child : node.children){
+                traverseTree(child, action);
+            }
         }
     }
 
     // Collect mean and variance pairs from QuadTree
-    private List<double[]> collectMeanVariancePairs(){
+    public List<double[]> collectMeanVariancePairs(){
         List<double[]> pairs = new ArrayList<>();
         traverseTree(root, node -> {
             if(node.isLeaf){
                 pairs.add(new double[]{(double) node.robustMean, (double) node.ltsVariance});
-                IJ.log("mean: " + node.robustMean);
-                IJ.log("var: " + node.ltsVariance);
             }
         });
 
@@ -393,7 +446,7 @@ public class OcTree_ implements PlugIn {
 
 
     // Do linear regression
-    private float[] performLinearRegression(List<double[]> pairs){
+    public float[] performLinearRegression(List<double[]> pairs){
         SimpleRegression regression = new SimpleRegression();
         for(double[] pair : pairs){
             regression.addData(pair[0], pair[1]);
@@ -406,7 +459,7 @@ public class OcTree_ implements PlugIn {
         return new float[]{g0, eDC};
     }
 
-    private float[] applyGATtree(float[] imageData, int nPixels, float g0, float eDC){
+    public float[] applyGATtree(float[] imageData, int nPixels, float g0, float eDC){
 
         float[] gat = new float[nPixels];
         double refConstant = 3.0d/8.0d * (double)g0 * (double)g0 + (double)eDC; //threshold to avoid taking the square root of negative values.

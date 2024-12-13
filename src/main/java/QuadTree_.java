@@ -75,7 +75,7 @@ public class QuadTree_ implements PlugIn {
         // SHOW GAT
         float[] gat = applyGATtree(imageData, imageWidth*imageHeight, g0, eDC);
         FloatProcessor ipFinal = new FloatProcessor(imageWidth, imageHeight, gat);
-        ImagePlus impFinal = new ImagePlus("output", ipFinal);
+        ImagePlus impFinal = new ImagePlus("Variance-stabilised image", ipFinal);
         impFinal.show();
 
     }
