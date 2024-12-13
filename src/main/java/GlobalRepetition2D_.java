@@ -25,6 +25,13 @@ public class GlobalRepetition2D_ implements PlugIn {
             "Abs. diff. of StdDevs"
     };
 
+    // Define GAT parameter estimation methods
+    public static final String[] GATMETHODS = {
+            "Simplex",
+            "Quad/Octree"
+    };
+
+
     @Override
     public void run(String arg) {
 
@@ -55,6 +62,8 @@ public class GlobalRepetition2D_ implements PlugIn {
         gd.addCheckbox("Time-lapse?", false);
         gd.addNumericField("Relevance constant:", 0.0f);
         gd.addChoice("Metric:", METRICS, METRICS[0]);
+        gd.addCheckbox("Stabilise noise variance?", true);
+        gd.addChoice("GAT parameter estimation:", GATMETHODS, GATMETHODS[0]);
         gd.addCheckbox("Normalize output?", true);
         gd.addCheckbox("Use device from preferences?", false);
         gd.addHelp("https://github.com/HenriquesLab/SReD/wiki");
@@ -69,6 +78,8 @@ public class GlobalRepetition2D_ implements PlugIn {
         boolean isTimelapse = gd.getNextBoolean();
         float relevanceConstant = (float) gd.getNextNumber();
         String metric = gd.getNextChoice();
+        boolean stabiliseNoiseVariance = gd.getNextBoolean();
+        String gatMethod = gd.getNextChoice();
         boolean normalizeOutput = gd.getNextBoolean();
         boolean useDevice = gd.getNextBoolean();
 
@@ -101,7 +112,7 @@ public class GlobalRepetition2D_ implements PlugIn {
         }
 
         // Get reference image and some parameters
-        Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, true, true);
+        Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, stabiliseNoiseVariance, gatMethod, true);
 
         // Initialize OpenCL, and retrieve OpenCL context, device and queue
         CLUtils.OpenCLResources openCLResources = CLUtils.getOpenCLResources(useDevice);

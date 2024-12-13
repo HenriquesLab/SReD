@@ -1,5 +1,6 @@
 import ij.IJ;
 import ij.ImagePlus;
+import ij.ImageStack;
 import ij.gui.Overlay;
 import ij.gui.Roi;
 import ij.plugin.PlugIn;
@@ -12,13 +13,14 @@ import org.apache.commons.math3.stat.regression.SimpleRegression;
 
 import static java.lang.Math.sqrt;
 
-public class QuadTree_ implements PlugIn {
+public class OcTree_ implements PlugIn {
 
     private Node root; // Root node of the quadtree
     private int minSize; // Minimum block length for stopping division
     private float alpha; // Significance level
     private int imageWidth; // Width of the image (for pixel indexing)
     private int imageHeight; // Height of the image
+    private int imageDepth; // Depth of the image
     private int d; // Number of dimensions in the data (e.g., 2 for 2D data)
     private int maxIterations; // Maximum iterations for robust means calculations
 
@@ -33,11 +35,14 @@ public class QuadTree_ implements PlugIn {
         }
 
         // Get image dimensions and pixel data
-        imageWidth = image.getWidth();
-        imageHeight = image.getHeight();
+        ImageStack ims = image.getStack();
+        imageWidth = ims.getWidth();
+        imageHeight = ims.getHeight();
+        imageDepth = ims.getSize();
         FloatProcessor processor = image.getProcessor().convertToFloatProcessor();
         float[] imageData = (float[])processor.getPixels();
 
+        // TODO: NOT CODED FROM HERE ON
         // Quadtree parameters
         minSize = 4; // Minimum length of the squares
         alpha = 0.01f; // Significance level for the F-distribution. Smaller values results less stringency (larger regions).
@@ -86,7 +91,7 @@ public class QuadTree_ implements PlugIn {
     // ---------------------- //
 
     // Default constructor required by ImageJ
-    public QuadTree_() {
+    public void QuadTree_() {
     }
 
     // Constructor class for the QuadTree node
@@ -110,7 +115,7 @@ public class QuadTree_ implements PlugIn {
     }
 
     // Constructor for the quadtree
-    public QuadTree_(int imageWidth, int imageHeight, int minSize, float alpha) {
+    public void QuadTree_(int imageWidth, int imageHeight, int minSize, float alpha) {
         this.root = new Node(0, 0, imageWidth, imageHeight);
         this.imageWidth = imageWidth;
         this.imageHeight = imageHeight;
@@ -303,11 +308,14 @@ public class QuadTree_ implements PlugIn {
 
 
     public void calculateRobustMeans(float[] imageData, int maxIterations) {
+        final int[] leafCount = {0};
         traverseTree(root, node -> {
             if (node.isLeaf) {
                 node.robustMean = calculateRobustMean(node, imageData, maxIterations);
+                leafCount[0]++;
             }
         });
+        IJ.log("nLEAVES: " + leafCount[0]);
     }
 
 
@@ -370,11 +378,13 @@ public class QuadTree_ implements PlugIn {
     }
 
     // Collect mean and variance pairs from QuadTree
-    public List<double[]> collectMeanVariancePairs(){
+    private List<double[]> collectMeanVariancePairs(){
         List<double[]> pairs = new ArrayList<>();
         traverseTree(root, node -> {
             if(node.isLeaf){
                 pairs.add(new double[]{(double) node.robustMean, (double) node.ltsVariance});
+                IJ.log("mean: " + node.robustMean);
+                IJ.log("var: " + node.ltsVariance);
             }
         });
 
@@ -383,7 +393,7 @@ public class QuadTree_ implements PlugIn {
 
 
     // Do linear regression
-    public float[] performLinearRegression(List<double[]> pairs){
+    private float[] performLinearRegression(List<double[]> pairs){
         SimpleRegression regression = new SimpleRegression();
         for(double[] pair : pairs){
             regression.addData(pair[0], pair[1]);
@@ -396,7 +406,7 @@ public class QuadTree_ implements PlugIn {
         return new float[]{g0, eDC};
     }
 
-    public float[] applyGATtree(float[] imageData, int nPixels, float g0, float eDC){
+    private float[] applyGATtree(float[] imageData, int nPixels, float g0, float eDC){
 
         float[] gat = new float[nPixels];
         double refConstant = 3.0d/8.0d * (double)g0 * (double)g0 + (double)eDC; //threshold to avoid taking the square root of negative values.

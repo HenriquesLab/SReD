@@ -23,6 +23,12 @@ public class BlockRepetition2D_ implements PlugIn {
             "Abs. Diff. of StdDevs."
     };
 
+    // Define GAT parameter estimation methods
+    public static final String[] GATMETHODS = {
+            "Simplex",
+            "Quad/Octree"
+    };
+
     @Override
     public void run(String s) {
 
@@ -55,6 +61,8 @@ public class BlockRepetition2D_ implements PlugIn {
         gd.addChoice("Image:", titles, titles[0]);
         gd.addNumericField("Relevance constant:", 0.0f, 3);
         gd.addChoice("Metric:", METRICS, METRICS[0]);
+        gd.addCheckbox("Stabilise noise variance?", true);
+        gd.addChoice("GAT parameter estimation:", GATMETHODS, GATMETHODS[0]);
         gd.addCheckbox("Timelapse?", false);
         gd.addCheckbox("Normalize output?", true);
         gd.addCheckbox("Use OpenCL device from preferences?", false);
@@ -69,6 +77,8 @@ public class BlockRepetition2D_ implements PlugIn {
         int imgID = Utils.getImageIDByTitle(titles, ids, imgTitle);
         float relevanceConstant = (float) gd.getNextNumber();
         String metric = gd.getNextChoice();
+        boolean stabiliseNoiseVariance = gd.getNextBoolean();
+        String gatMethod = gd.getNextChoice();
         boolean isTimelapse = gd.getNextBoolean();
         boolean normalizeOutput = gd.getNextBoolean();
         boolean useDevice = gd.getNextBoolean();
@@ -123,11 +133,12 @@ public class BlockRepetition2D_ implements PlugIn {
             // Display results
             Utils.InputImage3D finalRepetitionMap = Utils.getInputImage3D(repetitionMap, inputImage.getWidth(),
                     inputImage.getHeight(), inputImage.getDepth(), false, normalizeOutput);
+
             Utils.displayResults3D(finalRepetitionMap, repetitionMap);
 
         }else {
             // Get variance-stabilised and normalised input image
-            Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, true, true);
+            Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, stabiliseNoiseVariance, gatMethod, true);
 
             // Calculate block repetition map
             float[] repetitionMap;

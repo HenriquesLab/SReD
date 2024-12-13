@@ -11,6 +11,8 @@ import java.awt.image.IndexColorModel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.List;
+
 import static java.lang.Math.*;
 
 public class Utils {
@@ -648,7 +650,7 @@ public class Utils {
      * @param normalizeOutput If {@code true}, normalizes the pixel values of the image.
      * @return An InputImage2D object, or {@code null} if the input image is invalid (i.e., window not found).
      */
-    public static InputImage2D getInputImage2D(int imageID, boolean stabiliseNoiseVariance, boolean normalizeOutput)
+    public static InputImage2D getInputImage2D(int imageID, boolean stabiliseNoiseVariance, String gatMethod, boolean normalizeOutput)
     {
         // Get ImagePlus object
         ImagePlus imp = WindowManager.getImage(imageID);
@@ -668,21 +670,41 @@ public class Utils {
         int size = width * height;
         IJ.log("Image dimensions: "+width+"x"+height);
 
-        float gain = 0.0f; // Placeholder
-        float sigma = 0.0f; // Placeholder
-        float offset = 0.0f; // Placeholder
-
-        if (stabiliseNoiseVariance) {
+        // Variance-stabilizing transform - Simplex method
+        if (stabiliseNoiseVariance && gatMethod == "Simplex") {
             IJ.log("Stabilizing noise variance of the image...");
             GATMinimizer2D minimizer = new GATMinimizer2D(imageArray, width, height, 1, 10, 100);
             minimizer.run();
-            gain = (float) minimizer.gain;
-            sigma = (float) minimizer.sigma;
-            offset = (float) minimizer.offset;
+            float gain = (float) minimizer.gain;
+            float sigma = (float) minimizer.sigma;
+            float offset = (float) minimizer.offset;
 
             imageArray = VarianceStabilisingTransform2D_.getGAT(imageArray, gain, sigma, offset);
         }
 
+        // Variance-stabilizing transform - Quad/Octree method
+        if (stabiliseNoiseVariance && gatMethod == "Quad/Octree") {
+            IJ.log("Stabilizing noise variance of the image...");
+
+            // Build Quadtree
+            QuadTree_ quadTree = new QuadTree_(width, height, 4, 0.01f); // TODO: dont hardcode these params
+            quadTree.buildTree(imageArray);
+
+            // Calculate robust mean and variance estimations from the Quadtree nodes
+            quadTree.calculateRobustMeans(imageArray, 50); // TODO: dont hardcode these params
+            quadTree.calculateLTSVariances(imageArray, 0.75f); // TODO: dont hardcode these params
+            List<double[]> meanVariancePairs = quadTree.collectMeanVariancePairs();
+
+            // Perform linear regression to calculate g0 and eDC
+            float[] regression = quadTree.performLinearRegression(meanVariancePairs);
+            float g0 = regression[0];
+            float eDC = regression[1];
+
+            // Apply GAT
+            imageArray = quadTree.applyGATtree(imageArray, width*height, g0, eDC);
+        }
+
+        // Normalize output (we always do this but I coded this in case we want to change)
         if (normalizeOutput) {
             // Get min and max
             float imageMin = Float.MAX_VALUE;
@@ -1787,7 +1809,11 @@ public class Utils {
         imp.show();
     }
 
-    // Quadtree functions
+    // ---------------------------- //
+    // ---- Quadtree functions ---- //
+    // ---------------------------- //
+
+
 
 }
 
