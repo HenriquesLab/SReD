@@ -8,6 +8,7 @@
  *
  **/
 
+import ij.IJ;
 import ij.measure.Minimizer;
 import ij.measure.UserFunction;
 
@@ -18,14 +19,14 @@ import static java.lang.Math.sqrt;
 public class GATMinimizer3D implements UserFunction {
 
     public double sigma;
-    private final int width, height, depth;
+    private final int width, height, depth, maxIter;
     public double gain;
     public double offset;
     //public boolean isCalculated = false;
     public boolean showProgress = true;
-    private final float[][] pixels;
+    private final float[] pixels;
 
-    public GATMinimizer3D(float[][] pixels, int width, int height, int depth, double gain, double sigma, double offset){
+    public GATMinimizer3D(float[] pixels, int width, int height, int depth, double gain, double sigma, double offset, int maxIter){
         this.pixels = pixels;
         this.width = width;
         this.height = height;
@@ -33,6 +34,7 @@ public class GATMinimizer3D implements UserFunction {
         this.gain = gain;
         this.sigma = sigma;
         this.offset = offset;
+        this.maxIter = maxIter;
     }
 
     public void run() {
@@ -53,9 +55,10 @@ public class GATMinimizer3D implements UserFunction {
         Minimizer minimizer = new Minimizer();
         minimizer.setFunction(this, 3);
         minimizer.setMaxError(0); // Allows the minimizer to run until the relative error of the function is 0, in contrast with the default 1e-10.
+        minimizer.setMaxIterations(maxIter);
 
         // Run the minimizer
-        if (showProgress) minimizer.setStatusAndEsc("Estimating gain, sigma & offset: Iteration ", true);
+        if (showProgress) minimizer.setStatusAndEsc("Estimating GAT parameters: Iteration ", true);
         minimizer.minimize(initialParameters, initialParametersVariation);
 
         // Get the optimized parameters
@@ -63,9 +66,6 @@ public class GATMinimizer3D implements UserFunction {
         gain = params[0];
         sigma = params[1];
         offset = params[2];
-        //gain = gain == 0? params[0]: gain;
-        //sigma = sigma == 0? params[1]: sigma;
-        //offset = offset == 0? params[2]: offset;
     }
 
     @Override
@@ -86,38 +86,52 @@ public class GATMinimizer3D implements UserFunction {
         if (offset < 0) return Double.NaN;
 
         // Get copy of input image to transform
-        float[][] pixelsGAT = new float[depth][width * height];
-        for (int z = 0; z < depth; z++){
-            pixelsGAT[z] = pixels[z].clone();
+        //float[][] pixelsGAT = new float[depth][width * height];
+        //for (int z = 0; z < depth; z++){
+        //    pixelsGAT[z] = pixels[z].clone();
+        //}
+
+        int whz = width*height*depth; // Size of the data
+        float[] pixelsGAT = new float[whz];
+        for(int i=0; i<whz; i++){
+            pixelsGAT[i] = pixels[i];
         }
 
         // Apply GAT using current parameters
-        for(int z=0; z<depth; z++) {
-            applyGAT(pixelsGAT[z], gain, sigma, offset);
-        }
+        GATMinimizer2D.applyGAT(pixelsGAT, gain, sigma, offset);
 
-        // Define the dimensions of the window used to estimate the noise variance (adjusted to image size to avoid out of bounds)
+        // Define the dimensions of the window used to estimate the noise variance
         // max() is used to prevent block dimensions == 0
         int blockWidth = max(width/6, 1); // bounding box width
         int blockHeight = max(height/6, 1); // bounding box height
+        int blockDepth = max(depth/6, 1); // Bounding box depth
 
         // Get number of blocks
         int nBlocksX = width / blockWidth;
         int nBlocksY = height / blockHeight;
+        int nBlocksZ = depth / blockDepth;
 
-        // Ensure that you have at least 2 blocks in XY
-        while(nBlocksX<2 || nBlocksY<2) {
-            blockWidth /= 2;
-            blockHeight /= 2;
+        // Ensure that you have at least 2 blocks in XYZ
+        while(nBlocksX<2 || nBlocksY<2 || nBlocksZ<2) {
+            if (nBlocksX < 2 && blockWidth > 1) blockWidth = Math.max(blockWidth / 2, 1);
+            if (nBlocksY < 2 && blockHeight > 1) blockHeight = Math.max(blockHeight / 2, 1);
+            if (nBlocksZ < 2 && blockDepth > 1) blockDepth = Math.max(blockDepth / 2, 1);
+
+            // Recalculate number of blocks
+            nBlocksX = width / blockWidth;
+            nBlocksY = height / blockHeight;
+            nBlocksZ = depth / blockDepth;
+
+            // If further halving would result in invalid blocks, break the loop
+            if (blockWidth == 1 && blockHeight == 1 && blockDepth == 1) break;
         }
 
-        int nBlocks = nBlocksX * nBlocksY;
-
+        int nBlocks = nBlocksX * nBlocksY * nBlocksZ;
 
         // Evaluate the noise variance error by calculating the variance of each block and its difference from 1
-        double error = 0;
+        double error = 0.0d;
 
-        for(int z=0; z<depth; z++) {
+        for(int bZ=0; bZ<nBlocksZ; bZ++) {
             for (int bY=0; bY<nBlocksY; bY++) {
                 for (int bX=0; bX<nBlocksX; bX++) {
 
@@ -127,10 +141,13 @@ public class GATMinimizer3D implements UserFunction {
                     int yStart = bY * blockHeight;
                     int yEnd = (bY + 1) * blockHeight;
 
-                    double[] meanAndVar = getMeanAndVarBlock(pixelsGAT[z], xStart, yStart, xEnd, yEnd);
-                    double delta = meanAndVar[1] - 1; // variance must be ~1
+                    int zStart = bZ * blockDepth;
+                    int zEnd = (bZ + 1) * blockDepth;
 
-                    error += (delta * delta) / nBlocks;
+                    double variance = Utils.getMeanAndVarBlock3D(pixelsGAT, width, height, xStart, yStart, zStart, xEnd, yEnd, zEnd)[1];
+                    double delta = variance - 1.0d; // variance must be ~1
+
+                    error += (delta * delta) / (double)nBlocks;
                 }
             }
         }
@@ -138,51 +155,7 @@ public class GATMinimizer3D implements UserFunction {
         return error;
     }
 
-    // ---- USER METHODS ----
 
-    // Get mean and variance of a block
-    public double[] getMeanAndVarBlock(float[] pixels, int xStart, int yStart, int xEnd, int yEnd) {
-        double mean = 0;
-        double var;
-
-        double sq_sum = 0;
-
-        int nPixelsX = xEnd-xStart;
-        int nPixelsY = yEnd-yStart;
-        int nPixels = nPixelsX * nPixelsY;
-
-        for (int y=yStart; y<yEnd; y++) {
-            for (int x=xStart; x<xEnd; x++) {
-                float v = pixels[y*width+x];
-                mean += v;
-                sq_sum += v*v;
-            }
-        }
-
-
-        mean = mean / nPixels;
-        var = sq_sum / nPixels - mean * mean;
-
-        return new double[] {mean, var};
-    }
-
-    // Apply Generalized Anscombe Transform
-    public static void applyGAT(float[] pixels, double gain, double sigma, double offset) {
-
-        double refConstant = (3d/8d) * gain * gain + sigma * sigma - gain * offset;
-        //it's called refConstant because it does not contain the pixel values, Afonso was confused and needed a hug
-
-        // Apply GAT to pixel value (see http://mirlab.org/conference_papers/International_Conference/ICASSP%202012/pdfs/0001081.pdf for GAT description)
-        for (int n=0; n<pixels.length; n++) {
-            double v = pixels[n];
-            if (v <= -refConstant / gain) {
-                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40 out of 10!
-            }else{
-                v = (2 / gain) * sqrt(gain * v + refConstant);
-            }
-            pixels[n] = (float) v;
-        }
-    }
 }
 
 

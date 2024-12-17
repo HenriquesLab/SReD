@@ -650,7 +650,7 @@ public class Utils {
      * @param normalizeOutput If {@code true}, normalizes the pixel values of the image.
      * @return An InputImage2D object, or {@code null} if the input image is invalid (i.e., window not found).
      */
-    public static InputImage2D getInputImage2D(int imageID, boolean stabiliseNoiseVariance, String gatMethod, boolean normalizeOutput)
+    public static InputImage2D getInputImage2D(int imageID, boolean stabiliseNoiseVariance, String gatMethod, int maxIter, boolean normalizeOutput)
     {
         // Get ImagePlus object
         ImagePlus imp = WindowManager.getImage(imageID);
@@ -673,7 +673,7 @@ public class Utils {
         // Variance-stabilizing transform - Simplex method
         if (stabiliseNoiseVariance && gatMethod == "Simplex") {
             IJ.log("Stabilizing noise variance of the image...");
-            GATMinimizer2D minimizer = new GATMinimizer2D(imageArray, width, height, 1, 10, 100);
+            GATMinimizer2D minimizer = new GATMinimizer2D(imageArray, width, height, 1, 10, 100, maxIter);
             minimizer.run();
             float gain = (float) minimizer.gain;
             float sigma = (float) minimizer.sigma;
@@ -1164,7 +1164,7 @@ public class Utils {
      * @param normalizeOutput If {@code true}, normalizes the pixel values of the image.
      * @return An InputImage3D object, or {@code null} if the input image is invalid (i.e., window not found).
      */
-    public static InputImage3D getInputImage3D(int imageID, boolean stabiliseNoiseVariance, boolean normalizeOutput)
+    public static InputImage3D getInputImage3D(int imageID, boolean stabiliseNoiseVariance, String gatMethod, boolean normalizeOutput)
     {
         // Get ImagePlus object
         ImagePlus imp = WindowManager.getImage(imageID);
@@ -1195,12 +1195,15 @@ public class Utils {
             return null;
         }
 
-        // Get image stack array (float[z][wh])
+        // Get image stack array (float[z][wh]) // TODO: ONLY REQUIRED FOR GATMINIMIZER
         float[][] stackArray = new float[depth][width*height];
+        float[] imageArray = new float[width*height*depth];
         for(int z=0; z<depth; z++) {
+            FloatProcessor fp = ims.getProcessor(z+1).convertToFloatProcessor();
             for (int y=0; y<height; y++) {
                 for (int x=0; x<width; x++) {
-                    stackArray[z][y*width+x] = ims.getProcessor(z+1).convertToFloatProcessor().getf(x,y); // getPixels() is easier but isn't working well
+                    stackArray[z][y*width+x] = fp.getf(x,y); // getPixels() is easier but isn't working well
+                    imageArray[width*height*z+y*width+x] = fp.getf(x, y);
                 }
             }
         }
@@ -1210,38 +1213,53 @@ public class Utils {
         float sigma = 0.0f; // Placeholder
         float offset = 0.0f; // Placeholder
 
-        if (stabiliseNoiseVariance) {
+        if (stabiliseNoiseVariance && gatMethod == "Simplex") {
+
             IJ.log("Stabilizing noise variance of the image...");
 
             // Optimise GAT parameters
-            GATMinimizer3D minimizer = new GATMinimizer3D(stackArray, width, height, depth, 0, 100, 0);
+            int maxIter = 5000; // TODO: DO NOT HARDCODE THIS
+            GATMinimizer3D minimizer = new GATMinimizer3D(imageArray, width, height, depth, 0, 100, 0, maxIter);
             minimizer.run();
+
             gain = (float) minimizer.gain;
             sigma = (float) minimizer.sigma;
             offset = (float) minimizer.offset;
 
             // Get variance-stabilised image with optimised parameters
             for (int z=0; z<depth; z++) {
-                stackArray[z] = VarianceStabilisingTransform3D_.getGAT(stackArray[z], minimizer.gain, minimizer.sigma, minimizer.offset);
+                stackArray[z] = VarianceStabilisingTransform2D_.getGAT(imageArray, minimizer.gain, minimizer.sigma, minimizer.offset);
             }
         }
 
-        // Get stack array (1D)
-        float[] stackArray1D = new float[width*height*depth];
-        for(int z=0; z<depth; z++) {
-            for (int y=0; y<height; y++) {
-                for (int x=0; x<width; x++) {
-                    stackArray1D[width*height*z+y*width+x] = stackArray[z][y*width+x];
-                }
-            }
+        if (stabiliseNoiseVariance && gatMethod == "Quad/Octree") {
+
+            IJ.log("Stabilizing noise variance of the image...");
+
+            // Build Quadtree
+            OcTree_ ocTree = new OcTree_(width, height, depth, 4, 0.01f); // TODO: dont hardcode these params
+            ocTree.buildTree(imageArray);
+
+            // Calculate robust mean and variance estimations from the Quadtree nodes
+            ocTree.calculateRobustMeans(imageArray, 50); // TODO: dont hardcode these params
+            ocTree.calculateLTSVariances(imageArray, 0.75f); // TODO: dont hardcode these params
+            List<double[]> meanVariancePairs = ocTree.collectMeanVariancePairs();
+
+            // Perform linear regression to calculate g0 and eDC
+            float[] regression = ocTree.performLinearRegression(meanVariancePairs);
+            float g0 = regression[0];
+            float eDC = regression[1];
+
+            // Apply GAT
+            imageArray = ocTree.applyGATtree(imageArray, width*height, g0, eDC);
         }
 
         // Normalise to range
         if (normalizeOutput) {
-            stackArray1D = normalizeArray(stackArray1D);
+            imageArray = normalizeArray(imageArray);
         }
 
-        return new InputImage3D(stackArray1D, width, height, depth, size, calibration, gain, sigma, offset);
+        return new InputImage3D(imageArray, width, height, depth, size, calibration, gain, sigma, offset);
     }
 
 
@@ -1282,7 +1300,8 @@ public class Utils {
             }
 
             // Optimise GAT parameters
-            GATMinimizer3D minimizer = new GATMinimizer3D(stackArray, width, height, depth, 0, 100, 0);
+            int maxIter = 5000; // TODO: DO NOT HARDCODE THIS
+            GATMinimizer3D minimizer = new GATMinimizer3D(imageArray, width, height, depth, 0, 100, 0, maxIter);
             minimizer.run();
             gain = (float) minimizer.gain;
             sigma = (float) minimizer.sigma;
@@ -1290,7 +1309,7 @@ public class Utils {
 
             // Get variance-stabilised image with optimised parameters
             for (int z=0; z<depth; z++) {
-                stackArray[z] = VarianceStabilisingTransform3D_.getGAT(stackArray[z], minimizer.gain, minimizer.sigma, minimizer.offset);
+                stackArray[z] = VarianceStabilisingTransform2D_.getGAT(stackArray[z], minimizer.gain, minimizer.sigma, minimizer.offset);
             }
 
             // Get stack array (1D)
@@ -1334,12 +1353,12 @@ public class Utils {
      * @param zEnd The ending z-coordinate (exclusive) of the block.
      * @return A float array where the first element is the mean and the second element is the variance of the block.
      */
-    public static float[] getMeanAndVarBlock3D(float[] pixels, int imageWidth, int imageHeight, int xStart, int yStart,
+    public static double[] getMeanAndVarBlock3D(float[] pixels, int imageWidth, int imageHeight, int xStart, int yStart,
                                                int zStart, int xEnd, int yEnd, int zEnd)
     {
-        float mean = 0.0f;
-        float var;
-        float sq_sum = 0.0f;
+        double mean = 0.0f;
+        double var;
+        double sq_sum = 0.0f;
 
         int blockWidth = xEnd - xStart; // Block width
         int blockHeight = yEnd - yStart; // Block height
@@ -1350,7 +1369,7 @@ public class Utils {
         for(int z=zStart; z<zEnd; z++)
             for (int y=yStart; y<yEnd; y++) {
                 for (int x=xStart; x<xEnd; x++) {
-                    float v = pixels[imageWidth*imageHeight*z+y*imageWidth+x]; // Get the pixel value
+                    double v = (double)pixels[imageWidth*imageHeight*z+y*imageWidth+x]; // Get the pixel value
                     mean += v; // Accumulate the sum
                     sq_sum += v * v; // Accumulate the sum of squares
                 }
@@ -1359,7 +1378,7 @@ public class Utils {
         mean = mean / blockSize; // Calculate the mean
         var = sq_sum / blockSize - mean * mean; // Calculate the variance
 
-        return new float[]{mean, var}; // Return mean and variance
+        return new double[]{mean, var}; // Return mean and variance
     }
 
 

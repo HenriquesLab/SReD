@@ -112,7 +112,8 @@ public class GlobalRepetition2D_ implements PlugIn {
         }
 
         // Get reference image and some parameters
-        Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, stabiliseNoiseVariance, gatMethod, true);
+        int maxIter = 5000; // TODO: DO NOT HARDCODE THIS
+        Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, stabiliseNoiseVariance, gatMethod, maxIter, true);
 
         // Initialize OpenCL, and retrieve OpenCL context, device and queue
         CLUtils.OpenCLResources openCLResources = CLUtils.getOpenCLResources(useDevice);

@@ -1,6 +1,7 @@
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
+import ij.gui.NonBlockingGenericDialog;
 import ij.gui.Overlay;
 import ij.gui.Roi;
 import ij.plugin.PlugIn;
@@ -22,26 +23,36 @@ public class OcTree_ implements PlugIn {
     private int imageHeight; // Height of the image
     private int imageDepth; // Depth of the image
     private int d; // Number of dimensions in the data (e.g., 2 for 2D data)
-    private int maxIterations; // Maximum iterations for robust means calculations
+    private int maxIterations; // Maximum iterations for M-estimator
+    private float varAlpha; // Fraction of leaf nodes used to calculate variance (suggested 0.5 to 0.75)
 
     @Override
     public void run(String arg) {
 
+        // ---- Display dialog box for user input ----
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Noise variance stabilisation 3D (Octree)");
+        gd.addNumericField("Minimum leaf size: ", 4);
+        gd.addNumericField("Alpha: ", 0.01f);
+        gd.addNumericField("Max iterations (M-estimator): ", 50);
+        gd.addNumericField("Fraction of leaf nodes (Least trimmed squares):", 0.75f);
+        gd.showDialog();
+        if (gd.wasCanceled()) return; // Stop the program if the "cancel" button is pressed
+
+        IJ.log("Stabilising noise variance 3D (Octree method)...");
+
         // Quadtree parameters
-        minSize = 4; // Minimum length of the squares
-        alpha = 0.01f; // Significance level for the F-distribution. Smaller values results less stringency (larger regions).
-        d = 2;
-        maxIterations = 50;
+        minSize = (int)gd.getNextNumber(); // Minimum length of the squares
+        alpha = (float)gd.getNextNumber(); // Significance level for the F-distribution. Smaller values results in less stringency (larger regions).
+        maxIterations = (int)gd.getNextNumber(); // Maximum number of iterations for M-estimator
+        varAlpha = (float)gd.getNextNumber();
+        d = 3;
 
-        // Get the active image
+        // Get the active image (or stop the program is none is found)
         ImagePlus image = ij.WindowManager.getCurrentImage();
-
         if (image == null) {
             ij.IJ.error("No image is open");
             return;
         }
-
-
 
         // Get image dimensions and pixel data
         ImageStack stack = image.getStack();
@@ -66,10 +77,8 @@ public class OcTree_ implements PlugIn {
             }
         }
 
-
-
         // Create and build the quadtree
-        IJ.log("Building QuadTree...");
+        IJ.log("Building OcTree...");
         OcTree_ ocTree = new OcTree_(imageWidth, imageHeight, imageDepth, minSize, alpha);
         ocTree.buildTree(imageData);
 
@@ -86,8 +95,8 @@ public class OcTree_ implements PlugIn {
         float g0 = results[0];
         float eDC = results[1];
 
-        IJ.log("g0: " + g0);
-        IJ.log("eDC: " + eDC);
+        IJ.log("g0 = " + g0);
+        IJ.log("eDC = " + eDC);
 
         // Create and add the overlay to the active image
         //Overlay overlay = ocTree.createOverlay();
@@ -96,7 +105,7 @@ public class OcTree_ implements PlugIn {
         // Show the updated image with the overlay
         //image.updateAndDraw();
 
-        // SHOW GAT
+        // Display variance-stabilised image
         float[] gat = applyGATtree(imageData, imageWidth*imageHeight*imageDepth, g0, eDC);
 
         ImageStack imsFinal = new ImageStack(imageWidth, imageHeight, imageDepth);
@@ -110,9 +119,9 @@ public class OcTree_ implements PlugIn {
             FloatProcessor fp = new FloatProcessor(imageWidth, imageHeight, temp);
             imsFinal.setProcessor(fp, z+1);
         }
-        ImagePlus impFinal = new ImagePlus("Variance-stabilised image", imsFinal);
+        ImagePlus impFinal = new ImagePlus("Variance-stabilised image (Octree)", imsFinal);
         impFinal.show();
-
+        IJ.log("Done!");
     }
 
 
@@ -207,7 +216,7 @@ public class OcTree_ implements PlugIn {
     private boolean computeCriterion(Node node, float[] imageData) {
 
         // Calculate node variance
-        float blockVariance = Utils.getMeanAndVarBlock3D(imageData, imageWidth, imageHeight, node.x, node.y, node.z, node.x+node.width, node.y+node.height, node.z+node.depth)[1];
+        float blockVariance = (float)Utils.getMeanAndVarBlock3D(imageData, imageWidth, imageHeight, node.x, node.y, node.z, node.x+node.width, node.y+node.height, node.z+node.depth)[1];
 
         // Calculate noise variance
         float noiseVariance = calculateNoiseVariance3D(node, imageData);

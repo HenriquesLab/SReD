@@ -24,6 +24,12 @@ public class BlockRepetition3D_ implements PlugIn {
             "Abs. Diff. of StdDevs."
     };
 
+    // Define GAT parameter estimation methods
+    public static final String[] GATMETHODS = {
+            "Simplex",
+            "Quad/Octree"
+    };
+
     @Override
     public void run(String s) {
 
@@ -56,6 +62,8 @@ public class BlockRepetition3D_ implements PlugIn {
         gd.addChoice("Image:", titles, titles[0]);
         gd.addNumericField("Relevance constant:", 0.0f, 3);
         gd.addChoice("Metric:", METRICS, METRICS[0]);
+        gd.addCheckbox("Stabilise noise variance?", true);
+        gd.addChoice("GAT parameter estimation:", GATMETHODS, GATMETHODS[1]);
         gd.addCheckbox("Normalize output?", true);
         gd.addCheckbox("Use device from preferences?", false);
         gd.addHelp("https://github.com/HenriquesLab/SReD/wiki");
@@ -69,6 +77,8 @@ public class BlockRepetition3D_ implements PlugIn {
         int imgID = Utils.getImageIDByTitle(titles, ids, imgTitle);
         float relevanceConstant = (float) gd.getNextNumber();
         String metric = gd.getNextChoice();
+        boolean stabilizeNoiseVariance = gd.getNextBoolean();
+        String gatMethod = gd.getNextChoice();
         boolean normalizeOutput = gd.getNextBoolean();
         boolean useDevice = gd.getNextBoolean();
 
@@ -82,7 +92,7 @@ public class BlockRepetition3D_ implements PlugIn {
         Utils.ReferenceBlock3D referenceBlock = Utils.getReferenceBlock3D(blockID);
 
         // Get variance-stabilised and normalised input image
-        Utils.InputImage3D inputImage = Utils.getInputImage3D(imgID, true, true);
+        Utils.InputImage3D inputImage = Utils.getInputImage3D(imgID, stabilizeNoiseVariance, gatMethod, true);
 
         // Check if block dimensions are not larger than the image, otherwise kill program
         if (referenceBlock.getWidth() > inputImage.getWidth() || referenceBlock.getHeight() > inputImage.getHeight() || referenceBlock.getDepth() > inputImage.getDepth()) {

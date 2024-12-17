@@ -937,7 +937,7 @@ public class UtilsTest {
             int imageID = imagePlus.getID();
 
             // Call the method (without stabilizing noise variance, but normalizing output)
-            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, false, true);
+            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, false, "Quad/Octree", true);
 
             // Assertions
             assertNotNull(inputImage, "Image should be retrieved successfully.");
@@ -955,7 +955,7 @@ public class UtilsTest {
         public void testImageNotFound() {
             // Call method with an invalid image ID
             int invalidImageID = 9999; // Assuming this ID does not exist
-            Utils.InputImage3D inputImage = Utils.getInputImage3D(invalidImageID, false, false);
+            Utils.InputImage3D inputImage = Utils.getInputImage3D(invalidImageID, false, "Quad/Octree", false);
 
             // Assert that the method returns null when the image is not found
             assertNull(inputImage, "Image should not be found and the method should return null.");
@@ -981,7 +981,7 @@ public class UtilsTest {
             int imageID = imagePlus.getID();
 
             // Call the method (should return null due to insufficient slices)
-            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, false, false);
+            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, false, "Quad/Octree", false);
 
             // Assert that the method returns null when there are fewer than 3 slices
             assertNull(inputImage, "Image must have at least 3 slices, method should return null.");
@@ -1017,7 +1017,7 @@ public class UtilsTest {
             int imageID = imagePlus.getID();
 
             // Call the method with normalization enabled
-            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, false, true);
+            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, false, "Quad/Octree", true);
 
             // Assertions
             assertNotNull(inputImage, "Image should be retrieved successfully.");
@@ -1060,7 +1060,7 @@ public class UtilsTest {
             int imageID = imagePlus.getID();
 
             // Call the method with noise variance stabilization enabled
-            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, true, false);
+            Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, true, "Simplex", false);
 
             // Assertions
             assertNotNull(inputImage, "Image should be retrieved successfully.");
@@ -1191,11 +1191,11 @@ public class UtilsTest {
                     + Math.pow(42.0 - expectedMean, 2) + Math.pow(43.0 - expectedMean, 2)) / 8.0f;
 
             // Run the method
-            float[] result = Utils.getMeanAndVarBlock3D(pixels, imageWidth, imageHeight, xStart, yStart, zStart, xEnd, yEnd, zEnd);
+            double[] result = Utils.getMeanAndVarBlock3D(pixels, imageWidth, imageHeight, xStart, yStart, zStart, xEnd, yEnd, zEnd);
 
             // Assert the mean and variance are correct
-            assertEquals(expectedMean, result[0], 0.0001f, "Mean should match expected value.");
-            assertEquals(expectedVariance, result[1], 0.0001f, "Variance should match expected value.");
+            assertEquals(expectedMean, (float)result[0], 0.0001f, "Mean should match expected value.");
+            assertEquals(expectedVariance, (float)result[1], 0.0001f, "Variance should match expected value.");
         }
     }
 

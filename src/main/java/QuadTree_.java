@@ -1,5 +1,6 @@
 import ij.IJ;
 import ij.ImagePlus;
+import ij.gui.NonBlockingGenericDialog;
 import ij.gui.Overlay;
 import ij.gui.Roi;
 import ij.plugin.PlugIn;
@@ -21,12 +22,31 @@ public class QuadTree_ implements PlugIn {
     private int imageHeight; // Height of the image
     private int d; // Number of dimensions in the data (e.g., 2 for 2D data)
     private int maxIterations; // Maximum iterations for robust means calculations
+    private float varAlpha; // Fraction of leaf nodes used to calculate variance (suggested 0.5 to 0.75)
 
     @Override
     public void run(String arg) {
-        // Get the active image
-        ImagePlus image = ij.WindowManager.getCurrentImage();
 
+        // ---- Display dialog box for user input ----
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Noise variance stabilisation 2D (Quadtree)");
+        gd.addNumericField("Minimum leaf size: ", 4);
+        gd.addNumericField("Alpha: ", 0.01f);
+        gd.addNumericField("Max iterations (M-estimator): ", 50);
+        gd.addNumericField("Fraction of leaf nodes (Least trimmed squares):", 0.75f);
+        gd.showDialog();
+        if (gd.wasCanceled()) return; // Stop the program if the "cancel" button is pressed
+
+        IJ.log("Stabilising noise variance 3D (Quadtree method)...");
+
+        // Quadtree parameters
+        minSize = (int)gd.getNextNumber(); // Minimum length of the squares
+        alpha = (float)gd.getNextNumber(); // Significance level for the F-distribution. Smaller values results less stringency (larger regions).
+        maxIterations = (int)gd.getNextNumber(); // Maximum umber of iterations in M-estimator
+        varAlpha = (float)gd.getNextNumber(); // Fraction of leaf nodes used for LTS variance calculation
+        d = 2; // Number of dimensions
+
+        // Get the active image (or stop the program is none is found)
+        ImagePlus image = ij.WindowManager.getCurrentImage();
         if (image == null) {
             ij.IJ.error("No image is open");
             return;
@@ -38,12 +58,6 @@ public class QuadTree_ implements PlugIn {
         FloatProcessor processor = image.getProcessor().convertToFloatProcessor();
         float[] imageData = (float[])processor.getPixels();
 
-        // Quadtree parameters
-        minSize = 4; // Minimum length of the squares
-        alpha = 0.01f; // Significance level for the F-distribution. Smaller values results less stringency (larger regions).
-        d = 2;
-        maxIterations = 50;
-
         // Create and build the quadtree
         IJ.log("Building QuadTree...");
         QuadTree_ quadTree = new QuadTree_(imageWidth, imageHeight, minSize, alpha);
@@ -52,7 +66,7 @@ public class QuadTree_ implements PlugIn {
         // Get robust mean and variance estimations from the QuadTree nodes
         IJ.log("Calculating GAT parameters...");
         quadTree.calculateRobustMeans(imageData, maxIterations);
-        quadTree.calculateLTSVariances(imageData, 0.75f); // Using 75% of data for variance estimation
+        quadTree.calculateLTSVariances(imageData, varAlpha);
 
         // Collect (mean, variance) pairs
         List<double[]> meanVariancePairs = quadTree.collectMeanVariancePairs();
@@ -75,9 +89,8 @@ public class QuadTree_ implements PlugIn {
         // SHOW GAT
         float[] gat = applyGATtree(imageData, imageWidth*imageHeight, g0, eDC);
         FloatProcessor ipFinal = new FloatProcessor(imageWidth, imageHeight, gat);
-        ImagePlus impFinal = new ImagePlus("Variance-stabilised image", ipFinal);
+        ImagePlus impFinal = new ImagePlus("Variance-stabilised image (Quadtree)", ipFinal);
         impFinal.show();
-
     }
 
 

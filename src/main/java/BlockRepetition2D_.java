@@ -95,7 +95,7 @@ public class BlockRepetition2D_ implements PlugIn {
         // Process
         if(isTimelapse){
             // Get variance-stabilised and normalised input image stack
-            Utils.InputImage3D inputImage = Utils.getInputImage3D(imgID, true, true);
+            Utils.InputImage3D inputImage = Utils.getInputImage3D(imgID, stabiliseNoiseVariance, gatMethod, true);
             float gain = inputImage.getGain();
             float sigma = inputImage.getSigma();
             float offset = inputImage.getOffset();
@@ -138,7 +138,8 @@ public class BlockRepetition2D_ implements PlugIn {
 
         }else {
             // Get variance-stabilised and normalised input image
-            Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, stabiliseNoiseVariance, gatMethod, true);
+            int maxIter = 5000; // TODO: DO NOT HARDCODE THIS
+            Utils.InputImage2D inputImage = Utils.getInputImage2D(imgID, stabiliseNoiseVariance, gatMethod, maxIter, true);
 
             // Calculate block repetition map
             float[] repetitionMap;

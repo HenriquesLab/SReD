@@ -21,6 +21,12 @@ public class GlobalRepetition3D_ implements PlugIn {
             "Abs. diff. of StdDevs"
     };
 
+    // Define GAT parameter estimation methods
+    public static final String[] GATMETHODS = {
+            "Simplex",
+            "Quad/Octree"
+    };
+
     @Override
     public void run(String s) {
 
@@ -51,6 +57,8 @@ public class GlobalRepetition3D_ implements PlugIn {
         gd.addNumericField("Block depth (px):", 5);
         gd.addNumericField("Relevance constant:", 0.0f);
         gd.addChoice("Metric:", METRICS, METRICS[0]);
+        gd.addCheckbox("Stabilise noise variance?", true);
+        gd.addChoice("GAT parameter estimation:", GATMETHODS, GATMETHODS[1]);
         gd.addCheckbox("Normalize output?", true);
         gd.addCheckbox("Use device from preferences?", false);
         gd.addHelp("https://github.com/HenriquesLab/SReD/wiki");
@@ -65,6 +73,8 @@ public class GlobalRepetition3D_ implements PlugIn {
         int blockDepth = (int) gd.getNextNumber();
         float relevanceConstant = (float) gd.getNextNumber();
         String metric = gd.getNextChoice();
+        boolean stabiliseNoiseVariance = gd.getNextBoolean();
+        String gatMethod = gd.getNextChoice();
         boolean normalizeOutput = gd.getNextBoolean();
         boolean useDevice = gd.getNextBoolean();
 
@@ -107,7 +117,7 @@ public class GlobalRepetition3D_ implements PlugIn {
         }
 
         // Get reference image and some parameters
-        Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, true, true);
+        Utils.InputImage3D inputImage = Utils.getInputImage3D(imageID, stabiliseNoiseVariance, gatMethod, true);
 
         // Initialize OpenCL
         CLUtils.OpenCLResources openCLResources = CLUtils.getOpenCLResources(useDevice);
