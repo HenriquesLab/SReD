@@ -696,9 +696,9 @@ public class Utils {
             List<double[]> meanVariancePairs = quadTree.collectMeanVariancePairs();
 
             // Perform linear regression to calculate g0 and eDC
-            float[] regression = quadTree.performLinearRegression(meanVariancePairs);
-            float g0 = regression[0];
-            float eDC = regression[1];
+            double[] regression = quadTree.performLinearRegression(meanVariancePairs);
+            double g0 = regression[0];
+            double eDC = regression[1];
 
             // Apply GAT
             imageArray = quadTree.applyGATtree(imageArray, width*height, g0, eDC);

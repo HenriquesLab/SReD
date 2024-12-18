@@ -72,9 +72,9 @@ public class QuadTree_ implements PlugIn {
         List<double[]> meanVariancePairs = quadTree.collectMeanVariancePairs();
 
         // Perform linear regression and calculate g0 and eDC
-        float[] results = performLinearRegression(meanVariancePairs);
-        float g0 = results[0];
-        float eDC = results[1];
+        double[] results = performLinearRegression(meanVariancePairs);
+        double g0 = results[0];
+        double eDC = results[1];
 
         IJ.log("g0: " + g0);
         IJ.log("eDC: " + eDC);
@@ -396,29 +396,29 @@ public class QuadTree_ implements PlugIn {
 
 
     // Do linear regression
-    public float[] performLinearRegression(List<double[]> pairs){
+    public double[] performLinearRegression(List<double[]> pairs){
         SimpleRegression regression = new SimpleRegression();
         for(double[] pair : pairs){
             regression.addData(pair[0], pair[1]);
         }
         regression.regress();
 
-        float g0 = (float)regression.getSlope();
-        float eDC = (float)regression.getIntercept();
+        double g0 = regression.getSlope();
+        double eDC = regression.getIntercept();
 
-        return new float[]{g0, eDC};
+        return new double[]{g0, eDC};
     }
 
-    public float[] applyGATtree(float[] imageData, int nPixels, float g0, float eDC){
+    public float[] applyGATtree(float[] imageData, int nPixels, double g0, double eDC){
 
         float[] gat = new float[nPixels];
-        double refConstant = 3.0d/8.0d * (double)g0 * (double)g0 + (double)eDC; //threshold to avoid taking the square root of negative values.
+        double refConstant = (3.0d/8.0d) * g0 * g0 + eDC; //threshold to avoid taking the square root of negative values.
         for(int i =0; i<nPixels; i++) {
             double v = (double)imageData[i];
-            if(v<-refConstant/g0){
+            if((g0*v+refConstant)<0.0d){
                 v = 0.0d;
             }else{
-                v = ((2.0d/(double)g0) * sqrt((double)g0 * v + refConstant));
+                v = ((2.0d/g0) * sqrt(g0 * v + refConstant));
             }
             gat[i] = (float) v;
         }
