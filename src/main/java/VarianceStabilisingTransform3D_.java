@@ -14,13 +14,8 @@ import ij.ImagePlus;
 import ij.ImageStack;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
-import ij.gui.Roi;
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
-
-import java.awt.*;
-import static java.lang.Math.sqrt;
 
 
 public class VarianceStabilisingTransform3D_ implements PlugIn {
@@ -29,11 +24,13 @@ public class VarianceStabilisingTransform3D_ implements PlugIn {
     public void run(String s) {
 
         // ---- Display dialog box for user input ----
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Calculate VST...");
-        gd.addNumericField("Gain guess:", 0);
-        gd.addNumericField("Offset guess:", 0);
-        gd.addNumericField("Noise standard deviation guess:", 100);
-        gd.addCheckbox("Estimate offset and StdDev from ROI?", false);
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Noise variance stabilisation 3D (Simplex)");
+        gd.addMessage("Initial parameter value guesses:");
+        gd.addNumericField("Gain:", 1);
+        gd.addNumericField("Offset:", 10);
+        gd.addNumericField("Noise StdDev:", 100);
+        gd.addMessage("");
+        gd.addNumericField("Max iterations:", 5000);
         gd.showDialog();
 
         if (gd.wasCanceled()) return;
@@ -55,134 +52,54 @@ public class VarianceStabilisingTransform3D_ implements PlugIn {
         double gain = gd.getNextNumber();
         double offset = gd.getNextNumber();
         double sigma = gd.getNextNumber();
-        boolean useROI = gd.getNextBoolean();
+        int maxIter = (int) gd.getNextNumber();
 
-        // Calculate offset and sigma from user-defined ROI (if user chooses to)
-        ImageProcessor ip = null;
-        if (useROI) {
-            Roi roi = imp.getRoi();
-            if (roi == null) {
-                IJ.error("No ROI selected. Please draw a rectangle and try again.");
-                return;
-            }
-
-            ip = imp.getProcessor();
-            Rectangle rect = ip.getRoi();
-
-            int rx = rect.x;
-            int ry = rect.y;
-            int rw = rect.width;
-            int rh = rect.height;
-
-            // Get standard deviation (single pass) https://www.strchr.com/standard_deviation_in_one_pass
-            double[] values = new double[rw * rh];
-
-            int counter = 0;
-            for (int j = ry; j < ry + rh; j++) {
-                for (int i = rx; i < rx + rw; i++) {
-                    values[counter] = ip.getPixel(i, j);
-                    counter++;
-                }
-            }
-
-            double[] offsetAndSigma = meanAndStdDev(values);
-            offset = offsetAndSigma[0];
-            sigma = offsetAndSigma[1];
-        }
-
-
-        // --------------------------------------------- //
-        // ---- Grab image stack and its dimensions ---- //
-        // --------------------------------------------- //
-
+        // Grab image stack and its dimensions
         ImageStack ims = imp.getImageStack();
+        int width = ims.getWidth(); // Image width
+        int height = ims.getHeight(); // Image height
+        int depth = ims.getSize(); // Image depth
+        int size = width*height*depth; // Image size
 
-        int w = ims.getWidth(); // Get image width
-        int h = ims.getHeight(); // Get image height
-        int z = ims.getSize(); // Get image depth
-
-        float[][] pixels = new float[z][w*h];
-        for (int i=0; i<z; i++) {
-            for(int y=0; y<h; y++) {
-                for(int x=0; x<w; x++) {
-                    pixels[i][y*w+x] = ims.getProcessor(i+1).convertToFloatProcessor().getf(x,y);
+        float[] pixels = new float[size];
+        for (int z=0; z<depth; z++) {
+            FloatProcessor fp = ims.getProcessor(z+1).convertToFloatProcessor();
+            for(int y=0; y<height; y++) {
+                for(int x=0; x<width; x++) {
+                    pixels[width*height*z+y*width+x] = fp.getf(x,y);
                 }
             }
         }
 
-        // ------------------------------------------------------------------------------------------ //
-        // ---- Run an optimizer to find gain, offset and sigma that minimize the noise variance ---- //
-        // ------------------------------------------------------------------------------------------ //
-
-        GATMinimizer3D minimizer = new GATMinimizer3D(pixels, w, h, z, gain, sigma, offset); // Run minimizer
+        // Run an optimizer to find gain, offset and sigma that minimize the noise variance
+        IJ.log("Stabilising noise variance (Simplex method)...");
+        GATMinimizer3D minimizer = new GATMinimizer3D(pixels, width, height, depth, gain, sigma, offset, maxIter); // Run minimizer
         minimizer.run();
 
+        // Apply GAT to image using optimized parameter values
+        float[] pixelsGAT;
+        pixelsGAT = VarianceStabilisingTransform2D_.getGAT(pixels, minimizer.gain, minimizer.sigma, minimizer.offset);
 
-        // ------------------------------------------------------------- //
-        // ---- Apply GAT to image using optimized parameter values ---- //
-        // ------------------------------------------------------------- //
-
-        float[][] pixelsGAT = new float[z][w*h];
-        ImageStack ims1 = new ImageStack(w, h, z);
-
-        for (int i=0; i<z; i++) {
-            pixelsGAT[i] = getGAT(pixels[i], minimizer.gain, minimizer.sigma, minimizer.offset);
-            FloatProcessor temp = new FloatProcessor(w, h);
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    temp.setf(x, y, pixelsGAT[i][y * w + x]);
+        // Build and show output
+        ImageStack ims1 = new ImageStack(width, height, depth); // Final ImageStack
+        for (int z=0; z<depth; z++) {
+            FloatProcessor fp = new FloatProcessor(width, height);
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    fp.setf(x, y, pixelsGAT[width*height*z+y*width+x]);
                 }
             }
-            ims1.setProcessor(temp, i+1);
-
+            ims1.setProcessor(fp, z+1);
         }
-
-
-        // --------------------------------- //
-        // ---- Display the image stack ---- //
-        // --------------------------------- //
-
         ImagePlus imp1 = new ImagePlus("Variance-stabilized image", ims1);
         imp1.show();
-    }
 
-    // ---- USER METHODS ----
-    private double[] meanAndStdDev ( double a[]){
-        int n = a.length;
-        if (n == 0) return new double[]{0, 0};
-
-        double sum = 0;
-        double sq_sum = 0;
-
-        for (int i = 0; i < n; i++) {
-            sum += a[i];
-            sq_sum += a[i] * a[i];
-        }
-
-        double mean = sum / n;
-        double variance = sq_sum / n - mean * mean;
-
-        return new double[]{mean, sqrt(variance)};
-
-    }
-
-    // Get GAT (see http://mirlab.org/conference_papers/International_Conference/ICASSP%202012/pdfs/0001081.pdf for GAT description)
-    public static float[] getGAT(float[] pixels, double gain, double sigma, double offset) {
-
-        double refConstant = (3d/8d) * gain * gain + sigma * sigma - gain * offset;
-
-        for (int n=0; n<pixels.length; n++) {
-            double v = pixels[n];
-            if (v <= -refConstant / gain) {
-                v = 0.0; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40 out of 10! AM 3 yearrz laterr: it avoids the sqrt of a negative number in the else statement
-            }else {
-                v = (2.0 / gain) * sqrt(gain * v + refConstant);
-            }
-
-            pixels[n] = (float) v;
-        }
-        return pixels;
-    }
+        // Print estimated parameter values
+        // Print optimized parameter values
+        IJ.log("Gain = " + minimizer.gain);
+        IJ.log("Sigma = " + minimizer.sigma);
+        IJ.log("Offset = " + minimizer.offset);
+        IJ.log("Done!");    }
 }
 
 

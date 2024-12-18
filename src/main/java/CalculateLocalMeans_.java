@@ -18,15 +18,10 @@ import static ij.WindowManager.getImageCount;
 public class CalculateLocalMeans_ implements PlugIn {
 
     static private CLContext context;
-
     static private CLProgram programGetPatchMeans;
-
     static private CLKernel kernelGetPatchMeans;
-
     static private CLPlatform clPlatformMaxFlop;
-
     static private CLCommandQueue queue;
-
     private CLBuffer<FloatBuffer> clRefPixels, clLocalMeans, clLocalStds;
 
 
@@ -206,7 +201,8 @@ public class CalculateLocalMeans_ implements PlugIn {
         // --------------------------------------------------------------------------- //
         // ---- Stabilize noise variance using the Generalized Anscombe transform ---- //
         // --------------------------------------------------------------------------- //
-        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0);
+        int maxIter = 5000; // TODO: DO NOT HARDCODE THIS
+        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0, maxIter);
         minimizer.run();
 
         refPixels = VarianceStabilisingTransform2D_.getGAT(refPixels, minimizer.gain, minimizer.sigma, minimizer.offset);
@@ -261,7 +257,7 @@ public class CalculateLocalMeans_ implements PlugIn {
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
 
         // Create OpenCL program
-        String programStringGetPatchMeans = getResourceAsString(BlockRedundancy2D_.class, "kernelGetPatchMeans2D.cl");
+        String programStringGetPatchMeans = getResourceAsString(BlockRepetition2D_.class, "kernelGetLocalStatistics2D.cl");
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$WIDTH$", "" + w);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$HEIGHT$", "" + h);
         programStringGetPatchMeans = replaceFirst(programStringGetPatchMeans, "$PATCH_SIZE$", "" + patchSize);

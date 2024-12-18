@@ -92,7 +92,8 @@ public class OptimiseRelevanceMask_ implements PlugIn {
         // ---- Stabilize noise variance using the Generalized Anscombe transform ---- //
         // --------------------------------------------------------------------------- //
 
-        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0);
+        int maxIter = 5000; // TODO: do not hardcode this
+        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0, maxIter);
         minimizer.run();
 
         // Get gain, sigma and offset from the minimizer and transform pixel values
@@ -206,28 +207,28 @@ public class OptimiseRelevanceMask_ implements PlugIn {
 
         // Write input image to the OpenCL device
         clRefPixels = context.createFloatBuffer(wh, READ_ONLY);
-        GlobalRedundancy.fillBufferWithFloatArray(clRefPixels, refPixels);
+        CLUtils.fillBufferWithFloatArray(clRefPixels, refPixels);
         queue.putWriteBuffer(clRefPixels, true);
 
         // Create OpenCL program
-        String programStringGetLocalStatistics = GlobalRedundancy.getResourceAsString(RelevanceMask2D_.class, "kernelGetRelevanceMask2D.cl");
-        programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
-        programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
-        programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$PATCH_SIZE$", "" + patchSize);
-        programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$BRW$", "" + bRW);
-        programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$BRH$", "" + bRH);
-        programStringGetLocalStatistics = GlobalRedundancy.replaceFirst(programStringGetLocalStatistics, "$EPSILON$", "" + EPSILON);
+        String programStringGetLocalStatistics = CLUtils.getResourceAsString(RelevanceMask2D_.class, "kernelGetRelevanceMask2D.cl");
+        programStringGetLocalStatistics = CLUtils.replaceFirst(programStringGetLocalStatistics, "$WIDTH$", "" + w);
+        programStringGetLocalStatistics = CLUtils.replaceFirst(programStringGetLocalStatistics, "$HEIGHT$", "" + h);
+        programStringGetLocalStatistics = CLUtils.replaceFirst(programStringGetLocalStatistics, "$PATCH_SIZE$", "" + patchSize);
+        programStringGetLocalStatistics = CLUtils.replaceFirst(programStringGetLocalStatistics, "$BRW$", "" + bRW);
+        programStringGetLocalStatistics = CLUtils.replaceFirst(programStringGetLocalStatistics, "$BRH$", "" + bRH);
+        programStringGetLocalStatistics = CLUtils.replaceFirst(programStringGetLocalStatistics, "$EPSILON$", "" + EPSILON);
         programGetLocalStatistics = context.createProgram(programStringGetLocalStatistics).build();
 
         // Create, fill and write buffers
         float[] localMeans = new float[wh];
         clLocalMeans = context.createFloatBuffer(wh, READ_WRITE);
-        GlobalRedundancy.fillBufferWithFloatArray(clLocalMeans, localMeans);
+        CLUtils.fillBufferWithFloatArray(clLocalMeans, localMeans);
         queue.putWriteBuffer(clLocalMeans, true);
 
         float[] localStds = new float[wh];
         clLocalStds = context.createFloatBuffer(wh, READ_WRITE);
-        GlobalRedundancy.fillBufferWithFloatArray(clLocalStds, localStds);
+        CLUtils.fillBufferWithFloatArray(clLocalStds, localStds);
         queue.putWriteBuffer(clLocalStds, true);
 
         // Create kernel and set kernel arguments

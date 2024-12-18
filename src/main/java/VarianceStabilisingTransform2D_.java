@@ -27,11 +27,14 @@ public class VarianceStabilisingTransform2D_ implements PlugIn {
     public void run(String s) {
 
         // ---- Display dialog box for user input ----
-        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Calculate VST...");
-        gd.addNumericField("Gain guess:", 0);
-        gd.addNumericField("Offset guess:", 0);
-        gd.addNumericField("Noise standard deviation guess:", 100);
-        gd.addCheckbox("Estimate offset and StdDev from ROI?", false);
+        NonBlockingGenericDialog gd = new NonBlockingGenericDialog("Noise variance stabilisation (Simplex)");
+        gd.addMessage("Initial parameter value guesses:");
+        gd.addNumericField("Gain:", 1);
+        gd.addNumericField("Offset:", 10);
+        gd.addNumericField("Noise StdDev:", 100);
+        gd.addCheckbox("Estimate offset and noise StdDev from ROI?", false);
+        gd.addMessage("");
+        gd.addNumericField("Max iterations:", 5000);
         gd.showDialog();
 
         if (gd.wasCanceled()) return;
@@ -49,6 +52,7 @@ public class VarianceStabilisingTransform2D_ implements PlugIn {
         double offset = gd.getNextNumber();
         double sigma = gd.getNextNumber();
         boolean useROI = gd.getNextBoolean();
+        int maxIter = (int) gd.getNextNumber();
 
         // Calculate offset and sigma from user-defined ROI (if user chooses to)
         ImageProcessor ip = null;
@@ -83,8 +87,7 @@ public class VarianceStabilisingTransform2D_ implements PlugIn {
             sigma = offsetAndSigma[1];
         }
 
-
-        // ---- Apply GAT to image ----
+        IJ.log("Stabilising noise variance (Simplex method)...");
         // Grab image and get pixel values dimensions
         FloatProcessor ifp = imp.getProcessor().convertToFloatProcessor(); // Convert to FloatProcessor because minimizer() requires floats
         float[] pixels = (float[]) ifp.getPixels(); // Get pixel array
@@ -92,7 +95,7 @@ public class VarianceStabilisingTransform2D_ implements PlugIn {
         int height = ifp.getHeight(); // Get image height
 
         // Run the optimizer to find gain, offset and sigma that minimize the noise variance
-        GATMinimizer2D minimizer = new GATMinimizer2D(pixels, width, height, gain, sigma, offset); // Run minimizer
+        GATMinimizer2D minimizer = new GATMinimizer2D(pixels, width, height, gain, sigma, offset, maxIter); // Run minimizer
         minimizer.run();
 
         // Create final "variance stable" image based on optimized parameters
@@ -101,6 +104,12 @@ public class VarianceStabilisingTransform2D_ implements PlugIn {
         FloatProcessor fp1 = new FloatProcessor(width, height, pixelsGAT);
         ImagePlus imp1 = new ImagePlus("Variance-stabilized image", fp1);
         imp1.show();
+
+        // Print optimized parameter values
+        IJ.log("Gain = " + minimizer.gain);
+        IJ.log("Sigma = " + minimizer.sigma);
+        IJ.log("Offset = " + minimizer.offset);
+        IJ.log("Done!");
     }
 
     // ---- USER METHODS ----
@@ -126,14 +135,14 @@ public class VarianceStabilisingTransform2D_ implements PlugIn {
     // Get GAT (see http://mirlab.org/conference_papers/International_Conference/ICASSP%202012/pdfs/0001081.pdf for GAT description)
     public static float[] getGAT(float[] pixels, double gain, double sigma, double offset) {
 
-        double refConstant = (3d/8d) * gain * gain + sigma * sigma - gain * offset;
+        double refConstant = (3.0d/8.0d) * gain * gain + sigma * sigma - gain * offset;
 
         for (int n=0; n<pixels.length; n++) {
-            double v = pixels[n];
-            if (v <= -refConstant / gain) {
-                v = 0; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40/10!
+            double v = (double)pixels[n];
+            if ((gain*v+refConstant)<0.0d) {
+                v = 0.0d; // checking for a special case, Ricardo does not remember why, he's 40 after all. AM: 40/10!
             }else {
-                v = (2 / gain) * sqrt(gain * v + refConstant);
+                v = (2.0d / gain) * sqrt(gain * v + refConstant);
             }
 
             pixels[n] = (float) v;
