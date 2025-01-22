@@ -24,7 +24,7 @@ on:
 
 jobs:
   test:
-    runs-on: [self-hosted, Linux-wheels]
+    runs-on: [ubuntu-latest]
     permissions:
         contents: read
         packages: write
