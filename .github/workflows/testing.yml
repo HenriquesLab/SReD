@@ -24,18 +24,12 @@ on:
 
 jobs:
   test:
-    runs-on: [self-hosted, Ubuntu]
+    runs-on: [self-hosted, Linux-wheels]
     permissions:
         contents: read
         packages: write
 
     steps:
-      - name: Set up Xvfb
-        run: |
-          apt-get update
-          apt-get install -y xvfb
-          Xvfb :99 -screen 0 1024x768x24 &
-          export DISPLAY=:99
       - uses: actions/checkout@v4
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -49,5 +43,3 @@ jobs:
 
       - name: Build with Maven
         run: mvn clean validate compile test test-compile --file pom.xml
-        env:
-          DISPLAY: :99
