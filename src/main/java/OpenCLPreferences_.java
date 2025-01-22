@@ -73,7 +73,7 @@ public class OpenCLPreferences_ implements PlugIn {
         // ---- Set preference ---- //
         // ------------------------ //
 
-        // Prefered OpenCL device
+        // Preferred OpenCL device
         String prefDevice = gd.getNextChoice();
         for (int i=0; i<deviceNames.length; i++) {
             if (deviceNames[i].equals(prefDevice)) {
@@ -81,7 +81,7 @@ public class OpenCLPreferences_ implements PlugIn {
             }
         }
 
-        // Prefered compute block size
+        // Preferred compute block size
         String prefBlockSize = gd.getNextChoice();
         for (int i=0; i<sizes.length; i++) {
             if (sizes[i].equals(prefBlockSize)) {
@@ -90,7 +90,7 @@ public class OpenCLPreferences_ implements PlugIn {
             }
         }
 
-        // Prefered method to estimate GAT parameters
+        // Preferred method to estimate GAT parameters
         String prefGATMethod = gd.getNextChoice();
         for(int i=0; i<gatOptions.length; i++){
             if(gatOptions[i].equals(prefGATMethod)){
