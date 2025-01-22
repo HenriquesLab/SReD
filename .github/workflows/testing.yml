@@ -49,3 +49,5 @@ jobs:
 
       - name: Build with Maven
         run: mvn clean validate compile test test-compile --file pom.xml
+        env:
+          DISPLAY: :99
