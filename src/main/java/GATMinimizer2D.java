@@ -13,7 +13,7 @@ import static java.lang.Math.sqrt;
 
 
 public class GATMinimizer2D implements UserFunction {
-//TODO: THIS BUGS OUT WHEN IMAGE IS TOO SMAL DUE TO HOW WE DEFINE BLOCK SIZE
+//TODO: THIS BUGS OUT WHEN IMAGE IS TOO SMALL DUE TO HOW WE DEFINE BLOCK SIZE
     public double gain, sigma, offset;
     private final int width, height, maxIter;
     //public boolean isCalculated = false;

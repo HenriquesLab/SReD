@@ -397,7 +397,7 @@ public class UtilsTest {
             int imageID = imp.getID();
 
             // Call the method
-            Utils.InputImage2D result = Utils.getInputImage2D(imageID, false, "Simplex", false);
+            Utils.InputImage2D result = Utils.getInputImage2D(imageID, false, "Simplex", 5000, false);
 
             // Verify the result
             assertNotNull(result);
@@ -432,7 +432,7 @@ public class UtilsTest {
             int imageID = imp.getID();
 
             // Call the method with normalization
-            Utils.InputImage2D result = Utils.getInputImage2D(imageID, false, "Simplex", true);
+            Utils.InputImage2D result = Utils.getInputImage2D(imageID, false, "Simplex", 5000, true);
 
             // Verify the result
             assertNotNull(result);
@@ -449,7 +449,7 @@ public class UtilsTest {
         @Test
         public void testGetInputImage2D_ImageNotFound() {
             // Call the method with an invalid imageID
-            Utils.InputImage2D result = Utils.getInputImage2D(999, false, "Simplex", false);
+            Utils.InputImage2D result = Utils.getInputImage2D(999, false, "Simplex", 5000, false);
 
             // Verify that the method returns null when image is not found
             assertNull(result);
