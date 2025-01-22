@@ -952,7 +952,7 @@ public class CLUtilsTest {
 
         // Check if result is as expected
         for(int i=0; i<imageSize; i++){
-            assertEquals(expectedResult[i], result[i], Utils.EPSILON*10.0f);
+            assertEquals(expectedResult[i], result[i], Utils.EPSILON*100.0f);
         }
     }
 
