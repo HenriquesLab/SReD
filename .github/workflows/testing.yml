@@ -32,8 +32,8 @@ jobs:
     steps:
       - name: Set up Xvfb
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          apt-get update
+          apt-get install -y xvfb
           Xvfb :99 -screen 0 1024x768x24 &
           export DISPLAY=:99
       - uses: actions/checkout@v4
