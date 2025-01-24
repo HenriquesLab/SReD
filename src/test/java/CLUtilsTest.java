@@ -4,6 +4,12 @@ import com.jogamp.opencl.*;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.FloatBuffer;
+
+import ij.ImagePlus;
+import ij.ImageStack;
+import ij.measure.Calibration;
+import ij.process.FloatProcessor;
+import ij.process.ImageProcessor;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -983,9 +989,8 @@ public class CLUtilsTest {
         int blockRadiusWidth = blockWidth/2;
         int blockRadiusHeight = blockHeight/2;
         float[] block = {0.0f, 1.0f, 0.0f,
-                0.0f, 1.0f, 0.0f,
-                0.0f, 1.0f, 0.0f
-        };
+                         0.0f, 1.0f, 0.0f,
+                         0.0f, 1.0f, 0.0f};
 
         int blockSize = 0;
         for (int y=0; y<blockHeight; y++) {
@@ -1066,4 +1071,393 @@ public class CLUtilsTest {
         }
     }
 
+    @Test
+    public void testCalculateBlockRepetitionMap2DAllMetrics() {
+        // Mock input data for testing
+        int imageWidth = 10;
+        int imageHeight = 10;
+        int imageSize = imageWidth * imageHeight;
+        float[] imageArray = {
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f
+        };
+        Utils.InputImage2D inputImage = new Utils.InputImage2D(imageArray, imageWidth, imageHeight, imageSize);
+
+        // Mock reference block data
+        // Set up the reference block data
+        int blockWidth = 3;
+        int blockHeight = 3;
+        int blockRadiusWidth = blockWidth/2;
+        int blockRadiusHeight = blockHeight/2;
+        float[] block = {0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f};
+
+        int blockSize = 0;
+        for (int y=0; y<blockHeight; y++) {
+            for (int x=0; x<blockWidth; x++) {
+                float dx = (float) (x-blockRadiusWidth);
+                float dy = (float) (y-blockRadiusHeight);
+                if (((dx*dx)/(float)(blockRadiusWidth*blockRadiusWidth))+((dy*dy)/(float)(blockRadiusHeight*blockRadiusHeight)) <= 1.0f) {
+                    blockSize++;
+                }
+            }
+        }
+
+        float[] blockArray = new float[blockSize];
+        int index = 0;
+        for (int y=0; y<blockHeight; y++) {
+            for (int x=0; x<blockWidth; x++) {
+                float dx = (float) (x - blockRadiusWidth);
+                float dy = (float) (y - blockRadiusHeight);
+                if (((dx * dx) / (float) (blockRadiusWidth * blockRadiusWidth)) + ((dy * dy) / (float) (blockRadiusHeight * blockRadiusHeight)) <= 1.0f) {
+                    blockArray[index] = block[y*blockWidth+x];
+                    index++;
+                }
+            }
+        }
+
+        float blockMean = 0.0f;
+        for(int i=0; i<blockSize; i++){
+            blockMean += blockArray[i];
+        }
+        blockMean /= (float) blockSize;
+
+        float blockStd = 0.0f;
+        for(int i=0; i<blockSize; i++){
+            blockStd += (blockArray[i]-blockMean)*(blockArray[i]-blockMean);
+        }
+        blockStd /= (float) blockSize - 1.0f;
+        blockStd = (float)sqrt(blockStd);
+
+        Utils.ReferenceBlock2D referenceBlock = new Utils.ReferenceBlock2D(blockArray, blockWidth, blockHeight,
+                blockRadiusWidth, blockRadiusHeight, blockSize, blockMean, blockStd);
+
+        float relevanceConstant = 0.0f; // Mock relevance constant
+        boolean normalizeOutput = true; // Mock normalization setting
+        boolean useDevice = true; // Mock device usage setting
+
+        for (String metric : BlockRepetition2D_.METRICS) {
+            // Call the method under test for each metric
+            float[] result = CLUtils.calculateBlockRepetitionMap2D(
+                    metric, inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
+
+            // Assert that the result is not null for a valid metric
+            assertNotNull(result, "Result should not be null for metric: " + metric);
+
+            // Assert that the result has the expected size (optional, if you know the expected dimensions)
+            int expectedLength = inputImage.getWidth() * inputImage.getHeight();
+            assertEquals(expectedLength, result.length, "Unexpected result length for metric: " + metric);
+
+            // Optionally, check the range of values if normalization is enabled
+            if (normalizeOutput) {
+                for (float value : result) {
+                    assertTrue(value >= 0.0f && value <= 1.0f,
+                            "Value out of normalized range [0.0, 1.0] for metric: " + metric);
+                }
+            }
+        }
+    }
+
+
+    // ----------------------------------------- //
+    // ---- METHODS FOR BLOCK REPETITION 3D ---- //
+    // ----------------------------------------- //
+
+    @Test
+    public void testGetLocalStatistics3D() {
+        // Create a CLContext, device, and command queue
+        CLUtils.OpenCLResources resources = null;
+        try {
+            resources = CLUtils.getOpenCLResources(false);
+        } catch (RuntimeException e) {
+            fail("OpenCL initialization failed: " + e.getMessage());
+        }
+
+        // Sample input image (5x5x5 3D array for testing)
+        int width = 5;
+        int height = 5;
+        int depth = 5;
+        int size = width * height * depth;
+        float[] inputImageData = {
+                // Slice 1
+                1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
+                6.0f, 7.0f, 8.0f, 9.0f, 10.0f,
+                11.0f, 12.0f, 13.0f, 14.0f, 15.0f,
+                16.0f, 17.0f, 18.0f, 19.0f, 20.0f,
+                21.0f, 22.0f, 23.0f, 24.0f, 25.0f,
+
+                // Slice 2
+                26.0f, 27.0f, 28.0f, 29.0f, 30.0f,
+                31.0f, 32.0f, 33.0f, 34.0f, 35.0f,
+                36.0f, 37.0f, 38.0f, 39.0f, 40.0f,
+                41.0f, 42.0f, 43.0f, 44.0f, 45.0f,
+                46.0f, 47.0f, 48.0f, 49.0f, 50.0f,
+
+                // Slice 3
+                51.0f, 52.0f, 53.0f, 54.0f, 55.0f,
+                56.0f, 57.0f, 58.0f, 59.0f, 60.0f,
+                61.0f, 62.0f, 63.0f, 64.0f, 65.0f,
+                66.0f, 67.0f, 68.0f, 69.0f, 70.0f,
+                71.0f, 72.0f, 73.0f, 74.0f, 75.0f,
+
+                // Slice 4
+                76.0f, 77.0f, 78.0f, 79.0f, 80.0f,
+                81.0f, 82.0f, 83.0f, 84.0f, 85.0f,
+                86.0f, 87.0f, 88.0f, 89.0f, 90.0f,
+                91.0f, 92.0f, 93.0f, 94.0f, 95.0f,
+                96.0f, 97.0f, 98.0f, 99.0f, 100.0f,
+
+                // Slice 5
+                101.0f, 102.0f, 103.0f, 104.0f, 105.0f,
+                106.0f, 107.0f, 108.0f, 109.0f, 110.0f,
+                111.0f, 112.0f, 113.0f, 114.0f, 115.0f,
+                116.0f, 117.0f, 118.0f, 119.0f, 120.0f,
+                121.0f, 122.0f, 123.0f, 124.0f, 125.0f
+        };
+
+        // Create an InputImage3D instance
+        ImageStack mockIms = new ImageStack(width, height, depth);
+        for(int z=0; z<depth; z++){
+            FloatProcessor mockFp = new FloatProcessor(width, height);
+            for(int y=0; y<height; y++){
+                for(int x=0; x<width; x++){
+                    mockFp.setf(x, y, inputImageData[width*height*z+y*width+x]);
+                }
+            }
+            mockIms.setProcessor(mockFp, z+1);
+        }
+
+        ImagePlus mockIp = new ImagePlus("test_input", mockIms);
+        Calibration calibration = mockIp.getCalibration();
+        Utils.InputImage3D inputImage3D = new Utils.InputImage3D(inputImageData, width, height, depth, size, calibration,1, 10, 100);
+
+        // Define block size and epsilon
+        int blockRadiusWidth = 1; //
+        int blockRadiusHeight = 1;
+        int blockRadiusDepth = 1;
+
+        // Call the method to test
+        CLUtils.CLLocalStatistics localStatistics = CLUtils.getLocalStatistics3D(
+                resources,
+                inputImage3D,
+                3, // blockSize
+                blockRadiusWidth,
+                blockRadiusHeight,
+                blockRadiusDepth,
+                Utils.EPSILON
+        );
+
+        // Validate local means and local stds (these values should be calculated based on the input image)
+        float[] localMeans = localStatistics.getLocalMeans();
+        float[] localStds = localStatistics.getLocalStds();
+
+        // Define expected values for local means and standard deviations (manually computed for the test data)
+        float[] expectedLocalMeans = {
+                // Slice 1
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 2
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 21.666666f, 22.666666f, 23.666666f, 0.0f,
+                0.0f, 26.666666f, 27.666666f, 28.666666f, 0.0f,
+                0.0f, 31.666666f, 32.666666f, 33.666666f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 3
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 46.666666f, 47.666666f, 48.666666f, 0.0f,
+                0.0f, 51.666666f, 52.666666f, 53.666666f, 0.0f,
+                0.0f, 56.666666f, 57.666666f, 58.666666f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 4
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 71.666666f, 72.666666f, 73.666666f, 0.0f,
+                0.0f, 76.666666f, 77.666666f, 78.666666f, 0.0f,
+                0.0f, 81.666666f, 82.666666f, 83.666666f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 5
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+        };
+
+        float[] expectedLocalStds = {
+                // Slice 1
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 2
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 3
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 4
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 12.858201f, 12.858201f, 12.858201f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+                // Slice 5
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+        };
+
+        // Validate the output
+        assertNotNull(localMeans, "Local means should not be null.");
+        assertNotNull(localStds, "Local standard deviations should not be null.");
+
+        // Check the size of the results
+        assertEquals(size, localMeans.length, "Local means array size should match image size.");
+        assertEquals(size, localStds.length, "Local stds array size should match image size.");
+
+        // Validate the values (use an appropriate precision for floats)
+        for (int i = 0; i < size; i++) {
+            assertEquals(expectedLocalMeans[i], localMeans[i], Utils.EPSILON*100.0f, "Local mean value at index " + i + " is incorrect.");
+            assertEquals(expectedLocalStds[i], localStds[i], Utils.EPSILON, "Local std deviation value at index " + i + " is incorrect.");
+        }
+
+        // Cleanup
+        resources.getContext().release();
+    }
+
+    @Test
+    public void testGetBlockPearson3D() {
+        // Set up the input image data (3D image)
+        int imageWidth = 10;
+        int imageHeight = 10;
+        int imageDepth = 5;
+        int imageSize = imageWidth * imageHeight * imageDepth;
+        float[] imageArray = new float[imageSize];
+
+        // Initialize the 3D image (example with some patterns)
+        for (int z = 0; z < imageDepth; z++) {
+            for (int y = 0; y < imageHeight; y++) {
+                for (int x = 0; x < imageWidth; x++) {
+                    int index = imageHeight*imageWidth*z +y*imageWidth+x;
+                    if ((x == 5 && y == 5) || (x == 6 && y == 5) || (x == 5 && y == 6) || (x == 6 && y == 6)) {
+                        imageArray[index] = 1.0f;
+                    } else {
+                        imageArray[index] = 0.0f;
+                    }
+                }
+            }
+        }
+
+
+        // Create an InputImage3D instance
+        ImageStack mockIms = new ImageStack(imageWidth, imageHeight, imageDepth);
+        for(int z=0; z<imageDepth; z++){
+            FloatProcessor mockFp = new FloatProcessor(imageWidth, imageHeight);
+            for(int y=0; y<imageHeight; y++){
+                for(int x=0; x<imageWidth; x++){
+                    mockFp.setf(x, y, imageArray[imageWidth*imageHeight*z+y*imageWidth+x]);
+                }
+            }
+            mockIms.setProcessor(mockFp, z+1);
+        }
+
+        ImagePlus mockIp = new ImagePlus("test_input", mockIms);
+        Calibration calibration = mockIp.getCalibration();
+        Utils.InputImage3D inputImage3D = new Utils.InputImage3D(imageArray, imageWidth, imageHeight, imageDepth, imageSize, calibration, 1, 10, 100);
+
+        // Set up the reference block data (3D block)
+        int blockWidth = 3;
+        int blockHeight = 3;
+        int blockDepth = 3;
+        int blockRadiusWidth = blockWidth / 2;
+        int blockRadiusHeight = blockHeight / 2;
+        int blockRadiusDepth = blockDepth / 2;
+
+        float[] block = {
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f,
+                0.0f, 1.0f, 0.0f
+        };
+
+        int blockSize = blockWidth * blockHeight * blockDepth;
+
+        float blockMean = 0.0f;
+        for (int i = 0; i < blockSize; i++) {
+            blockMean += block[i];
+        }
+        blockMean /= blockSize;
+
+        float blockStd = 0.0f;
+        for (int i = 0; i < blockSize; i++) {
+            blockStd += (block[i] - blockMean) * (block[i] - blockMean);
+        }
+        blockStd /= blockSize - 1;
+        blockStd = (float) Math.sqrt(blockStd);
+
+        Utils.ReferenceBlock3D referenceBlock3D = new Utils.ReferenceBlock3D(block, blockWidth, blockHeight, blockDepth, blockRadiusWidth, blockRadiusHeight, blockRadiusDepth, blockSize, blockMean, blockStd);
+
+        // Initialize OpenCL
+        CLUtils.OpenCLResources clResources = CLUtils.getOpenCLResources(false);
+
+        // Set relevance constant, normalize output flag, and useDevice flag
+        float relevanceConstant = 0.0f;
+        boolean normalizeOutput = true;
+        boolean useDevice = false;
+
+        // Call the method
+        float[] expectedResult = new float[imageWidth*imageHeight*imageDepth];
+
+        float[] result = CLUtils.getBlockPearson3D(inputImage3D, referenceBlock3D, relevanceConstant, normalizeOutput, useDevice);
+
+        // Assert that the result is not null and has the correct size
+        assertNotNull(result);
+        assertEquals(imageSize, result.length);
+
+        // Check if result is normalized
+        for (float value : result) {
+            assertTrue(value >= 0.0f && value <= 1.0f);  // Assuming result is normalized
+        }
+
+        // Check if result is as expected
+        for (int i = 0; i < imageSize; i++) {
+            assertEquals(expectedResult[i], result[i], 0.000001f);
+        }
+    }
+    
 }
