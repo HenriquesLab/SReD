@@ -8,8 +8,8 @@ on:
       # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetpathspaths-ignore
       - "src/**"
       - "pom.xml"
-    pull_request:
-        branches: ["main"]
+    # pull_request:
+    #     branches: ["main"]
     workflow_dispatch:
         inputs:
             logLevel:
@@ -24,12 +24,18 @@ on:
 
 jobs:
   test:
-    runs-on: [self-hosted, Ubuntu]
+    runs-on: [self-hosted, Linux-wheels]
     permissions:
         contents: read
         packages: write
 
     steps:
+      - name: Set up Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxrender1
+          Xvfb :99 -screen 0 1024x768x24 &
+          export DISPLAY=:99
       - uses: actions/checkout@v4
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -39,7 +45,9 @@ jobs:
           cache: 'maven'
 
       - name: Install Maven
-        run: apt-get update; apt-get install maven -y
+        run: sudo apt-get update; sudo apt-get install maven -y
 
       - name: Build with Maven
         run: mvn clean validate compile test test-compile --file pom.xml
+        env:
+          DISPLAY: :99

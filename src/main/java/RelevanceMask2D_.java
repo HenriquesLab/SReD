@@ -173,8 +173,8 @@ public class RelevanceMask2D_ implements PlugIn {
         // --------------------------------------------------------------------------- //
         // ---- Stabilize noise variance using the Generalized Anscombe transform ---- //
         // --------------------------------------------------------------------------- //
-
-        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0);
+        int maxIter = 5000; // TODO: do not hardcode this
+        GATMinimizer2D minimizer = new GATMinimizer2D(refPixels, w, h, 0, 100, 0, maxIter);
         minimizer.run();
 
         // Get gain, sigma and offset from the minimizer and transform pixel values
