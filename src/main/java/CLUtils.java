@@ -583,115 +583,6 @@ public class CLUtils {
     }
 
 
-    /**
-     * Computes the block-wise cosine similarity for a 2D image using OpenCL.
-     *
-     * This method calculates the cosine similarity between a reference block and all blocks
-     * of the input image. The result is stored in a repetition map, indicating the degree
-     * of similarity across the image. Optionally, a relevance mask can be applied to filter
-     * the results based on local standard deviations and a relevance constant.
-     *
-     * @param inputImage2D      the input 2D image for similarity calculation
-     * @param referenceBlock2D  the reference block used for comparison in the similarity calculation
-     * @param relevanceConstant  a constant value used to cintrol the strength of the structural relevance filter
-     * @param normalizeOutput    a boolean indicating whether to normalize the output repetition map
-     * @param useDevice          a boolean indicating whether to use the user-defined OpenCL device preference
-     * @return a float array representing the repetition map, indicating the cosine similarity
-     *         coefficients across the image
-     */
-    public static float[] getBlockCosineSimilarity2D(Utils.InputImage2D inputImage2D,
-                                                     Utils.ReferenceBlock2D referenceBlock2D,
-                                                     float relevanceConstant,
-                                                     boolean normalizeOutput,
-                                                     boolean useDevice)
-    {
-        // Cache variables
-        int imageWidth = inputImage2D.getWidth();
-        int imageHeight = inputImage2D.getHeight();
-        int imageSize = inputImage2D.getSize();
-        int blockWidth = referenceBlock2D.getWidth();
-        int blockHeight = referenceBlock2D.getHeight();
-        int blockSize = referenceBlock2D.getSize();
-        int bRW = referenceBlock2D.getRadiusWidth();
-        int bRH = referenceBlock2D.getRadiusHeight();
-
-        // Initialize OpenCL
-        CLUtils.OpenCLResources openCLResources = CLUtils.getOpenCLResources(useDevice);
-
-        // Retrieve OpenCL context, device and queue
-        CLContext context = openCLResources.getContext();
-        CLDevice device = openCLResources.getDevice();
-        CLCommandQueue queue = openCLResources.getQueue();
-
-        // Calculate local statistics
-        CLLocalStatistics localStatistics = getLocalStatistics2D(context, device, queue, inputImage2D,
-                blockWidth, blockHeight, Utils.EPSILON);
-
-        // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
-        CLBuffer<FloatBuffer> clBlockPixels = createAndFillCLBuffer(context, blockSize, READ_ONLY,
-                referenceBlock2D.getPixels());
-        queue.putWriteBuffer(clBlockPixels, true);
-
-        float[] repetitionMap = new float[imageSize];
-        CLBuffer<FloatBuffer> clRepetitionMap = createAndFillCLBuffer(context, imageSize, READ_WRITE,
-                repetitionMap);
-
-        // Build OpenCL program
-        String programStringGetBlockCosineSimilarity2D = getResourceAsString(CLUtils.class, "kernelGetBlockCosineSimilarity2D.cl");
-        programStringGetBlockCosineSimilarity2D = replaceFirst(programStringGetBlockCosineSimilarity2D, "$WIDTH$", "" + imageWidth);
-        programStringGetBlockCosineSimilarity2D = replaceFirst(programStringGetBlockCosineSimilarity2D, "$HEIGHT$", "" + imageHeight);
-        programStringGetBlockCosineSimilarity2D = replaceFirst(programStringGetBlockCosineSimilarity2D, "$BRW$", "" + bRW);
-        programStringGetBlockCosineSimilarity2D = replaceFirst(programStringGetBlockCosineSimilarity2D, "$BRH$", "" + bRH);
-        programStringGetBlockCosineSimilarity2D = replaceFirst(programStringGetBlockCosineSimilarity2D, "$BLOCK_STD$", "" + referenceBlock2D.getStd());
-        programStringGetBlockCosineSimilarity2D = replaceFirst(programStringGetBlockCosineSimilarity2D, "$EPSILON$", "" + Utils.EPSILON);
-        CLProgram programGetBlockCosineSimilarity2D = context.createProgram(programStringGetBlockCosineSimilarity2D).build();
-
-        // Create OpenCL kernel and set args
-        CLKernel kernelGetBlockCosineSimilarity2D = programGetBlockCosineSimilarity2D.createCLKernel("kernelGetBlockCosineSimilarity2D");
-
-        int argn = 0;
-        kernelGetBlockCosineSimilarity2D.setArg(argn++, localStatistics.getCLLocalStds());
-        kernelGetBlockCosineSimilarity2D.setArg(argn++, clRepetitionMap);
-
-        int localWorkSize = min(device.getMaxWorkGroupSize(), 256);
-        int globalWorkSize = roundUp(localWorkSize, imageSize);
-
-        queue.put2DRangeKernel(kernelGetBlockCosineSimilarity2D, 0, 0, imageWidth,
-                imageHeight, 0, 0);
-        queue.finish();
-
-        // Read the repetition map back from the device
-        queue.putReadBuffer(clRepetitionMap, true);
-        for (int y=0; y<imageHeight; y++) {
-            for (int x=0; x<imageWidth; x++) {
-                repetitionMap[y*imageWidth+x] = clRepetitionMap.getBuffer().get(y*imageWidth+x);
-                queue.finish();
-            }
-        }
-
-        // Calculate and apply relevance mask
-        float[] relevanceMaskArray = null;
-        if(relevanceConstant>0.0f) {
-        Utils.RelevanceMask relevanceMask = Utils.getRelevanceMask(inputImage2D.getImageArray(), imageWidth,
-                    imageHeight, bRW, bRH, localStatistics.getLocalStds(), relevanceConstant);
-        relevanceMaskArray = relevanceMask.getRelevanceMask();
-        repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMaskArray);
-        }
-
-        // Normalize repetition map (avoiding masked pixels)
-        if(normalizeOutput) {
-            repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, bRW, bRH,
-                    relevanceMaskArray);
-        }
-
-        // Release memory
-        context.release();
-
-        return repetitionMap;
-    }
-
 
     /**
      * Computes the block-wise Structural Similarity Index (SSIM) for a 2D image using OpenCL.
@@ -1108,12 +999,10 @@ public class CLUtils {
         if (metric.equals(BlockRepetition2D_.METRICS[0])) {
             return CLUtils.getBlockPearson2D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
         } else if (metric.equals(BlockRepetition2D_.METRICS[1])) {
-            return CLUtils.getBlockCosineSimilarity2D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
-        } else if (metric.equals(BlockRepetition2D_.METRICS[2])) {
             return CLUtils.getBlockSsim2D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
-        } else if (metric.equals(BlockRepetition2D_.METRICS[3])) {
+        } else if (metric.equals(BlockRepetition2D_.METRICS[2])) {
             return CLUtils.getBlockNrmse2D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
-        } else if (metric.equals(BlockRepetition2D_.METRICS[4])) {
+        } else if (metric.equals(BlockRepetition2D_.METRICS[3])) {
             return CLUtils.getBlockAbsDiffStds2D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
         } else {
             return null; // This is here just because the method requires a return statement outside the IF/ELSE clauses.
@@ -1350,122 +1239,7 @@ public class CLUtils {
     }
 
 
-    /**
-     * Computes the block-wise cosine similarity for a 3D image using OpenCL.
-     *
-     * This method calculates the cosine similarity between a reference block and all blocks
-     * of the input image. The result is stored in a repetition map, indicating the degree
-     * of similarity across the image. Optionally, a relevance mask can be applied to filter
-     * the results based on local standard deviations and a relevance constant.
-     *
-     * @param inputImage3D      the input 3D image for similarity calculation
-     * @param referenceBlock3D  the reference block used for comparison in the similarity calculation
-     * @param relevanceConstant  a constant value used to control the strength of the structural relevance filter
-     * @param normalizeOutput    a boolean indicating whether to normalize the output repetition map
-     * @param useDevice          a boolean indicating whether to use the user-defined OpenCL device preference
-     * @return a float array representing the repetition map, indicating the cosine similarity
-     *         coefficients across the image
-     */
-    public static float[] getBlockCosineSimilarity3D(Utils.InputImage3D inputImage3D,
-                                                     Utils.ReferenceBlock3D referenceBlock3D, float relevanceConstant,
-                                                     boolean normalizeOutput, boolean useDevice)
-    {
-        // Cache variables
-        int imageWidth = inputImage3D.getWidth();
-        int imageHeight = inputImage3D.getHeight();
-        int imageSize = inputImage3D.getSize();
-        int imageDepth = inputImage3D.getDepth();
-        int blockSize = referenceBlock3D.getSize();
-        int blockRadiusWidth = referenceBlock3D.getRadiusWidth();
-        int blockRadiusHeight = referenceBlock3D.getRadiusHeight();
-        int blockRadiusDepth = referenceBlock3D.getRadiusDepth();
 
-        // Initialize OpenCL
-        CLUtils.OpenCLResources openCLResources = CLUtils.getOpenCLResources(useDevice);
-
-        // Retrieve OpenCL context, device and queue
-        CLContext context = openCLResources.getContext();
-        CLDevice device = openCLResources.getDevice();
-        CLCommandQueue queue = openCLResources.getQueue();
-
-        // Calculate local statistics
-        CLLocalStatistics localStatistics = getLocalStatistics3D(openCLResources, inputImage3D, blockSize,
-                blockRadiusWidth, blockRadiusHeight, blockRadiusDepth, Utils.EPSILON);
-
-        // Create and fill OpenCL buffers
-        IJ.log("Calculating Structural Repetition Scores...");
-
-        CLBuffer<FloatBuffer> clBlockPixels = createAndFillCLBuffer(context, blockSize, READ_ONLY,
-                referenceBlock3D.getPixels());
-        queue.putWriteBuffer(clBlockPixels, true);
-
-        float[] repetitionMap = new float[imageSize]; // Create array to hold the repetition map
-        Arrays.fill(repetitionMap, 0.0f); // Fill with zeroes just be sure
-
-        CLBuffer<FloatBuffer> clRepetitionMap = createAndFillCLBuffer(context, imageSize, READ_WRITE,
-                repetitionMap);
-
-        // Build OpenCL program
-        String programStringGetBlockCosineSimilarity3D = getResourceAsString(CLUtils.class, "kernelGetBlockCosineSimilarity3D.cl");
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$WIDTH$", "" + imageWidth);
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$HEIGHT$", "" + imageHeight);
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$DEPTH$", "" + imageDepth);
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$BRW$", "" + blockRadiusWidth);
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$BRH$", "" + blockRadiusHeight);
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$BRZ$", "" + blockRadiusDepth);
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$BLOCK_STD$", "" + referenceBlock3D.getStd());
-        programStringGetBlockCosineSimilarity3D = replaceFirst(programStringGetBlockCosineSimilarity3D, "$EPSILON$", "" + Utils.EPSILON);
-        CLProgram programGetBlockCosineSimilarity3D = context.createProgram(programStringGetBlockCosineSimilarity3D).build();
-
-        // Create OpenCL kernel and set args
-        CLKernel kernelGetBlockCosineSimilarity3D = programGetBlockCosineSimilarity3D.createCLKernel("kernelGetBlockCosineSimilarity3D");
-
-        int argn = 0;
-        kernelGetBlockCosineSimilarity3D.setArg(argn++, localStatistics.getCLLocalStds());
-        kernelGetBlockCosineSimilarity3D.setArg(argn++, clRepetitionMap);
-
-        int localWorkSize = min(device.getMaxWorkGroupSize(), 256);
-        int globalWorkSize = roundUp(localWorkSize, imageSize);
-
-        queue.put3DRangeKernel(kernelGetBlockCosineSimilarity3D,
-                0, 0, 0,
-                imageWidth, imageHeight, imageDepth,
-                0, 0, 0);
-
-        queue.finish();
-
-        // Read the repetition map back from the device
-        queue.putReadBuffer(clRepetitionMap, true);
-        for(int z=blockRadiusDepth; z<imageDepth-blockRadiusDepth; z++) {
-            for (int y=blockRadiusHeight; y<imageHeight-blockRadiusHeight; y++) {
-                for (int x=blockRadiusWidth; x<imageWidth-blockRadiusWidth; x++) {
-                    int index = imageWidth*imageHeight*z+y*imageWidth+x;
-                    repetitionMap[index] = clRepetitionMap.getBuffer().get(index);
-                    queue.finish();
-                }
-            }
-        }
-
-        // Calculate and apply relevance mask
-        float[] relevanceMaskArray = null;
-        if(relevanceConstant>0.0f) {
-            relevanceMaskArray = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                    blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
-
-            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMaskArray);
-        }
-
-        // Normalize repetition map (avoiding masked pixels)
-        if(normalizeOutput) {
-            repetitionMap = Utils.normalizeImage3D(repetitionMap, imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                    blockRadiusHeight, blockRadiusDepth, relevanceMaskArray);
-        }
-
-        // Release memory
-        context.release();
-
-        return repetitionMap;
-    }
 
 
     /**
@@ -1725,9 +1499,134 @@ public class CLUtils {
         return repetitionMap;
     }
 
+    /**
+     * Computes the block-wise absolute difference of StdDevs for a 3D image using OpenCL.
+     *
+     * This method calculates the absolute difference of StdDevs between a reference block and all blocks
+     * of the input image. The result is stored in a repetition map, indicating the degree
+     * of similarity across the image. Optionally, a relevance mask can be applied to filter
+     * the results based on local standard deviations and a relevance constant.
+     * @param inputImage3D      the input 3D image for similarity calculation
+     * @param referenceBlock3D  the reference block used for comparison in the similarity calculation
+     * @param relevanceConstant  a constant value used to control the strength of the structural relevance filter
+     * @param normalizeOutput    a boolean indicating whether to normalize the output repetition map
+     * @param useDevice          a boolean indicating whether to use the user-defined OpenCL device preference
+     * @return a float array representing the repetition map
+     * coefficients across the image
+     */
+    public static float[] getBlockAbsDiffStds3D(Utils.InputImage3D inputImage3D,
+                                                Utils.ReferenceBlock3D referenceBlock3D, float relevanceConstant,
+                                                boolean normalizeOutput, boolean useDevice)
+    {
+        // Cache variables
+        int imageWidth = inputImage3D.getWidth();
+        int imageHeight = inputImage3D.getHeight();
+        int imageSize = inputImage3D.getSize();
+        int imageDepth = inputImage3D.getDepth();
+        int blockSize = referenceBlock3D.getSize();
+        int blockRadiusWidth = referenceBlock3D.getRadiusWidth();
+        int blockRadiusHeight = referenceBlock3D.getRadiusHeight();
+        int blockRadiusDepth = referenceBlock3D.getRadiusDepth();
+
+        // Initialize OpenCL
+        CLUtils.OpenCLResources openCLResources = CLUtils.getOpenCLResources(useDevice);
+
+        // Retrieve OpenCL context, device and queue
+        CLContext context = openCLResources.getContext();
+        CLDevice device = openCLResources.getDevice();
+        CLCommandQueue queue = openCLResources.getQueue();
+
+        // Calculate local statistics
+        CLLocalStatistics localStatistics = getLocalStatistics3D(openCLResources, inputImage3D, blockSize,
+                blockRadiusWidth, blockRadiusHeight, blockRadiusDepth, Utils.EPSILON);
+
+        // Create and fill OpenCL buffers
+        IJ.log("Calculating Structural Repetition Scores...");
+
+        CLBuffer<FloatBuffer> clBlockPixels = createAndFillCLBuffer(context, blockSize, READ_ONLY,
+                referenceBlock3D.getPixels());
+        queue.putWriteBuffer(clBlockPixels, true);
+
+        float[] repetitionMap = new float[imageSize]; // Create array to hold the repetition map
+        Arrays.fill(repetitionMap, 0.0f); // Fill with zeroes just be sure
+
+        CLBuffer<FloatBuffer> clRepetitionMap = createAndFillCLBuffer(context, imageSize, READ_WRITE,
+                repetitionMap);
+
+        // Build OpenCL program
+        String programStringGetBlockAbsDiffStds3D = getResourceAsString(CLUtils.class, "kernelGetBlockAbsDiffStds3D.cl");
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$WIDTH$", "" + imageWidth);
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$HEIGHT$", "" + imageHeight);
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$DEPTH$", "" + imageDepth);
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$BRW$", "" + blockRadiusWidth);
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$BRH$", "" + blockRadiusHeight);
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$BRZ$", "" + blockRadiusDepth);
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$BLOCK_STD$", "" + referenceBlock3D.getStd());
+        programStringGetBlockAbsDiffStds3D = replaceFirst(programStringGetBlockAbsDiffStds3D, "$EPSILON$", "" + Utils.EPSILON);
+        CLProgram programGetBlockAbsDiffStds3D = context.createProgram(programStringGetBlockAbsDiffStds3D).build();
+
+        // Create OpenCL kernel and set args
+        CLKernel kernelGetBlockAbsDiffStds3D = programGetBlockAbsDiffStds3D.createCLKernel("kernelGetBlockAbsDiffStds3D");
+
+        int argn = 0;
+        kernelGetBlockAbsDiffStds3D.setArg(argn++, localStatistics.getCLLocalStds());
+        kernelGetBlockAbsDiffStds3D.setArg(argn++, clRepetitionMap);
+
+        int localWorkSize = min(device.getMaxWorkGroupSize(), 256);
+        int globalWorkSize = roundUp(localWorkSize, imageSize);
+
+        queue.put3DRangeKernel(kernelGetBlockAbsDiffStds3D,
+                0, 0, 0,
+                imageWidth, imageHeight, imageDepth,
+                0, 0, 0);
+
+        queue.finish();
+
+        // Read the repetition map back from the device
+        queue.putReadBuffer(clRepetitionMap, true);
+        for(int z=blockRadiusDepth; z<imageDepth-blockRadiusDepth; z++) {
+            for (int y=blockRadiusHeight; y<imageHeight-blockRadiusHeight; y++) {
+                for (int x=blockRadiusWidth; x<imageWidth-blockRadiusWidth; x++) {
+                    int index = imageWidth*imageHeight*z+y*imageWidth+x;
+                    repetitionMap[index] = clRepetitionMap.getBuffer().get(index);
+                    queue.finish();
+                }
+            }
+        }
+
+        // Convert dissimilarity into similarity
+        for(int z=blockRadiusDepth; z<imageDepth-blockRadiusDepth; z++) {
+            for (int y = blockRadiusHeight; y < imageHeight - blockRadiusHeight; y++) {
+                for (int x = blockRadiusWidth; x < imageWidth - blockRadiusWidth; x++) {
+                    int index = imageWidth * imageHeight * z + y * imageWidth + x;
+                    repetitionMap[index] = 1.0f - repetitionMap[index];
+                }
+            }
+        }
+
+        // Calculate and apply relevance mask
+        float[] relevanceMaskArray = null;
+        if(relevanceConstant>0.0f) {
+            relevanceMaskArray = Utils.getRelevanceMask3D(imageWidth, imageHeight, imageDepth, blockRadiusWidth,
+                    blockRadiusHeight, blockRadiusDepth, localStatistics.getLocalStds(), relevanceConstant);
+            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth, relevanceMaskArray);
+
+        }
+
+        // Normalize repetition map (avoiding masked pixels)
+        if(normalizeOutput) {
+            repetitionMap = Utils.normalizeImage3D(repetitionMap, imageWidth, imageHeight, imageDepth, blockRadiusWidth,
+                    blockRadiusHeight, blockRadiusDepth, relevanceMaskArray);
+        }
+
+        // Release memory
+        context.release();
+
+        return repetitionMap;
+    }
 
     /**
-     * Calculate the 3D repetition map based on the selected metric.
+     * Calculate the 3D block repetition map based on the selected metric.
      *
      * @param metric The selected metric for repetition calculation.
      * @param inputImage The input image data.
@@ -1738,19 +1637,16 @@ public class CLUtils {
      * @return The calculated repetition map.
      */
     public static float[] calculateBlockRepetitionMap3D(String metric, Utils.InputImage3D inputImage,
-                                                        Utils.ReferenceBlock3D referenceBlock, float relevanceConstant,
-                                                        boolean normalizeOutput, boolean useDevice)
+            Utils.ReferenceBlock3D referenceBlock, float relevanceConstant, boolean normalizeOutput, boolean useDevice)
     {
         if (metric.equals(BlockRepetition3D_.METRICS[0])) {
             return CLUtils.getBlockPearson3D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
         } else if (metric.equals(BlockRepetition3D_.METRICS[1])) {
-            return CLUtils.getBlockCosineSimilarity3D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
-        } else if (metric.equals(BlockRepetition3D_.METRICS[2])) {
             return CLUtils.getBlockSsim3D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
-        } else if (metric.equals(BlockRepetition3D_.METRICS[3])) {
+        } else if (metric.equals(BlockRepetition3D_.METRICS[2])) {
             return CLUtils.getBlockNrmse3D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
-        //} else if (metric.equals(BlockRepetition3D_.METRICS[4])) {
-            //return CLUtils.getBlockAbsDiffStds3D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
+        } else if (metric.equals(BlockRepetition3D_.METRICS[3])) {
+            return CLUtils.getBlockAbsDiffStds3D(inputImage, referenceBlock, relevanceConstant, normalizeOutput, useDevice);
         } else {
             return null; // This is here just because the method requires a return statement outside the IF clauses.
         }
@@ -1839,120 +1735,6 @@ public class CLUtils {
                 float progressPercentage = ((nYB*nXBlocks+nXB)/(float)totalBlocks)*100;
                 showStatus(String.format("Calculating global repetition... %d%%", Math.round(progressPercentage)));
                 openCLResources.getQueue().put2DRangeKernel(kernelGetGlobalPearson2D, nXB * 64, nYB * 64, xWorkSize, yWorkSize, 0, 0);
-                openCLResources.getQueue().finish();
-            }
-        }
-        showStatus("Calculating global repetition... 100%");
-
-        // Read the repetition map back from the device and calculate the weighted average
-        openCLResources.getQueue().putReadBuffer(clRepetitionMap, true);
-        openCLResources.getQueue().putReadBuffer(clWeightsSumMap, true);
-
-        for (int y=blockRadiusHeight; y<imageHeight-blockRadiusHeight; y++) {
-            for (int x=blockRadiusWidth; x<imageWidth-blockRadiusWidth; x++) {
-
-                float similarity = clRepetitionMap.getBuffer().get(y*imageWidth+x);
-                openCLResources.getQueue().finish();
-
-                float weightSum = clWeightsSumMap.getBuffer().get(y*imageWidth+x);
-                openCLResources.getQueue().finish();
-
-                repetitionMap[y*imageWidth+x] = similarity/(weightSum*nPixels+Utils.EPSILON);
-                openCLResources.getQueue().finish();
-            }
-        }
-
-        // Apply relevance mask
-        if(relevanceMask.getRelevanceConstant()>0.0f) {
-            repetitionMap = Utils.applyMask2D(repetitionMap, imageWidth, imageHeight, relevanceMask.getRelevanceMask());
-        }
-
-        // Normalize repetition map (avoiding masked pixels)
-        if(normalizeOutput) {
-            repetitionMap = Utils.normalizeImage2D(repetitionMap, imageWidth, imageHeight, blockRadiusWidth,
-                    blockRadiusHeight, relevanceMask.getRelevanceMask());
-        }
-
-        // Release memory
-        openCLResources.getContext().release();
-
-        return repetitionMap;
-    }
-
-
-    /**
-     * Computes the Global Repetition Map based on the Cosine Similarity metric for a 2D image using OpenCL.
-     *
-     * This method calculates the global repetition map based on the Cosine Similarity metric. The result is stored in a global
-     * repetition map, indicating the relative repetition of each structural element across the image.
-     * Optionally, a relevance mask can be applied to filter the results based on local standard deviations and a
-     * relevance constant.
-     *
-     * @param inputImage        a {@link Utils.InputImage2D} object
-     * @param localStatistics   a {@link CLLocalStatistics} object
-     * @param blockWidth        the width of the block used for the analysis
-     * @param blockHeight       the height of the block used for the analysis
-     * @param relevanceMask     a {@link Utils.RelevanceMask} object
-     * @param nPixels           the number of structurally relevant pixels (i.e., non-masked pixels)
-     * @param normalizeOutput   a boolean to either normalize the output or not
-     * @param openCLResources   an {@link OpenCLResources} object
-     * @return a float array representing the global repetition map, indicating the degree of repetition of each
-     * structural element across the entire image.
-     */
-    public static float[] getGlobalCosineSimilarity2D(Utils.InputImage2D inputImage, CLLocalStatistics localStatistics,
-                                             int blockWidth, int blockHeight, Utils.RelevanceMask relevanceMask,
-                                             float nPixels, boolean normalizeOutput, OpenCLResources openCLResources)
-    {
-        IJ.log("Calculating Structural Repetition Scores...");
-
-        // Cache variables
-        int imageWidth = inputImage.getWidth();
-        int imageHeight = inputImage.getHeight();
-        int imageSize = inputImage.getSize();
-        int blockRadiusWidth = blockWidth/2;
-        int blockRadiusHeight = blockHeight/2;
-
-        // Create and fill OpenCL buffers
-        float[] repetitionMap = new float[imageSize];
-        CLBuffer<FloatBuffer> clRepetitionMap = CLUtils.createAndFillCLBuffer(openCLResources.getContext(), imageSize,
-                READ_WRITE, repetitionMap);
-
-        float[] weightsSumMap = new float[imageSize];
-        CLBuffer<FloatBuffer> clWeightsSumMap = CLUtils.createAndFillCLBuffer(openCLResources.getContext(), imageSize,
-                READ_WRITE, weightsSumMap);
-
-        // Build OpenCL program
-        String programStringGetGlobalCosineSimilarity2D = getResourceAsString(CLUtils.class, "kernelGetGlobalCosineSimilarity2D.cl");
-        programStringGetGlobalCosineSimilarity2D = replaceFirst(programStringGetGlobalCosineSimilarity2D, "$WIDTH$", "" + imageWidth);
-        programStringGetGlobalCosineSimilarity2D = replaceFirst(programStringGetGlobalCosineSimilarity2D, "$HEIGHT$", "" + imageHeight);
-        programStringGetGlobalCosineSimilarity2D = replaceFirst(programStringGetGlobalCosineSimilarity2D, "$BRW$", "" + blockRadiusWidth);
-        programStringGetGlobalCosineSimilarity2D = replaceFirst(programStringGetGlobalCosineSimilarity2D, "$BRH$", "" + blockRadiusHeight);
-        programStringGetGlobalCosineSimilarity2D = replaceFirst(programStringGetGlobalCosineSimilarity2D, "$FILTER_PARAM$", "" + relevanceMask.getNoiseMeanVariance());
-        programStringGetGlobalCosineSimilarity2D = replaceFirst(programStringGetGlobalCosineSimilarity2D, "$THRESHOLD$", "" + relevanceMask.getRelevanceThreshold());
-        programStringGetGlobalCosineSimilarity2D = replaceFirst(programStringGetGlobalCosineSimilarity2D, "$EPSILON$", "" + Utils.EPSILON);
-        CLProgram programGetGlobalCosineSimilarity2D = openCLResources.getContext().createProgram(programStringGetGlobalCosineSimilarity2D).build();
-
-        // Create OpenCL kernel and set args
-        CLKernel kernelGetGlobalCosineSimilarity2D = programGetGlobalCosineSimilarity2D.createCLKernel("kernelGetGlobalCosineSimilarity2D");
-
-        int argn = 0;
-        kernelGetGlobalCosineSimilarity2D.setArg(argn++, localStatistics.getCLImageArray());
-        kernelGetGlobalCosineSimilarity2D.setArg(argn++, localStatistics.getCLLocalStds());
-        kernelGetGlobalCosineSimilarity2D.setArg(argn++, clWeightsSumMap);
-        kernelGetGlobalCosineSimilarity2D.setArg(argn++, clRepetitionMap);
-
-        // Calculate weighted mean Pearson's map
-        int nXBlocks = imageWidth/64 + ((imageWidth%64==0)?0:1);
-        int nYBlocks = imageHeight/64 + ((imageHeight%64==0)?0:1);
-        int totalBlocks = nXBlocks * nYBlocks; // Total number of blocks
-
-        for (int nYB=0; nYB<nYBlocks; nYB++) {
-            int yWorkSize = min(64, imageHeight-nYB*64);
-            for (int nXB=0; nXB<nXBlocks; nXB++) {
-                int xWorkSize = min(64, imageWidth-nXB*64);
-                float progressPercentage = ((nYB*nXBlocks+nXB)/(float)totalBlocks)*100;
-                showStatus(String.format("Calculating global repetition... %d%%", Math.round(progressPercentage)));
-                openCLResources.getQueue().put2DRangeKernel(kernelGetGlobalCosineSimilarity2D, nXB * 64, nYB * 64, xWorkSize, yWorkSize, 0, 0);
                 openCLResources.getQueue().finish();
             }
         }
@@ -2399,9 +2181,6 @@ public class CLUtils {
         if(metric.equals("Pearson's R")) {
             return CLUtils.getGlobalPearson2D(inputImage, localStatistics, blockWidth, blockHeight, blockSize,
                     relevanceMask, nPixels, normalizeOutput, openCLResources);
-        }else if(metric.equals("Cosine similarity")) {
-            return CLUtils.getGlobalCosineSimilarity2D(inputImage, localStatistics, blockWidth, blockHeight,
-                    relevanceMask, nPixels, normalizeOutput, openCLResources);
         }else if(metric.equals("SSIM")){
             return CLUtils.getGlobalSsim2D(inputImage, localStatistics, blockWidth, blockHeight, blockSize,
                     relevanceMask, nPixels, normalizeOutput, openCLResources);
@@ -2556,134 +2335,7 @@ public class CLUtils {
     }
 
 
-    /**
-     * Computes the Global Repetition Map based on the Cosine Similarity metric for a 3D image using OpenCL.
-     *
-     * This method calculates the global repetition map based on the Cosine Similarity metric. The result is stored in a global
-     * repetition map, indicating the relative repetition of each structural element across the image.
-     * Optionally, a relevance mask can be applied to filter the results based on local standard deviations and a
-     * relevance constant.
-     *
-     * @param inputImage        a {@link Utils.InputImage3D} object
-     * @param localStatistics   a {@link CLLocalStatistics} object
-     * @param blockWidth        the width of the block used for the analysis
-     * @param blockHeight       the height of the block used for the analysis
-     * @param blockDepth        the depth of the block used for the analysis
-     * @param relevanceMask     a {@link Utils.RelevanceMask} object
-     * @param nPixels           the number of structurally relevant pixels (i.e., non-masked pixels)
-     * @param normalizeOutput   a boolean to either normalize the output or not
-     * @param openCLResources   an {@link OpenCLResources} object
-     * @return a float array representing the global repetition map, indicating the degree of repetition of each
-     * structural element across the entire image.
-     */
-    public static float[] getGlobalCosineSimilarity3D(Utils.InputImage3D inputImage, CLLocalStatistics localStatistics,
-                                                      int blockWidth, int blockHeight, int blockDepth,
-                                                      Utils.RelevanceMask relevanceMask, float nPixels,
-                                                      boolean normalizeOutput, OpenCLResources openCLResources)
-    {
-        IJ.log("Calculating Structural Repetition Scores...");
 
-        // Cache variables
-        int imageWidth = inputImage.getWidth();
-        int imageHeight = inputImage.getHeight();
-        int imageDepth = inputImage.getDepth();
-        int imageSize = inputImage.getSize();
-        int blockRadiusWidth = blockWidth / 2;
-        int blockRadiusHeight = blockHeight / 2;
-        int blockRadiusDepth = blockDepth / 2;
-
-        // Create and fill OpenCL buffers
-        float[] repetitionMap = new float[imageSize];
-        CLBuffer<FloatBuffer> clRepetitionMap = CLUtils.createAndFillCLBuffer(openCLResources.getContext(), imageSize,
-                READ_WRITE, repetitionMap);
-
-        float[] weightsSumMap = new float[imageSize];
-        CLBuffer<FloatBuffer> clWeightsSumMap = CLUtils.createAndFillCLBuffer(openCLResources.getContext(), imageSize,
-                READ_WRITE, weightsSumMap);
-
-        // Build OpenCL program
-        String programStringGetGlobalCosineSimilarity3D = getResourceAsString(CLUtils.class, "kernelGetGlobalCosineSimilarity3D.cl");
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$WIDTH$", "" + imageWidth);
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$HEIGHT$", "" + imageHeight);
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$DEPTH$", "" + imageDepth);
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$BRW$", "" + blockRadiusWidth);
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$BRH$", "" + blockRadiusHeight);
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$BRZ$", "" + blockRadiusDepth);
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$FILTER_PARAM$", "" + relevanceMask.getNoiseMeanVariance());
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$THRESHOLD$", "" + relevanceMask.getRelevanceThreshold());
-        programStringGetGlobalCosineSimilarity3D = replaceFirst(programStringGetGlobalCosineSimilarity3D, "$EPSILON$", "" + Utils.EPSILON);
-        CLProgram programGetGlobalCosineSimilarity3D = openCLResources.getContext().createProgram(programStringGetGlobalCosineSimilarity3D).build();
-
-        // Create OpenCL kernel and set args
-        CLKernel kernelGetGlobalCosineSimilarity3D = programGetGlobalCosineSimilarity3D.createCLKernel("kernelGetGlobalCosineSimilarity3D");
-
-        int argn = 0;
-        kernelGetGlobalCosineSimilarity3D.setArg(argn++, localStatistics.getCLImageArray());
-        kernelGetGlobalCosineSimilarity3D.setArg(argn++, localStatistics.getCLLocalStds());
-        kernelGetGlobalCosineSimilarity3D.setArg(argn++, clWeightsSumMap);
-        kernelGetGlobalCosineSimilarity3D.setArg(argn++, clRepetitionMap);
-
-        // Calculate weighted mean Pearson's map
-        int nXBlocks = imageWidth / 64 + ((imageWidth % 64 == 0) ? 0 : 1);
-        int nYBlocks = imageHeight / 64 + ((imageHeight % 64 == 0) ? 0 : 1);
-        int nZBlocks = imageDepth / blockDepth + ((imageDepth % blockDepth == 0) ? 0 : 1);
-        int totalBlocks = nXBlocks * nYBlocks * nZBlocks;
-
-        for (int nZB = 0; nZB < nZBlocks; nZB++) {
-            int zWorkSize = min(blockDepth, imageDepth - nZB * blockDepth);
-            for (int nYB = 0; nYB < nYBlocks; nYB++) {
-                int yWorkSize = min(64, imageHeight - nYB * 64);
-                for (int nXB = 0; nXB < nXBlocks; nXB++) {
-                    int xWorkSize = min(64, imageWidth - nXB * 64);
-                    float progressPercentage = ((nZB * nYBlocks * nXBlocks) + (nYB * nXBlocks) + nXB) / (float) totalBlocks * 100;
-                    showStatus(String.format("Calculating global repetition... %d%%", Math.round(progressPercentage)));
-                    openCLResources.getQueue().put3DRangeKernel(kernelGetGlobalCosineSimilarity3D,
-                            nXB * 64, nYB * 64, nZB * blockDepth,
-                            xWorkSize, yWorkSize, zWorkSize, 0, 0, 0);
-                    openCLResources.getQueue().finish();
-                }
-            }
-        }
-        showStatus("Calculating global repetition... 100%");
-
-        // Read the repetition map back from the device and calculate the weighted average
-        openCLResources.getQueue().putReadBuffer(clRepetitionMap, true);
-        openCLResources.getQueue().putReadBuffer(clWeightsSumMap, true);
-
-        for(int z=blockRadiusDepth; z<imageDepth-blockRadiusDepth; z++){
-            for (int y=blockRadiusHeight; y<imageHeight-blockRadiusHeight; y++) {
-                for (int x=blockRadiusWidth; x<imageWidth-blockRadiusWidth; x++) {
-
-                    int index = imageWidth*imageHeight*z+y*imageWidth+x;
-                    float similarity = clRepetitionMap.getBuffer().get(index);
-                    openCLResources.getQueue().finish();
-
-                    float weightSum = clWeightsSumMap.getBuffer().get(index);
-                    openCLResources.getQueue().finish();
-
-                    repetitionMap[index] = similarity / (weightSum * nPixels + Utils.EPSILON);
-                    openCLResources.getQueue().finish();
-                }
-            }
-        }
-
-        // Apply relevance mask
-        if(relevanceMask.getRelevanceConstant()>0.0f) {
-            repetitionMap = Utils.applyMask3D(repetitionMap, imageWidth, imageHeight, imageDepth,
-                    relevanceMask.getRelevanceMask());
-        }
-
-        // Normalize repetition map (avoiding masked pixels)
-        if(normalizeOutput) {
-            repetitionMap = Utils.normalizeImage3D(repetitionMap, imageWidth, imageHeight, imageDepth, blockRadiusWidth,
-                    blockRadiusHeight, blockRadiusDepth, relevanceMask.getRelevanceMask());
-        }
-
-        // Release memory
-        openCLResources.getContext().release();
-
-        return repetitionMap;
-    }
 
 
     /**
@@ -3148,9 +2800,6 @@ public class CLUtils {
         if(metric.equals("Pearson's R")) {
             return CLUtils.getGlobalPearson3D(inputImage, localStatistics, blockWidth, blockHeight, blockDepth,
                     blockSize, relevanceMask, nPixels, normalizeOutput, openCLResources);
-        }else if(metric.equals("Cosine similarity")) {
-            return CLUtils.getGlobalCosineSimilarity3D(inputImage, localStatistics, blockWidth, blockHeight, blockDepth,
-                    relevanceMask, nPixels, normalizeOutput, openCLResources);
         }else if(metric.equals("SSIM")){
             return CLUtils.getGlobalSsim3D(inputImage, localStatistics, blockWidth, blockHeight, blockDepth, blockSize,
                     relevanceMask, nPixels, normalizeOutput, openCLResources);
@@ -3164,6 +2813,4 @@ public class CLUtils {
             return null;
         }
     }
-
-
 }

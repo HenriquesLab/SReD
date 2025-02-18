@@ -17,7 +17,6 @@ public class BlockRepetition2D_ implements PlugIn {
     // Define constants for metric choices
     public static final String[] METRICS = {
             "Pearson's R",
-            "Cosine similarity",
             "SSIM",
             "NRMSE (inverted)",
             "Abs. Diff. of StdDevs."
@@ -62,7 +61,7 @@ public class BlockRepetition2D_ implements PlugIn {
         gd.addNumericField("Relevance constant:", 0.0f, 3);
         gd.addChoice("Metric:", METRICS, METRICS[0]);
         gd.addCheckbox("Stabilise noise variance?", true);
-        gd.addChoice("GAT parameter estimation:", GATMETHODS, GATMETHODS[1]);
+        gd.addChoice("GAT parameter estimation:", GATMETHODS, GATMETHODS[0]);
         gd.addCheckbox("Timelapse?", false);
         gd.addCheckbox("Normalize output?", true);
         gd.addCheckbox("Use OpenCL device from preferences?", false);

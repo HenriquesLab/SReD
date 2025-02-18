@@ -634,113 +634,7 @@ public class CLUtilsTest {
     }
 
 
-    @Test
-    public void testGetBlockCosineSimilarity2D() {
-        // Set up the input image data
-        int imageWidth = 10;
-        int imageHeight = 10;
-        int imageSize = imageWidth * imageHeight;
-        float[] imageArray = {
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f
-        };
-        Utils.InputImage2D inputImage2D = new Utils.InputImage2D(imageArray, imageWidth, imageHeight, imageSize);
 
-        // Set up the reference block data
-        int blockWidth = 3;
-        int blockHeight = 3;
-        int blockRadiusWidth = blockWidth/2;
-        int blockRadiusHeight = blockHeight/2;
-        float[] block = {0.0f, 1.0f, 0.0f,
-                         0.0f, 1.0f, 0.0f,
-                         0.0f, 1.0f, 0.0f
-        };
-
-        int blockSize = 0;
-        for (int y=0; y<blockHeight; y++) {
-            for (int x=0; x<blockWidth; x++) {
-                float dx = (float) (x-blockRadiusWidth);
-                float dy = (float) (y-blockRadiusHeight);
-                if (((dx*dx)/(float)(blockRadiusWidth*blockRadiusWidth))+((dy*dy)/(float)(blockRadiusHeight*blockRadiusHeight)) <= 1.0f) {
-                    blockSize++;
-                }
-            }
-        }
-
-        float[] blockArray = new float[blockSize];
-        int index = 0;
-        for (int y=0; y<blockHeight; y++) {
-            for (int x=0; x<blockWidth; x++) {
-                float dx = (float) (x - blockRadiusWidth);
-                float dy = (float) (y - blockRadiusHeight);
-                if (((dx * dx) / (float) (blockRadiusWidth * blockRadiusWidth)) + ((dy * dy) / (float) (blockRadiusHeight * blockRadiusHeight)) <= 1.0f) {
-                    blockArray[index] = block[y*blockWidth+x];
-                    index++;
-                }
-            }
-        }
-
-        float blockMean = 0.0f;
-        for(int i=0; i<blockSize; i++){
-            blockMean += blockArray[i];
-        }
-        blockMean /= (float) blockSize;
-
-        float blockStd = 0.0f;
-        for(int i=0; i<blockSize; i++){
-            blockStd += (blockArray[i]-blockMean)*(blockArray[i]-blockMean);
-        }
-        blockStd /= (float) blockSize - 1.0f;
-        blockStd = (float)sqrt(blockStd);
-
-        Utils.ReferenceBlock2D referenceBlock2D = new Utils.ReferenceBlock2D(blockArray, blockWidth, blockHeight,
-                blockRadiusWidth, blockRadiusHeight, blockSize, blockMean, blockStd);
-
-        // Initialize OpenCL
-        CLUtils.OpenCLResources clResources = CLUtils.getOpenCLResources(false);
-
-        // Set relevance constant, normalize output flag, and useDevice flag
-        float relevanceConstant = 0.0f;
-        boolean normalizeOutput = true;
-        boolean useDevice = false;
-
-        // Call the method
-        float[] expectedResult = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                                  0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                                  0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                                  0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,
-                                  0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f,
-                                  0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,
-                                  0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                                  0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                                  0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                                  0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
-        };
-
-        float[] result = CLUtils.getBlockCosineSimilarity2D(inputImage2D, referenceBlock2D, relevanceConstant, normalizeOutput, useDevice);
-
-        // Assert that the result is not null and has the correct size
-        assertNotNull(result);
-        assertEquals(imageSize, result.length);
-
-        // Check if result is normalized
-        for (float value : result) {
-            assertTrue(value >= 0.0f && value <= 1.0f);  // Assuming result is normalized
-        }
-
-        // Check if result is as expected
-        for(int i=0; i<imageSize; i++){
-            assertEquals(expectedResult[i], result[i], 0.000001f);
-        }
-    }
 
 
     @Test
@@ -1459,5 +1353,5 @@ public class CLUtilsTest {
             assertEquals(expectedResult[i], result[i], 0.000001f);
         }
     }
-    
+
 }

@@ -10,7 +10,7 @@
 
     <groupId>groupId</groupId>
     <artifactId>SReD_</artifactId>
-    <version>1.0</version>
+    <version>1.1</version>
 
     <name>SReD</name>
     <description>SReD (Structural Repetition Detector) is an ImageJ and Fiji plugin for analyzing structural repetition in microscopy images.</description>

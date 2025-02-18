@@ -35,7 +35,7 @@ kernel void kernelGetGlobalSsim3D(
     float ref_var = ref_std*ref_std;
 
     if(ref_var<threshold || ref_var==0.0f){
-        cosine_sim_map[ref_index] = 0.0f; // Set pixel to zero to avoid retaining spurious values already in memory
+        ssim_map[ref_index] = 0.0f; // Set pixel to zero to avoid retaining spurious values already in memory
         return;
     }
 

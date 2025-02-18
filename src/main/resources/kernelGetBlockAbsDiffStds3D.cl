@@ -8,9 +8,9 @@
 #define ref_std $BLOCK_STD$
 #define EPSILON $EPSILON$
 
-kernel void kernelGetBlockCosineSimilarity3D(
+kernel void kernelGetBlockAbsDiffStds3D(
     global float* local_stds,
-    global float* cosine_similarity_map
+    global float* diff_std_map
 ){
 
     int gx = get_global_id(0);
@@ -19,13 +19,11 @@ kernel void kernelGetBlockCosineSimilarity3D(
 
     // Bound check (avoids borders dynamically based on block dimensions)
     if(gx<bRW || gx>=imageWidth-bRW || gy<bRH || gy>=imageHeight-bRH || gz<bRZ || gz>=imageDepth-bRZ){
-        cosine_similarity_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = 0.0f;
+        diff_std_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = 0.0f;
         return;
     }
 
-
-    // Calculate cosine similarity
+    // Calculate abslute difference of standard deviations
     float test_std = local_stds[imageWidth*imageHeight*gz+gy*imageWidth+gx];
-    float similarity = (ref_std*test_std) / (sqrt(ref_std*ref_std)*sqrt(test_std*test_std)+EPSILON);
-    cosine_similarity_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = (float)fmax(0.0f, similarity);
+    diff_std_map[imageWidth*imageHeight*gz+gy*imageWidth+gx] = fabs((float)ref_std - (float)test_std);
 }
