@@ -53,6 +53,6 @@ SReD is distributed under the [MIT](LICENSE).
 
 If you use SReD in your research, please cite our paper:
 
-[Mendes, A. _et al._ (2024) Structural Repetition Detector: multi-scale quantitative mapping of molecular complexes through microscopy. _Biorxiv_. DOI: 10.1101/2024.09.16.613204
-](https://www.biorxiv.org/content/10.1101/2024.09.16.613204v1)
+[Mendes, A. _et al._ (2024) Structural Repetition Detector for multi-scale quantitative mapping of molecular complexes through microscopy. Nature Communications 16, 5767 (2025) DOI: 10.1101/2024.09.16.613204
+](https://doi.org/10.1038/s41467-025-60709-1)
 
